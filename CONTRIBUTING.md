@@ -35,12 +35,20 @@ Thank you for considering a contribution. This guide covers the minimum workflow
 
 ## Padrões de código / Code standards
 
-Quando houver crates Rust em `zaquion-core/`:
+Crates Rust em `zaquion-core/` (a partir da Missão 002):
 
-- `cargo fmt`
-- `cargo clippy -- -D warnings` (meta; ativar na CI quando estável)
-- Testes unitários para lógica não trivial
-- Sem `unsafe` sem justificativa no PR e, se possível, módulo isolado
+```bash
+cd zaquion-core
+cargo fmt --all -- --check
+cargo check --workspace
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo run -p ryoku-doctor
+```
+
+- Preferir stdlib; justificar qualquer crate em `docs/licensing/` + PR
+- Sem `unsafe` sem justificativa no PR (`forbid` no workspace)
+- MSRV: ver `zaquion-core/README.md` (1.75; toolchain pin 1.83.0)
 
 Documentação:
 

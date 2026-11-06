@@ -1,7 +1,22 @@
 # GitHub Actions
 
-No workflows are enabled in Mission 001.
+## Active workflows (Mission 002)
 
-Suggested first workflow (Mission 002+): Markdown link check + (when crates exist) `cargo fmt --check` and `cargo clippy`.
+| Workflow | File | Purpose |
+|----------|------|---------|
+| `ci` | [ci.yml](ci.yml) | Rust fmt, check, test, clippy on `zaquion-core/`; required doc path checks |
 
-Do not add jobs that download/build the kernel, build ISOs, or start VMs until the QEMU harness mission lands.
+### Pins & permissions
+
+- Rust toolchain: **1.83.0** (see `zaquion-core/rust-toolchain.toml` and `RUST_VERSION` in `ci.yml`)
+- Actions: `actions/checkout@v4`, `dtolnay/rust-toolchain@master` (toolchain arg pinned), `Swatinem/rust-cache@v2`
+- `permissions: contents: read` only
+
+### Explicitly out of scope
+
+- KVM availability (not assumed on `ubuntu-24.04` runners)
+- QEMU boot / installer / graphical tests
+- Kernel download or compile
+- ISO build
+
+`ryoku-doctor` runs in CI for signal; optional WARNs (no QEMU/KVM) must not fail the job unless a **required** check fails (doctor exit code semantics).

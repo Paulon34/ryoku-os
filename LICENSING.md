@@ -4,7 +4,10 @@ Ryoku OS uses a **per-component** licensing strategy. There is intentionally **n
 
 See **[docs/licensing/strategy.md](docs/licensing/strategy.md)** for the full rationale, kernel GPLv2 obligations, and candidate licenses for Zaquion Core, docs, and packaging.
 
-Until production source code is added:
+### First-party Rust (from Mission 002)
 
-- No first-party software license file is asserted beyond this notice and the strategy document.
-- No third-party source was copied into this repository in Mission 001.
+- `zaquion-core/` ships dual **MIT OR Apache-2.0**: `zaquion-core/LICENSE-MIT` and `zaquion-core/LICENSE-APACHE`.
+- Crate metadata: `license = "MIT OR Apache-2.0"`.
+- No third-party Rust crates were added as dependencies in Mission 002 (`ryoku-doctor` is stdlib-only).
+
+Kernel and third-party packaging obligations are unchanged — see **[docs/licensing/strategy.md](docs/licensing/strategy.md)**.

@@ -1,0 +1,6 @@
+# Pinned for reproducible local + CI builds (Mission 002).
+# MSRV declared in Cargo.toml is 1.75; this pin tracks the foundation host image.
+[toolchain]
+channel = "1.83.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

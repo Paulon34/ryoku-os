@@ -34,11 +34,21 @@ ryoku-os/                 ← raiz deste repositório (/workspace)
 
 Decisão de layout: [docs/architecture/layout.md](docs/architecture/layout.md) · ADR: [docs/architecture/ADR-0001.md](docs/architecture/ADR-0001.md)
 
-## Estado atual (Missão 001)
+## Estado atual (Missão 002)
 
-- Fundação documental e estrutura lean do repositório
+- Fundação documental (Missão 001) + workspace Cargo em `zaquion-core/`
+- CLI `ryoku-doctor` (somente leitura) + testes + CI GitHub Actions
 - Sem kernel baixado/compilado, sem ISO, sem VMs executadas
-- Sem código de produção em Zaquion Core ainda
+
+### Zaquion / doctor
+
+```bash
+cd zaquion-core
+cargo test --workspace
+cargo run -p ryoku-doctor
+```
+
+Ver [zaquion-core/README.md](zaquion-core/README.md). Metas de performance (goals ≠ measured): [docs/performance/targets.md](docs/performance/targets.md).
 
 ## Documentação
 
@@ -50,7 +60,9 @@ Decisão de layout: [docs/architecture/layout.md](docs/architecture/layout.md) �
 | [docs/architecture/](docs/architecture/) | Visão e ADRs |
 | [docs/testing/qemu-strategy.md](docs/testing/qemu-strategy.md) | Estratégia de testes QEMU |
 | [docs/licensing/strategy.md](docs/licensing/strategy.md) | Estratégia de licenças |
+| [docs/performance/targets.md](docs/performance/targets.md) | Metas de performance (preliminares) |
 | [docs/compatibility/](docs/compatibility/) | Nix / Debian / Arch |
+| [zaquion-core/README.md](zaquion-core/README.md) | Workspace Rust / MSRV / comandos |
 
 ## Idiomas
 

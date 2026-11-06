@@ -1,0 +1,101 @@
+# Ryoku OS / Zaquion Core — continuous integration (Mission 002)
+#
+# Scope: Rust fmt/build/test/clippy + lightweight doc path checks.
+# Out of scope: KVM, QEMU boots, kernel builds, ISO generation.
+name: ci
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+    branches: [main]
+
+# Least privilege: this workflow only needs repo contents.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pin matches zaquion-core/rust-toolchain.toml and the foundation host image.
+  RUST_VERSION: "1.83.0"
+
+jobs:
+  rust:
+    name: rust-workspace
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: zaquion-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zaquion-core -> target
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo check
+        run: cargo check --workspace
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run ryoku-doctor (informational)
+        # Doctor may WARN on missing QEMU/KVM on GitHub-hosted runners.
+        # We do not fail the job on optional WARNs (exit 1 only for required FAIL).
+        run: cargo run -p ryoku-doctor
+        continue-on-error: false
+
+  docs:
+    name: docs-paths
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Required documentation paths exist
+        run: |
+          set -euo pipefail
+          required=(
+            README.md
+            README.en.md
+            ROADMAP.md
+            CONTRIBUTING.md
+            SECURITY.md
+            LICENSING.md
+            docs/architecture/ADR-0001.md
+            docs/architecture/layout.md
+            docs/licensing/strategy.md
+            docs/testing/qemu-strategy.md
+            docs/performance/targets.md
+            zaquion-core/README.md
+            zaquion-core/LICENSE-MIT
+            zaquion-core/LICENSE-APACHE
+            zaquion-core/ryoku-doctor/README.md
+          )
+          for path in "${required[@]}"; do
+            if [[ ! -f "$path" ]]; then
+              echo "missing required path: $path" >&2
+              exit 1
+            fi
+            echo "ok: $path"
+          done
+
+      - name: README language pair cross-links
+        run: |
+          set -euo pipefail
+          grep -q 'README.en.md' README.md
+          grep -q 'README.md' README.en.md

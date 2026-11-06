@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["ryoku-doctor"]
+default-members = ["ryoku-doctor"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/OWNER/ryoku-os"
+rust-version = "1.75"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "allow", priority = -1 }

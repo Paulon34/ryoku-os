@@ -21,8 +21,8 @@ Permitir:
 |------------|-------|-------------------------------|---------------------------|
 | Linux kernel (upstream) | Referência em `kernel/` — fonte **não** vendored aqui | **GPLv2-only** (kernel.org) | Qualquer *derivative work* do kernel permanece GPLv2. Módulos `.ko` têm regras específicas; consultar kernel licensing FAQ. |
 | Patches Ryoku ao kernel (futuro) | Processo futuro | GPLv2-only | Obrigatório alinhar ao kernel; sem blobs proprietários no tree. |
-| Zaquion Core (Rust userland) | `zaquion-core/` | **Apache-2.0 OR MIT** (dual, típico Rust) *candidato* | Adequado a userland; **não** “contamina” o kernel se permanecer em espaço de usuário e sem link estático indevido com obras GPL de forma a criar derivado. Revisar caso a caso se linkar libs GPL. |
-| Bibliotecas Zaquion usadas só em userland | `zaquion-core/` | Apache-2.0 OR MIT *candidato* | Preferir dependências crates.io com licenças permissivas ou GPL compatíveis conforme uso. |
+| Zaquion Core (Rust userland) | `zaquion-core/` | **Apache-2.0 OR MIT** (dual) — **adotado na Missão 002** (`LICENSE-MIT` + `LICENSE-APACHE`) | Adequado a userland; **não** “contamina” o kernel se permanecer em espaço de usuário e sem link estático indevido com obras GPL de forma a criar derivado. Revisar caso a caso se linkar libs GPL. |
+| Bibliotecas Zaquion usadas só em userland | `zaquion-core/` | Apache-2.0 OR MIT | Preferir dependências crates.io com licenças permissivas ou GPL compatíveis conforme uso. Missão 002: **zero** deps externas no `ryoku-doctor`. |
 | Apps first-party | `apps/` | Avaliar por app; default candidato Apache-2.0 OR MIT | Se um app incorporar código GPL, o app pode precisar ser GPL. |
 | Ryoku Desktop (externo) | Fora deste repo | **Seguir licença do projeto existente** | Port não muda a licença original sem acordo dos titulares. Inventariar antes do port. |
 | Scripts de packaging / harness | `packaging/`, `tests/` | Apache-2.0 OR MIT *candidato* | Scripts que embutem bits GPL devem isolar e atribuir. |
@@ -81,14 +81,14 @@ Checklist futuro (missão de packaging):
 3. Verificar uso: link estático, dinâmico, source copy, apenas CLI externa.
 4. Se dúvida com GPL/LGPL/kernel: abrir issue `licensing` antes do merge.
 
-## Decisão explícita da Missão 001
+## Decisão explícita da Missão 001 (atualizada na 002)
 
 **Não** criar um único `LICENSE` na raiz afirmando que “todo o Ryoku OS é X”.
 
 Em vez disso:
 
-- Publicar esta estratégia.
-- Quando o primeiro código Zaquion for adicionado, criar `zaquion-core/LICENSE` (MIT OR Apache-2.0, se confirmado).
+- Estratégia por componente (este documento).
+- Missão 002: `zaquion-core/LICENSE-MIT` + `zaquion-core/LICENSE-APACHE` + `license = "MIT OR Apache-2.0"` nos crates.
 - Quando docs forem formalizadas, `docs/LICENSE` ou NOTICE CC-BY-4.0.
 - Kernel permanece upstream com sua licença; sem vendor nesta fase.
 

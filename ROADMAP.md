@@ -23,12 +23,15 @@ Documento vivo. Atualizar a cada missão concluída. Idiomas: seções principai
 - [x] Templates GitHub e `.gitignore`
 - [ ] Revisão humana / publicação do remoto público
 
-## Fase 1 — Bootstrap de ferramenta e CI documental
+## Fase 1 — Bootstrap de ferramenta e CI documental (Missão 002) ✅ entregue nesta missão
 
-- [ ] CI mínima: lint de Markdown, checagem de links internos, `cargo fmt`/`clippy` quando houver crates
-- [ ] Workspace Cargo inicial em `zaquion-core/` (crate `zaquion-hello` ou equivalente mínimo)
-- [ ] Script de doctor do host (detectar Rust, Clang, QEMU, KVM) — sem instalar pacotes automaticamente
+- [x] Workspace Cargo em `zaquion-core/` com crate `ryoku-doctor`
+- [x] Doctor read-only (Rust/Clang/QEMU/KVM/…) com testes injetáveis — sem instalar pacotes
+- [x] CI GitHub Actions: `cargo fmt` / `check` / `test` / `clippy` + checagem de paths de docs
+- [x] Dual MIT OR Apache-2.0 em Zaquion Core; MSRV 1.75 / pin 1.83.0
+- [x] Metas preliminares de performance (`docs/performance/targets.md`) — goals ≠ measured
 - [ ] Política de submódulos / referência ao tree do kernel (pin de versão, sem vendorar fonte completa se evitável)
+- [ ] Link-check Markdown completo (além da existência de paths)
 
 ## Fase 2 — Harness QEMU (sem ISO ainda)
 
@@ -77,4 +80,4 @@ Ver [docs/testing/qemu-strategy.md](docs/testing/qemu-strategy.md).
 
 ## Sugestão de próxima missão
 
-**Missão 002 — Bootstrap Zaquion + doctor + CI documental**: criar o workspace Cargo mínimo, um crate de exemplo, script `scripts/ryoku-doctor.sh` (detecção somente), e workflow GitHub Actions que valide docs + `cargo check` sem construir kernel/ISO.
+**Missão 003 — QEMU harness T0/T1 (sem ISO Ryoku)**: doctor já reporta QEMU/KVM; próximo passo é orquestrar boot de imagem de referência, serial logs e expectations — ainda sem kernel Ryoku/ISO. Alternativa: inventário de licença do Ryoku Desktop + pin documental do kernel LTS.
