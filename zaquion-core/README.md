@@ -7,12 +7,13 @@ First-party **Rust** components, tools, and (future) system services for Ryoku O
 ```
 zaquion-core/
 ├── Cargo.toml              # workspace root
-├── Cargo.lock              # locked for the doctor binary
+├── Cargo.lock
 ├── LICENSE-MIT
 ├── LICENSE-APACHE
 ├── rust-toolchain.toml     # pinned toolchain for CI/dev alignment
 ├── README.md
-└── ryoku-doctor/           # read-only host diagnostics CLI
+├── ryoku-doctor/           # read-only host diagnostics CLI
+└── ryoku-virtlab/          # Virtual Lab harness T0/T1
 ```
 
 ## License
@@ -37,14 +38,16 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p ryoku-doctor
+cargo run -p ryoku-virtlab -- all
 ```
 
-Missing QEMU or KVM access may make the doctor print **WARN**; that is expected and must not fail `cargo test`.
+Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1 **SKIPPED**; that is expected and must not fail `cargo test`.
 
 ## Crates
 
 | Crate | Kind | Role |
 |-------|------|------|
-| `ryoku-doctor` | bin (+ lib) | Host diagnostics (Mission 002) |
+| `ryoku-doctor` | bin (+ lib) | Host diagnostics (Mission 002+) |
+| `ryoku-virtlab` | bin (+ lib) | Virtual Lab T0/T1 harness (Mission 003) |
 
 No privileged system services and no kernel code live here yet.

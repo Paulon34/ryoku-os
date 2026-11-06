@@ -1,7 +1,10 @@
 # Tests
 
-Harness futuro de testes QEMU/KVM. Estratégia: `docs/testing/qemu-strategy.md`.
-Nenhuma VM é executada nesta missão.
+| Area | Path | Role |
+|------|------|------|
+| Virtual Lab | [`qemu/`](qemu/) | QEMU harness assets (T0/T1) |
+| Rust unit tests | `zaquion-core/*/src` | `cargo test --workspace` |
 
-Future QEMU/KVM test harness. Strategy: `docs/testing/qemu-strategy.md`.
-No VMs are run in this mission.
+Harness code: `zaquion-core/ryoku-virtlab`. Strategy: [`docs/testing/qemu-strategy.md`](../docs/testing/qemu-strategy.md), [`docs/testing/virtual-lab.md`](../docs/testing/virtual-lab.md).
+
+No VMs are required for default CI. T1 is SKIPPED when QEMU is absent.

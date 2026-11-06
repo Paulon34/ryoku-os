@@ -38,7 +38,10 @@ System.map
 *.raw
 *.vdi
 *.vmdk
-tests/qemu/run/
+tests/qemu/run/**
+!tests/qemu/run/.gitkeep
+tests/qemu/results/**
+!tests/qemu/results/.gitkeep
 tests/qemu/logs/
 tests/qemu/artifacts/
 *.nvram

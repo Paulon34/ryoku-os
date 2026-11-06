@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["ryoku-doctor"]
-default-members = ["ryoku-doctor"]
+members = ["ryoku-doctor", "ryoku-virtlab"]
+default-members = ["ryoku-doctor", "ryoku-virtlab"]
 
 [workspace.package]
 edition = "2021"

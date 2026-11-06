@@ -1,0 +1,193 @@
+//! Path and device policy: block physical disks and escape from the lab tree.
+
+use std::fmt;
+use std::path::{Component, Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathRole {
+    Disk,
+    Kernel,
+}
+
+impl PathRole {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disk => "disk",
+            Self::Kernel => "kernel",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecurityError {
+    EmptyPath,
+    AbsoluteForbidden(String),
+    PhysicalDevice(String),
+    ParentEscape(String),
+    OutsideLab { path: String, lab_root: String },
+    Suspicious(String),
+}
+
+impl fmt::Display for SecurityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyPath => write!(f, "empty path"),
+            Self::AbsoluteForbidden(p) => {
+                write!(f, "absolute host path not allowed: {p}")
+            }
+            Self::PhysicalDevice(p) => {
+                write!(f, "physical/block device path blocked: {p}")
+            }
+            Self::ParentEscape(p) => write!(f, "path escapes with `..`: {p}"),
+            Self::OutsideLab { path, lab_root } => {
+                write!(f, "path `{path}` is outside lab root `{lab_root}`")
+            }
+            Self::Suspicious(p) => write!(f, "suspicious path rejected: {p}"),
+        }
+    }
+}
+
+impl std::error::Error for SecurityError {}
+
+/// True if `path` looks like a host block device we must never attach.
+#[must_use]
+pub fn is_blocked_physical_device(path: &str) -> bool {
+    let p = path.trim();
+    let lower = p.to_ascii_lowercase();
+
+    if lower == "/dev/sda"
+        || lower.starts_with("/dev/sda")
+        || lower == "/dev/sdb"
+        || lower.starts_with("/dev/sdb")
+        || lower.starts_with("/dev/sd")
+        || lower.starts_with("/dev/nvme")
+        || lower.starts_with("/dev/vd")
+        || lower.starts_with("/dev/xvd")
+        || lower.starts_with("/dev/mmcblk")
+        || lower.starts_with("/dev/disk/")
+        || lower.starts_with("/dev/mapper/")
+        || lower.starts_with("/dev/dm-")
+        || lower.starts_with("/dev/loop")
+        || lower == "/dev/root"
+    {
+        return true;
+    }
+
+    // Bare names sometimes passed by mistake
+    matches!(lower.as_str(), "sda" | "sdb" | "nvme0n1" | "nvme0n1p1")
+        || lower.starts_with("nvme") && !lower.contains('/')
+}
+
+/// Validate a relative lab asset path and resolve it under `lab_root`.
+///
+/// Allowed roots (after join + normalize): `lab_root/fixtures` and `lab_root/run`.
+pub fn validate_optional_path(
+    raw: &str,
+    _role: PathRole,
+    lab_root: &Path,
+) -> Result<PathBuf, SecurityError> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(SecurityError::EmptyPath);
+    }
+    if is_blocked_physical_device(raw) {
+        return Err(SecurityError::PhysicalDevice(raw.to_string()));
+    }
+    if raw.starts_with('/') || Path::new(raw).is_absolute() {
+        // Even absolute paths under lab_root are rejected to keep the policy simple
+        // and avoid accidental `/dev/...` or host home paths.
+        return Err(SecurityError::AbsoluteForbidden(raw.to_string()));
+    }
+    if raw.contains('\0') {
+        return Err(SecurityError::Suspicious(raw.to_string()));
+    }
+
+    let candidate = Path::new(raw);
+    if candidate
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err(SecurityError::ParentEscape(raw.to_string()));
+    }
+
+    let joined = lab_root.join(candidate);
+    let normalized = normalize_lexically(&joined);
+
+    let fixtures = normalize_lexically(&lab_root.join("fixtures"));
+    let run = normalize_lexically(&lab_root.join("run"));
+
+    if !(is_under(&normalized, &fixtures) || is_under(&normalized, &run)) {
+        return Err(SecurityError::OutsideLab {
+            path: normalized.display().to_string(),
+            lab_root: lab_root.display().to_string(),
+        });
+    }
+
+    Ok(normalized)
+}
+
+fn is_under(path: &Path, root: &Path) -> bool {
+    path.starts_with(root)
+}
+
+/// Lexical normalization without touching the real filesystem (no symlink resolve).
+fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lab() -> PathBuf {
+        PathBuf::from("/workspace/tests/qemu")
+    }
+
+    #[test]
+    fn blocks_sda_and_nvme() {
+        assert!(is_blocked_physical_device("/dev/sda"));
+        assert!(is_blocked_physical_device("/dev/sda1"));
+        assert!(is_blocked_physical_device("/dev/nvme0n1"));
+        assert!(is_blocked_physical_device("/dev/nvme0n1p2"));
+        assert!(is_blocked_physical_device("/dev/disk/by-id/foo"));
+    }
+
+    #[test]
+    fn allows_relative_fixture_disk() {
+        let p = validate_optional_path("fixtures/disk.qcow2", PathRole::Disk, &lab()).unwrap();
+        assert!(p.ends_with("fixtures/disk.qcow2"));
+    }
+
+    #[test]
+    fn rejects_parent_escape() {
+        let err = validate_optional_path("../etc/passwd", PathRole::Disk, &lab()).unwrap_err();
+        assert!(matches!(err, SecurityError::ParentEscape(_)));
+    }
+
+    #[test]
+    fn rejects_absolute_dev() {
+        let err = validate_optional_path("/dev/sda", PathRole::Disk, &lab()).unwrap_err();
+        // Physical check happens first for /dev/sda
+        assert!(matches!(
+            err,
+            SecurityError::PhysicalDevice(_) | SecurityError::AbsoluteForbidden(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_path_outside_fixtures_run() {
+        let err = validate_optional_path("expectations/x.img", PathRole::Disk, &lab()).unwrap_err();
+        assert!(matches!(err, SecurityError::OutsideLab { .. }));
+    }
+}

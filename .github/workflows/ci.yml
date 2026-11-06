@@ -1,7 +1,7 @@
-# Ryoku OS / Zaquion Core — continuous integration (Mission 002)
+# Ryoku OS / Zaquion Core — continuous integration (Missions 002–003)
 #
-# Scope: Rust fmt/build/test/clippy + lightweight doc path checks.
-# Out of scope: KVM, QEMU boots, kernel builds, ISO generation.
+# Scope: Rust fmt/build/test/clippy + Virtual Lab T0 + lightweight doc path checks.
+# Out of scope: requiring KVM/QEMU, OS boots, kernel builds, ISO generation.
 name: ci
 
 on:
@@ -59,6 +59,10 @@ jobs:
         run: cargo run -p ryoku-doctor
         continue-on-error: false
 
+      - name: Virtual Lab T0 (+ T1 SKIPPED without QEMU)
+        # T0 must PASS without virt. T1 SKIPPED/NOT_RUN must not fail the job.
+        run: cargo run -p ryoku-virtlab -- all
+
   docs:
     name: docs-paths
     runs-on: ubuntu-24.04
@@ -80,11 +84,15 @@ jobs:
             docs/architecture/layout.md
             docs/licensing/strategy.md
             docs/testing/qemu-strategy.md
+            docs/testing/virtual-lab.md
             docs/performance/targets.md
+            tests/qemu/README.md
+            tests/qemu/configs/t1-emulator-smoke.rvl.conf
             zaquion-core/README.md
             zaquion-core/LICENSE-MIT
             zaquion-core/LICENSE-APACHE
             zaquion-core/ryoku-doctor/README.md
+            zaquion-core/ryoku-virtlab/README.md
           )
           for path in "${required[@]}"; do
             if [[ ! -f "$path" ]]; then

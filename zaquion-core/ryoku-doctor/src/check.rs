@@ -54,7 +54,9 @@ pub fn run_all_checks<R: CommandRunner, F: FsProbe>(runner: &R, fs: &F) -> Vec<F
         check_clang(runner),
         check_llvm_config(runner),
         check_qemu(runner),
+        check_qemu_img(runner),
         check_kvm(fs),
+        check_tcg(runner, fs),
         check_make(runner),
     ]
 }
@@ -245,34 +247,16 @@ fn check_llvm_config(runner: &impl CommandRunner) -> Finding {
 }
 
 fn check_qemu(runner: &impl CommandRunner) -> Finding {
-    // Prefer the system emulator used by the documented QEMU strategy.
+    // Prefer the system emulator used by the Virtual Lab / QEMU strategy.
     let output = runner.run("qemu-system-x86_64", &["--version"]);
     if output.spawn_error.is_none() {
-        // Binary was spawnable — classify success or unexpected non-zero exit.
         return classify_version_tool(
             "qemu",
             "QEMU (qemu-system-x86_64)",
             Importance::Optional,
             "qemu-system-x86_64",
             &output,
-            "Optional until the QEMU harness mission. Missing QEMU must not fail Rust builds.",
-        );
-    }
-
-    // Fall back to qemu-img as a weaker signal that *some* QEMU userland exists.
-    let img = runner.run("qemu-img", &["--version"]);
-    if img.success() {
-        return Finding::new(
-            "qemu",
-            "QEMU (qemu-system-x86_64)",
-            Severity::Warn,
-            Importance::Optional,
-            "`qemu-system-x86_64` missing; `qemu-img` is present",
-        )
-        .with_detail(
-            "Install the system emulator package before harness work. \
-             Rust compilation does not require QEMU."
-                .to_string(),
+            "Optional for Virtual Lab T1. Missing QEMU must not fail Rust builds; T1 reports SKIPPED.",
         );
     }
 
@@ -284,9 +268,21 @@ fn check_qemu(runner: &impl CommandRunner) -> Finding {
         "QEMU not installed (or not on PATH)",
     )
     .with_detail(
-        "Optional for Mission 002. Documented in docs/testing/qemu-strategy.md. \
-         Missing QEMU is WARN/optional — it must not fail `cargo build` / `cargo test`."
+        "Virtual Lab T1 will be SKIPPED until qemu-system-x86_64 is available. \
+         The doctor does not install packages. See docs/testing/virtual-lab.md."
             .to_string(),
+    )
+}
+
+fn check_qemu_img(runner: &impl CommandRunner) -> Finding {
+    let output = runner.run("qemu-img", &["--version"]);
+    classify_version_tool(
+        "qemu-img",
+        "qemu-img",
+        Importance::Optional,
+        "qemu-img",
+        &output,
+        "Optional until disposable disk images are created for boot tests (future mission).",
     )
 }
 
@@ -295,13 +291,13 @@ fn check_kvm<F: FsProbe>(fs: &F) -> Finding {
     if !fs.exists(path) {
         return Finding::new(
             "kvm",
-            "KVM device (/dev/kvm)",
+            "KVM acceleration (/dev/kvm)",
             Severity::Warn,
             Importance::Optional,
-            "`/dev/kvm` not present",
+            "`/dev/kvm` not present — KVM acceleration unavailable",
         )
         .with_detail(
-            "Optional until VM harness work. CI runners often lack KVM; that is expected. \
+            "CI runners often lack KVM. Virtual Lab falls back to TCG when QEMU is present. \
              The doctor never changes group membership or device permissions."
                 .to_string(),
         );
@@ -312,26 +308,72 @@ fn check_kvm<F: FsProbe>(fs: &F) -> Finding {
     if readable && writable {
         return Finding::new(
             "kvm",
-            "KVM device (/dev/kvm)",
+            "KVM acceleration (/dev/kvm)",
             Severity::Ok,
             Importance::Optional,
-            "`/dev/kvm` exists and is read/write for this user",
+            "KVM acceleration available (`/dev/kvm` read/write)",
         )
         .with_detail(
-            "Hardware acceleration should be available to QEMU when QEMU is installed.".to_string(),
+            "QEMU can use `-accel kvm` when the emulator binary is installed.".to_string(),
         );
     }
 
     Finding::new(
         "kvm",
-        "KVM device (/dev/kvm)",
+        "KVM acceleration (/dev/kvm)",
         Severity::Warn,
         Importance::Optional,
-        format!("`/dev/kvm` exists but access is limited (read={readable}, write={writable})"),
+        format!(
+            "KVM unavailable to this user (`/dev/kvm` present; read={readable}, write={writable})"
+        ),
     )
     .with_detail(
-        "Do not chmod or usermod as part of Ryoku tooling missions. Record the limitation; \
-         fix host policy outside the repo when a QEMU mission requires it."
+        "Do not chmod or usermod as part of Ryoku tooling missions. Use TCG for lab smokes when QEMU exists."
+            .to_string(),
+    )
+}
+
+fn check_tcg(runner: &impl CommandRunner, fs: &impl FsProbe) -> Finding {
+    let qemu = runner.run("qemu-system-x86_64", &["--version"]);
+    let kvm_path = Path::new(KVM_PATH);
+    let kvm_usable = fs.exists(kvm_path) && fs.readable(kvm_path) && fs.writable(kvm_path);
+
+    if qemu.success() {
+        if kvm_usable {
+            return Finding::new(
+                "tcg",
+                "TCG software emulation",
+                Severity::Ok,
+                Importance::Optional,
+                "TCG available via QEMU (KVM also usable — Auto will prefer KVM)",
+            )
+            .with_detail(
+                "TCG is QEMU's pure software CPU emulator. Slower than KVM; fine for CI-like smokes."
+                    .to_string(),
+            );
+        }
+        return Finding::new(
+            "tcg",
+            "TCG software emulation",
+            Severity::Ok,
+            Importance::Optional,
+            "TCG available via QEMU (KVM not usable — Virtual Lab Auto → TCG)",
+        )
+        .with_detail(
+            "Harness T1 can still attempt emulator start with `-accel tcg` when QEMU is installed."
+                .to_string(),
+        );
+    }
+
+    Finding::new(
+        "tcg",
+        "TCG software emulation",
+        Severity::Warn,
+        Importance::Optional,
+        "TCG not available (requires qemu-system-x86_64)",
+    )
+    .with_detail(
+        "Without QEMU there is no TCG fallback. Virtual Lab T1 stays SKIPPED; Rust tests still pass."
             .to_string(),
     )
 }
@@ -384,6 +426,11 @@ mod tests {
                 "qemu-system-x86_64",
                 &["--version"],
                 CommandOutput::ok("QEMU emulator version 8.2.0\n"),
+            )
+            .with(
+                "qemu-img",
+                &["--version"],
+                CommandOutput::ok("qemu-img version 8.2.0\n"),
             )
             .with("make", &["--version"], CommandOutput::ok("GNU Make 4.3\n"))
     }
@@ -453,7 +500,11 @@ mod tests {
         let findings = run_all_checks(&healthy_runner(), &fs);
         let kvm = findings.iter().find(|f| f.id == "kvm").unwrap();
         assert_eq!(kvm.severity, Severity::Warn);
-        assert!(kvm.summary.contains("limited"));
+        assert!(
+            kvm.summary.contains("unavailable") || kvm.summary.contains("limited"),
+            "unexpected summary: {}",
+            kvm.summary
+        );
     }
 
     #[test]
@@ -480,5 +531,43 @@ mod tests {
             "hint",
         );
         assert_eq!(finding.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn tcg_ok_when_qemu_present_even_without_kvm() {
+        let fs = MockFs::new()
+            .with_file(OS_RELEASE_PATH, "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\n")
+            .with_node(KVM_PATH, true, false, false);
+        let findings = run_all_checks(&healthy_runner(), &fs);
+        let tcg = findings.iter().find(|f| f.id == "tcg").unwrap();
+        assert_eq!(tcg.severity, Severity::Ok);
+        assert!(tcg.summary.contains("TCG available"));
+    }
+
+    #[test]
+    fn tcg_warn_when_qemu_absent() {
+        let runner = healthy_runner().with(
+            "qemu-system-x86_64",
+            &["--version"],
+            CommandOutput::not_found("qemu-system-x86_64"),
+        );
+        let findings = run_all_checks(&runner, &linux_fs_with_kvm_rw());
+        let tcg = findings.iter().find(|f| f.id == "tcg").unwrap();
+        assert_eq!(tcg.severity, Severity::Warn);
+        let qemu = findings.iter().find(|f| f.id == "qemu").unwrap();
+        assert_eq!(qemu.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn qemu_img_optional_warn_when_missing() {
+        let runner = healthy_runner().with(
+            "qemu-img",
+            &["--version"],
+            CommandOutput::not_found("qemu-img"),
+        );
+        let findings = run_all_checks(&runner, &linux_fs_with_kvm_rw());
+        let img = findings.iter().find(|f| f.id == "qemu-img").unwrap();
+        assert_eq!(img.severity, Severity::Warn);
+        assert_eq!(img.importance, Importance::Optional);
     }
 }

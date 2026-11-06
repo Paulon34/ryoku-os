@@ -1,7 +1,7 @@
 # Estratégia de testes QEMU/KVM — Ryoku OS
 
-**Estado:** documentado na Missão 001 · **Execução:** não realizada nesta missão  
-**Ambiente de fundação:** `/dev/kvm` presente; binários QEMU **não** instalados (sem `qemu-system-x86_64`). Nenhuma instalação de pacote foi feita.
+**Estado:** estratégia Missão 001 · harness T0/T1 implementado na **Missão 003** (`ryoku-virtlab`)  
+**Ambiente de fundação:** `/dev/kvm` pode existir sem permissão; QEMU frequentemente **ausente**. Nenhuma instalação de pacote é feita pelo harness. Ver [virtual-lab.md](virtual-lab.md).
 
 ## Objetivos
 
@@ -26,28 +26,20 @@ Automatizar, de forma progressiva, a confiança de que o Ryoku OS:
 
 ## Fases de automação
 
-### Fase T0 — Doctor (pré-requisito)
+### Fase T0 — Doctor + validação do lab (Missões 002–003)
 
-Script futuro `scripts/ryoku-doctor.sh` (Missão 002 sugerida) deve reportar:
+- `ryoku-doctor`: `qemu-system-x86_64` / `qemu-img`, `/dev/kvm`, TCG possível?
+- `ryoku-virtlab t0`: configs, bloqueio de discos físicos, argv seguro, limites CPU/RAM/tempo
 
-- `qemu-system-x86_64` / `qemu-img` presentes?
-- `/dev/kvm` acessível?
-- Aceleração: KVM vs TCG (fallback lento, marcado como tal)
+### Fase T1 — Emulator smoke / boot smoke
 
-**Missão 001:** inspeção manual apenas — KVM device existe; QEMU packages não instalados.
+**Missão 003 (entregue):** emulator start opcional; **SKIPPED** sem QEMU; OS boot **NOT_RUN** sem imagem autorizada.
 
-### Fase T1 — Boot smoke (imagem de referência)
+**Futuro (imagem de referência autorizada):**
 
-Antes da ISO Ryoku:
-
-- Usar uma **cloud image** ou imagem mínima de referência (Debian/Ubuntu cloud) *somente* para validar o harness.
-- QEMU com:
-  - `-enable-kvm` quando disponível
-  - `-nographic` ou `-serial stdio`
-  - disco qcow2 throwaway
-  - cloud-init seed opcional para SSH efêmero
-- Critério de sucesso: string sentinel no serial (ex.: kernel panic ausente + “login” ou cloud-init “finished”) em timeout ≤ N minutos.
-- Artefatos: `serial.log`, `qemu.stdout`, metadados JSON (duração, exit code).
+- Cloud image mínima *somente* para validar o harness (sem download automático nesta fase).
+- QEMU com KVM se usável, senão TCG; `-nographic`; disco throwaway sob `tests/qemu/run/`
+- Critério de boot: sentinelas no serial; artefatos em `tests/qemu/results/` (gitignored)
 
 ### Fase T2 — Logs e regressão
 

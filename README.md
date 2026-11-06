@@ -34,21 +34,21 @@ ryoku-os/                 ← raiz deste repositório (/workspace)
 
 Decisão de layout: [docs/architecture/layout.md](docs/architecture/layout.md) · ADR: [docs/architecture/ADR-0001.md](docs/architecture/ADR-0001.md)
 
-## Estado atual (Missão 002)
+## Estado atual (Missão 003)
 
-- Fundação documental (Missão 001) + workspace Cargo em `zaquion-core/`
-- CLI `ryoku-doctor` (somente leitura) + testes + CI GitHub Actions
-- Sem kernel baixado/compilado, sem ISO, sem VMs executadas
+- Fundação + Zaquion (`ryoku-doctor`) + **Virtual Lab** (`ryoku-virtlab` T0/T1)
+- T1 **SKIPPED** sem QEMU; sem claim de boot Ryoku; sem ISO/kernel baixados
 
-### Zaquion / doctor
+### Zaquion / Virtual Lab
 
 ```bash
 cd zaquion-core
 cargo test --workspace
 cargo run -p ryoku-doctor
+cargo run -p ryoku-virtlab -- all
 ```
 
-Ver [zaquion-core/README.md](zaquion-core/README.md). Metas de performance (goals ≠ measured): [docs/performance/targets.md](docs/performance/targets.md).
+Ver [zaquion-core/README.md](zaquion-core/README.md) e [docs/testing/virtual-lab.md](docs/testing/virtual-lab.md).
 
 ## Documentação
 
