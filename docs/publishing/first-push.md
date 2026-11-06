@@ -6,7 +6,7 @@
 
 | Check | Expected |
 |-------|----------|
-| Local tip includes Missions 001–003 | History contains `412209b` then publish-prep commit |
+| Local tip includes Missions 001–003 + prep | `412209b` then `d86108c` (publish-prep); local `main` == tip |
 | GitHub repo | `https://github.com/Paulon34/ryoku-os` exists, owner `Paulon34`, **empty** |
 | Remote `github` | HTTPS **without** embedded token: `https://github.com/Paulon34/ryoku-os.git` |
 | Remote `origin` | Cursor temporary remote — **keep** (do not delete without confirming Cursor needs it) |
