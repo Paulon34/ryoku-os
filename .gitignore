@@ -1,0 +1,97 @@
+# Build artifacts
+/target/
+**/target/
+/build/
+**/build/
+/out/
+**/out/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.rlib
+*.rmeta
+
+# Rust
+**/*.rs.bk
+Cargo.lock.bak
+
+# Kernel / firmware (never commit blobs or build trees here)
+kernel/linux/
+kernel/linux-*/
+kernel/build/
+kernel/out/
+*.ko
+*.ko.xz
+vmlinux
+System.map
+.config.old
+
+# QEMU / VM artifacts
+*.qcow2
+*.qcow
+*.img
+*.iso
+*.raw
+*.vdi
+*.vmdk
+tests/qemu/run/
+tests/qemu/logs/
+tests/qemu/artifacts/
+*.nvram
+
+# Packaging
+packaging/iso/
+packaging/work/
+packaging/cache/
+*.squashfs
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment / secrets (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+credentials*
+secrets*
+
+# Logs and temporary
+*.log
+*.tmp
+*.temp
+/tmp/
+.cache/
+
+# Nix
+result
+result-*
+.direnv/
+.pre-commit-config.yaml.local
+
+# Node (if tooling appears later)
+node_modules/
+dist/
+
+# Python (tooling)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Coverage / test
+coverage/
+*.profraw
+*.profdata
+lcov.info
