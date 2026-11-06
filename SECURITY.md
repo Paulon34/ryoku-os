@@ -13,9 +13,9 @@ O projeto está em **fundação**. Ainda **não** há releases públicas de ISO,
 | Componente | Estado | Notas |
 |------------|--------|-------|
 | Documentação / estrutura do repo | Ativo | Correções via issue/PR |
-| Zaquion Core | Ainda sem código de produção | Sem SLA |
+| Zaquion Core (`ryoku-doctor`, `ryoku-virtlab`) | Código de fundação / tooling — **sem** release suportada | Sem SLA |
 | Kernel Linux | Upstream (não vendorado aqui) | Seguir processo do kernel.org / distro de referência |
-| ISO / instalador | Não existente | N/A |
+| ISO / instalador | **Não existente** | N/A |
 
 Quando houver releases, esta tabela será atualizada com versões e janelas de suporte.
 
@@ -25,8 +25,8 @@ Quando houver releases, esta tabela será atualizada com versões e janelas de s
 
 **Não** abra issue pública para falhas de segurança exploráveis.
 
-1. Prefira o canal privado do GitHub **Security Advisories** (quando o repositório público existir e estiver habilitado).
-2. Se o advisory ainda não estiver disponível, use o contato de segurança que for publicado no perfil da organização GitHub do Ryoku OS (a definir na publicação).
+1. Prefira o canal privado do GitHub **Security Advisories** em [Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os/security/advisories/new) (habilitar Advisories nas settings do repo se ainda não estiver).
+2. Se o advisory ainda não estiver disponível, abra um canal privado com o maintainer `@Paulon34` — **não** publique exploits em issues públicas.
 3. Inclua, quando possível:
    - Descrição do impacto
    - Passos de reprodução (sem exploit completo se for destrutivo; PoC mínimo)

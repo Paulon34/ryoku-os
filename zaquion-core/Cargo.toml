@@ -6,7 +6,7 @@ default-members = ["ryoku-doctor", "ryoku-virtlab"]
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/OWNER/ryoku-os"
+repository = "https://github.com/Paulon34/ryoku-os"
 rust-version = "1.75"
 
 [workspace.lints.rust]

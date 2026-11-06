@@ -82,4 +82,6 @@ Ver [docs/testing/qemu-strategy.md](docs/testing/qemu-strategy.md) e [docs/testi
 
 ## Sugestão de próxima missão
 
-**Missão 004 — Reference guest or kernel pin (choose one):** (A) authorized disposable reference image under `tests/qemu/run/` + serial expectations for real OS-boot PASS/FAIL; or (B) document LTS kernel pin + Ryoku Desktop license inventory — still no Ryoku ISO / no host package installs from the harness.
+**Após autorização de push (Missão 004 prep):** executar first-push para `Paulon34/ryoku-os` conforme `docs/publishing/first-push.md`, habilitar branch protection e confirmar CI.
+
+**Missão 005 (produto):** (A) authorized disposable reference guest + serial expectations; ou (B) pin LTS do kernel + inventário de licença do Ryoku Desktop — ainda sem ISO Ryoku / sem install automático de pacotes pelo harness.

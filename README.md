@@ -1,8 +1,10 @@
 # Ryoku OS
 
-**Ryoku OS** é um sistema operacional Linux open source com foco em **OS + UX**: um núcleo estável (Linux upstream), componentes próprios em Rust (**Zaquion Core**), e uma experiência de desktop a portar (**Ryoku Desktop**).
+**Ryoku OS** é um sistema operacional Linux open source **em desenvolvimento** (fundação), com foco em **OS + UX**: núcleo Linux upstream, componentes próprios em Rust (**Zaquion Core**), e uma experiência de desktop a portar (**Ryoku Desktop**).
 
 > English: see [README.en.md](README.en.md).
+
+**Aviso de produto:** ainda **não** há ISO funcional, instalador completo, nem imagem bootável Ryoku para uso diário. Este repositório publica a fundação (docs, Zaquion tooling, Virtual Lab). Não trate o conteúdo como distro pronta.
 
 ## Visão
 
@@ -12,8 +14,9 @@
 | **Zaquion Core** | Componentes, ferramentas e serviços de sistema em Rust (próprios) |
 | **Ryoku Desktop** | GUI existente, projeto separado — a integrar/portar depois |
 | **Compatibilidade** | Nix, Debian e Arch via integração e/ou isolamento |
-| **Distribuição** | ISO + instalador (futuro); perfis Lite, Full, Gaming, Server |
-| **Testes** | QEMU/KVM com automação progressiva |
+| **Userland base** | **Ainda não formalizado** — Debian / Arch / Nix (ou multi-perfil) fica para ADR futuro; não presumir um bootstrap único |
+| **Distribuição** | ISO + instalador (**futuro**); perfis Lite, Full, Gaming, Server |
+| **Testes** | QEMU/KVM com automação progressiva (Virtual Lab T0/T1) |
 
 ## Por que este repositório?
 
@@ -28,16 +31,17 @@ ryoku-os/                 ← raiz deste repositório (/workspace)
 ├── apps/                 # Apps de usuários (Desktop fica fora, por enquanto)
 ├── compatibility/        # Nix / Debian / Arch
 ├── packaging/            # ISO, instalador, perfis
-├── tests/                # Harness QEMU/KVM (futuro)
+├── tests/qemu/           # Virtual Lab (T0/T1 harness assets)
 └── docs/                 # Arquitetura, ADRs, licensing, testes
 ```
 
 Decisão de layout: [docs/architecture/layout.md](docs/architecture/layout.md) · ADR: [docs/architecture/ADR-0001.md](docs/architecture/ADR-0001.md)
 
-## Estado atual (Missão 003)
+## Estado atual
 
-- Fundação + Zaquion (`ryoku-doctor`) + **Virtual Lab** (`ryoku-virtlab` T0/T1)
-- T1 **SKIPPED** sem QEMU; sem claim de boot Ryoku; sem ISO/kernel baixados
+- Fundação documental + Zaquion (`ryoku-doctor`) + **Virtual Lab** (`ryoku-virtlab` T0/T1)
+- T1 **SKIPPED** sem QEMU no host típico; **sem** claim de boot Ryoku; **sem** ISO/kernel baixados neste repo
+- Repositório público previsto: [github.com/Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os)
 
 ### Zaquion / Virtual Lab
 
@@ -78,5 +82,6 @@ Este repositório está em fundação. Não use builds, ISOs ou imagens daqui co
 
 ## Comunidade
 
-- Issues e PRs via GitHub (quando o remoto público estiver publicado)
+- Issues e PRs: [Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os)
 - Templates em [`.github/`](.github/)
+- Relato de segurança: ver [SECURITY.md](SECURITY.md)

@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability / Vulnerabilidade
-    url: https://github.com/OWNER/ryoku-os/security/advisories/new
-    about: Do not file public issues for security flaws. See SECURITY.md. Replace OWNER when the public repo exists.
+    url: https://github.com/Paulon34/ryoku-os/security/advisories/new
+    about: Do not file public issues for security flaws. Prefer GitHub Security Advisories. See SECURITY.md.

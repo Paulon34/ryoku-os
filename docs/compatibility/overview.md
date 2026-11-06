@@ -22,10 +22,13 @@ Permitir que o Ryoku OS **integre** ou **isole** ecossistemas existentes sem fin
 
 ## Decisões adiadas (ADR futuro)
 
+**A escolha da base Linux / userland default ainda NÃO está formalizada.**  
+Não presumir Debian, Arch ou NixOS como “a” distro base do Ryoku OS até um ADR dedicado.
+
 - Qual bootstrap é o default da ISO (Debian, Arch, NixOS-based, ou multi-profile).
 - Como Desktop consome toolkits de cada ecossistema.
 - Política exacta de “Nix on Debian host” vs “Debian in Nix”.
 
-## Missão 001
+## Estado
 
-Apenas estrutura e intenções. Nenhum pacote gerado.
+Estrutura e intenções apenas. Nenhum pacote gerado; nenhuma ISO.

@@ -86,6 +86,8 @@ jobs:
             docs/testing/qemu-strategy.md
             docs/testing/virtual-lab.md
             docs/performance/targets.md
+            docs/publishing/first-push.md
+            docs/compatibility/overview.md
             tests/qemu/README.md
             tests/qemu/configs/t1-emulator-smoke.rvl.conf
             zaquion-core/README.md
