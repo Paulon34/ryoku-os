@@ -20,8 +20,17 @@ Harness binary: `zaquion-core` crate **`ryoku-virtlab`**.
 cd zaquion-core
 cargo test -p ryoku-virtlab
 cargo run -p ryoku-virtlab -- t0
+cargo run -p ryoku-virtlab -- first-boot
 cargo run -p ryoku-virtlab -- all
 ```
+
+Reference Alpine fetch (default **dry-run**, no download):
+
+```bash
+tests/qemu/scripts/fetch-reference-image.sh
+```
+
+See [docs/testing/reference-linux.md](../../docs/testing/reference-linux.md). **Reference Linux ≠ Ryoku OS.**
 
 ## Outcomes
 

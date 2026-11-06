@@ -1,0 +1,25 @@
+# Ryoku Virtual Lab — reference guest manifest (Mission 005)
+# This is NOT a Ryoku OS image. Booting it only proves the harness can
+# observe a third-party Linux guest. Ryoku ISO does not exist yet.
+#
+# Download is intentionally NOT performed by default. See:
+#   docs/testing/reference-linux.md
+#   tests/qemu/scripts/fetch-reference-image.sh
+
+name = alpine-virt
+distro = Alpine Linux
+channel = v3.21
+version = 3.21.9
+arch = x86_64
+filename = alpine-virt-3.21.9-x86_64.iso
+kind = iso
+# Official CDN (Alpine project)
+url = https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.9-x86_64.iso
+sha256_url = https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.9-x86_64.iso.sha256
+# Published beside the ISO by Alpine (fetched for documentation in Mission 005):
+sha256 = 1ceafa2ca068faf2925de977815681c182708f3c6cbfbad137f3ffc9324a03b4
+# License note: Alpine packages are predominantly GPL/MIT/BSD; the ISO is
+# redistributable under Alpine's terms. This is a third-party image, not Ryoku.
+license_note = Third-party Alpine Linux virt ISO — not Ryoku OS; not a chosen Ryoku userland base
+local_relpath = run/alpine-virt-3.21.9-x86_64.iso
+boot_sentinel = login:

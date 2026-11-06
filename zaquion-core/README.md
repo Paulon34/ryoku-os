@@ -39,9 +39,10 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p ryoku-doctor
 cargo run -p ryoku-virtlab -- all
+cargo run -p ryoku-virtlab -- first-boot
 ```
 
-Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1 **SKIPPED**; that is expected and must not fail `cargo test`.
+Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1/first-boot **SKIPPED/NOT_RUN**; that is expected and must not fail `cargo test`. Reference Alpine boot (when authorized) is **not** a Ryoku OS boot.
 
 ## Crates
 

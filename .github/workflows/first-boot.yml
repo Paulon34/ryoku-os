@@ -1,0 +1,36 @@
+# Mission 005 — First Boot Lab (GATED / DISABLED by default)
+#
+# This workflow does NOT download ISOs or install QEMU until explicitly enabled
+# after review. Keep `if: false` until Paulo authorizes runner downloads/installs.
+name: first-boot
+
+on:
+  workflow_dispatch:
+  # Intentionally NOT on push/pull_request until authorized.
+
+permissions:
+  contents: read
+
+jobs:
+  reference-linux-smoke:
+    name: reference-linux-smoke-gated
+    # Hard gate: job never runs until this condition is flipped in a reviewed change.
+    if: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: zaquion-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Placeholder — not authorized
+        run: |
+          echo "This job is gated (if: false)."
+          echo "When enabled after review, steps would:"
+          echo "  1) install qemu-system-x86 (authorized)"
+          echo "  2) RYOKU_FETCH_EXECUTE=1 fetch Alpine reference ISO"
+          echo "  3) cargo run -p ryoku-virtlab -- first-boot"
+          echo "Resource caps: timeout-minutes=25; prefer TCG if no KVM."
+          exit 1

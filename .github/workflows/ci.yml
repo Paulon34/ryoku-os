@@ -59,8 +59,8 @@ jobs:
         run: cargo run -p ryoku-doctor
         continue-on-error: false
 
-      - name: Virtual Lab T0 (+ T1 SKIPPED without QEMU)
-        # T0 must PASS without virt. T1 SKIPPED/NOT_RUN must not fail the job.
+      - name: Virtual Lab T0/T1/first-boot (no QEMU required)
+        # T0 must PASS without virt. T1/first-boot SKIPPED/NOT_RUN must not fail the job.
         run: cargo run -p ryoku-virtlab -- all
 
   docs:
@@ -85,11 +85,15 @@ jobs:
             docs/licensing/strategy.md
             docs/testing/qemu-strategy.md
             docs/testing/virtual-lab.md
+            docs/testing/reference-linux.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
             tests/qemu/README.md
             tests/qemu/configs/t1-emulator-smoke.rvl.conf
+            tests/qemu/configs/t2-reference-alpine.rvl.conf
+            tests/qemu/fixtures/reference-image.manifest
+            tests/qemu/scripts/fetch-reference-image.sh
             zaquion-core/README.md
             zaquion-core/LICENSE-MIT
             zaquion-core/LICENSE-APACHE
