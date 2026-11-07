@@ -37,8 +37,8 @@ if [[ -f "$SCRIPT_DIR/SHA256SUMS.txt" \
   INITRD="$SCRIPT_DIR/ryoku-minimal.cpio.gz"
   SUMS="$SCRIPT_DIR/SHA256SUMS.txt"
   CONF="$SCRIPT_DIR/console-interactive.rvl.conf"
-elif [[ -d "$SCRIPT_DIR/../../run" ]]; then
-  # Repo tree: tests/qemu/scripts → tests/qemu
+elif [[ -d "$SCRIPT_DIR/../run" ]]; then
+  # Repo tree: tests/qemu/scripts → tests/qemu/run
   MODE="repo"
   local_qemu="$(cd "$SCRIPT_DIR/.." && pwd)"
   PKG="$local_qemu/run"
