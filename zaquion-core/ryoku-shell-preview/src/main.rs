@@ -188,7 +188,7 @@ fn apply_discrete(
                         true
                     }
                     KEY_ENTER | KEY_SPACE => {
-                        ui.activate_selected();
+                        ui.activate_selected(layout);
                         true
                     }
                     _ => false,
@@ -208,7 +208,7 @@ fn apply_discrete(
                         true
                     }
                     KEY_ENTER | KEY_SPACE => {
-                        ui.activate_selected();
+                        ui.activate_selected(layout);
                         true
                     }
                     _ => false,
@@ -397,6 +397,11 @@ fn event_loop(
                 }
                 if motion.rel_dx != 0 || motion.rel_dy != 0 {
                     ui.move_by(layout, motion.rel_dx, motion.rel_dy);
+                }
+                if ui.left_down && ui.drag.is_some() {
+                    ui.on_drag_motion(ui.cursor_x, ui.cursor_y);
+                    visual = true;
+                    full_dirty = true; // WM dirty regions → full for honesty under TCG
                 }
                 if (ui.cursor_x, ui.cursor_y) != old {
                     visual = true;
