@@ -48,16 +48,14 @@ Documento vivo. Atualizar a cada missão concluída. Idiomas: seções principai
 
 Ver [docs/testing/reference-linux.md](docs/testing/reference-linux.md), [virtual-lab.md](docs/testing/virtual-lab.md).
 
-## Fase 2.5 — Boot Seed / T3 (Missão 008) ✅ scaffold; guest T3 **não** executado
+## Fase 2.5 — Boot Seed / T3 (Missões 008–009)
 
-- [x] ADR-0002: kernel lab temporário + initramfs próprio (sem base definitiva)
-- [x] Crate `ryoku-init` (PID 1 prototype, marker `RYOKU_BOOT_SEED_READY`)
-- [x] Script initramfs dry-run + config `t3-boot-seed.rvl.conf` (separado do Alpine T2)
-- [x] Harness `boot-seed` / T3 (NOT_RUN sem kernel/initrd; fora de `all`)
-- [ ] Autorização separada + execução real T3 com evidência serial do guest
+- [x] ADR-0002 + `ryoku-init` + initramfs + `t3-boot-seed` (Missão 008; merge `4b9305b`)
+- [x] Missão 009 prep: kernel extract plan, musl/hash prep scripts, `boot-seed-t3.yml` (manual), `RYOKU_T3_EXECUTE` guard
+- [ ] Autorização humana + **dispatch** real T3 com evidência serial do guest
 - [ ] Boot de produto Ryoku OS (ainda **não** — seed ≠ produto)
 
-Ver [docs/testing/boot-seed.md](docs/testing/boot-seed.md).
+Ver [docs/testing/boot-seed.md](docs/testing/boot-seed.md), [boot-seed-t3.md](docs/testing/boot-seed-t3.md).
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

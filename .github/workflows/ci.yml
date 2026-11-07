@@ -93,6 +93,7 @@ jobs:
             docs/testing/virtual-lab.md
             docs/testing/reference-linux.md
             docs/testing/boot-seed.md
+            docs/testing/boot-seed-t3.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
@@ -106,6 +107,10 @@ jobs:
             tests/qemu/scripts/fetch-reference-image-lib.sh
             tests/qemu/scripts/test-fetch-policy.sh
             tests/qemu/scripts/build-boot-seed-initramfs.sh
+            tests/qemu/scripts/extract-boot-seed-kernel.sh
+            tests/qemu/scripts/prep-boot-seed-artifacts.sh
+            tests/qemu/scripts/test-boot-seed-prep-policy.sh
+            .github/workflows/boot-seed-t3.yml
             zaquion-core/README.md
 
             zaquion-core/LICENSE-MIT

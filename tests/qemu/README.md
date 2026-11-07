@@ -25,8 +25,12 @@ cargo test -p ryoku-virtlab
 cargo run -p ryoku-virtlab -- t0
 cargo run -p ryoku-virtlab -- first-boot
 cargo run -p ryoku-virtlab -- all          # T0+T1+T2 only
-# boot-seed/T3 is opt-in after kernel+initrd + separate authorization:
-# cargo run -p ryoku-virtlab -- boot-seed
+# boot-seed/T3 is opt-in after kernel+initrd + RYOKU_T3_EXECUTE=1 + authorization:
+# RYOKU_T3_EXECUTE=1 cargo run -p ryoku-virtlab -- boot-seed
+# Prep dry-runs (no download / no T3):
+# tests/qemu/scripts/extract-boot-seed-kernel.sh
+# tests/qemu/scripts/prep-boot-seed-artifacts.sh
+# tests/qemu/scripts/test-boot-seed-prep-policy.sh
 ```
 
 Reference Alpine fetch (default **dry-run**, no download):

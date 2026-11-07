@@ -1,23 +1,33 @@
-# Ryoku Boot Seed — kernel provenance notes (Mission 008)
-# No kernel blob is downloaded or committed by this mission.
+# Ryoku Boot Seed — kernel provenance (Missions 008–009)
+# No kernel blob is downloaded or committed by Mission 009 (prep only).
 
 name = boot-seed-kernel
 status = documented_not_fetched
+mission = 009
 arch = x86_64
 
-# Preferred lab reuse (temporary): kernel inside verified Alpine virt ISO channel.
-# Completing Mission 007.1 proved ISO integrity for alpine-virt-3.21.9.
+# Preferred lab reuse (temporary): kernel inside verified Alpine virt ISO (T2 channel).
+# Mission 007.1 proved ISO integrity for alpine-virt-3.21.9 under QEMU TCG.
+# Alpine ≠ Ryoku userland base (ADR-0002).
 reference_iso_name = alpine-virt-3.21.9-x86_64.iso
 reference_iso_sha256 = 1ceafa2ca068faf2925de977815681c182708f3c6cbfbad137f3ffc9324a03b4
 reference_iso_url = https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.9-x86_64.iso
-# Typical path inside the ISO (confirm when extracting under authorization):
+reference_iso_sha256_url = https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.9-x86_64.iso.sha256
+reference_iso_signature_url = https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.9-x86_64.iso.asc
+gpg_key_url = https://alpinelinux.org/keys/ncopa.asc
+gpg_fingerprint = 0482D84022F52DF1C4E7CD43293ACD0907D9495A
+
+# Path inside the ISO9660 image (Rock Ridge / Joliet). Confirm on authorized extract.
 reference_kernel_member = boot/vmlinuz-virt
+# Optional (NOT used as Ryoku initramfs — replaced by ryoku-boot-seed.cpio.gz):
+reference_initramfs_member = boot/initramfs-virt
+
 license_note = Linux kernel GPLv2; Alpine packaging third-party — NOT Ryoku userland base
 
-# Alternative: pin an official upstream kernel artifact before any T3 fetch.
-# upstream_example = https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.xz
-# upstream_sha256 = (fill when pinned)
+# Safe extraction (no host disk mounts, no sudo): see
+#   tests/qemu/scripts/extract-boot-seed-kernel.sh
+# Tools (on disposable runner only): isoinfo (genisoimage) and/or xorriso -osirrox.
 
 local_kernel_relpath = run/ryoku-boot-seed-vmlinuz
 local_initrd_relpath = run/ryoku-boot-seed.cpio.gz
-boot_markers = RYOKU_BOOT_SEED_READY
+boot_markers = ryoku-init: pid=1|RYOKU_BOOT_SEED_READY

@@ -1,0 +1,150 @@
+# Mission 009 — Boot Seed T3 (first-party ryoku-init) — MANUAL ONLY
+#
+# workflow_dispatch with confirm=RUN. Does NOT run on push/pull_request.
+# Do NOT dispatch from Mission 009 prep — separate human authorization required.
+#
+# Disposable ubuntu-24.04 only: apt QEMU + musl tools + ISO fetch/extract.
+# Never on Cursor host / personal servers. Guest network off. TCG. No physical disks.
+#
+# Honesty: PASS of t3.boot_seed ≠ Ryoku OS product boot.
+name: boot-seed-t3
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type RUN to install packages, fetch Alpine ISO, extract vmlinuz-virt, build musl ryoku-init, and run T3 Boot Seed on this disposable runner"
+        required: true
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  boot-seed-t3:
+    name: boot-seed-t3
+    if: github.event.inputs.confirm == 'RUN'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CARGO_TERM_COLOR: always
+      RYOKU_FETCH_EXECUTE: "1"
+      RYOKU_VERIFY_GPG: "1"
+      RYOKU_KERNEL_EXTRACT_EXECUTE: "1"
+      RYOKU_BOOT_SEED_PREP_EXECUTE: "1"
+      RYOKU_INITRAMFS_EXECUTE: "1"
+      # Explicit guest T3 authorization for the virtlab harness guard.
+      RYOKU_T3_EXECUTE: "1"
+      SOURCE_DATE_EPOCH: "1700000000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install QEMU + extract/pack tools (Ubuntu packages only)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            qemu-system-x86 \
+            qemu-utils \
+            gnupg \
+            ca-certificates \
+            curl \
+            gzip \
+            genisoimage \
+            xorriso \
+            musl-tools \
+            build-essential
+          qemu-system-x86_64 --version
+          isoinfo -version || true
+          xorriso -version || true
+
+      - name: Install Rust toolchain (+ musl target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.83.0"
+          targets: x86_64-unknown-linux-musl
+          components: rustfmt, clippy
+
+      - name: Rust fmt / check / test / clippy (preserve T0–T2 suite)
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace
+          cargo test --workspace
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Fetch + verify Alpine virt 3.21.9 (official CDN only)
+        run: |
+          set -euo pipefail
+          mkdir -p tests/qemu/results
+          tests/qemu/scripts/fetch-reference-image.sh
+          sha256sum tests/qemu/run/alpine-virt-3.21.9-x86_64.iso | tee tests/qemu/results/iso-sha256.txt
+
+      - name: Extract boot/vmlinuz-virt (no host disk mounts)
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/extract-boot-seed-kernel.sh
+          test -f tests/qemu/run/ryoku-boot-seed-vmlinuz
+
+      - name: Build musl ryoku-init + pack initramfs + record hashes
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/prep-boot-seed-artifacts.sh
+          test -f tests/qemu/run/ryoku-boot-seed.cpio.gz
+          test -f tests/qemu/results/boot-seed-artifact-hashes.txt
+          cat tests/qemu/results/boot-seed-artifact-hashes.txt
+
+      - name: Record lab paths (assets present check)
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          cargo run -q -p ryoku-virtlab -- print-lab-paths | tee ../tests/qemu/results/boot-seed-lab-paths.txt
+          test -f ../tests/qemu/run/ryoku-boot-seed-vmlinuz
+          test -f ../tests/qemu/run/ryoku-boot-seed.cpio.gz
+
+      - name: Run Virtual Lab T0 then Boot Seed T3 (TCG, RYOKU_T3_EXECUTE=1)
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          mkdir -p ../tests/qemu/results
+          cargo run -p ryoku-virtlab -- t0
+          cargo run -p ryoku-virtlab -- boot-seed | tee ../tests/qemu/results/boot-seed-ci-console.txt
+          if ! grep -q '"verdict": "PASS"' ../tests/qemu/results/boot-seed-evidence.json; then
+            echo "Boot Seed T3 did not PASS — see serial / evidence"
+            ls -la ../tests/qemu/results/ || true
+            cat ../tests/qemu/results/boot-seed-evidence.json 2>/dev/null || true
+            tail -n 120 ../tests/qemu/results/serial-t3-boot-seed.log 2>/dev/null || true
+            exit 1
+          fi
+          # Honesty: product boot must remain NOT_RUN
+          if grep -E 't3\.ryoku_os_product_boot' ../tests/qemu/results/boot-seed-*.txt ../tests/qemu/results/boot-seed-ci-console.txt \
+            | grep -q 'PASS'; then
+            echo "Honesty violation: Ryoku OS product boot must not PASS"
+            exit 1
+          fi
+          # Serial-only markers
+          if ! grep -q 'ryoku-init: pid=1' ../tests/qemu/results/serial-t3-boot-seed.log; then
+            echo "missing ryoku-init: pid=1 on guest serial"
+            exit 1
+          fi
+          if ! grep -q 'RYOKU_BOOT_SEED_READY' ../tests/qemu/results/serial-t3-boot-seed.log; then
+            echo "missing RYOKU_BOOT_SEED_READY on guest serial"
+            exit 1
+          fi
+
+      - name: Upload Boot Seed T3 artifacts (logs/hashes only; no ISO/kernel blobs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-seed-t3-logs
+          path: |
+            tests/qemu/results/
+            tests/qemu/run/*.sha256
+            tests/qemu/run/*.asc
+          if-no-files-found: warn
+          retention-days: 14
