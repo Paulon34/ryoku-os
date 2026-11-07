@@ -3,6 +3,10 @@
 version = 3
 
 [[package]]
+name = "ryoku-console"
+version = "0.1.0"
+
+[[package]]
 name = "ryoku-doctor"
 version = "0.1.0"
 

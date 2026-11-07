@@ -69,6 +69,13 @@ guest spawn. Real T3 still needs **separate authorization**.
 
 **Never** claim Ryoku OS product boot from the seed alone.
 
+### Interactive console prep (Mission 011)
+
+Profile `configs/console-interactive.rvl.conf` sets `serial_log=stdio` (and
+`shutdown=none`) for a future operator-facing serial session. It does **not**
+replace T3 file-serial evidence and is **not** executed in Mission 011.
+Crate `ryoku-console` is separate from `ryoku-init` PID 1. See [console.md](console.md).
+
 ## Current environment limits (foundation host)
 
 Recorded by `ryoku-doctor` / Mission 002–003:

@@ -99,6 +99,7 @@ jobs:
             docs/testing/reference-linux.md
             docs/testing/boot-seed.md
             docs/testing/boot-seed-t3.md
+            docs/testing/console.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
@@ -106,6 +107,7 @@ jobs:
             tests/qemu/configs/t1-emulator-smoke.rvl.conf
             tests/qemu/configs/t2-reference-alpine.rvl.conf
             tests/qemu/configs/t3-boot-seed.rvl.conf
+            tests/qemu/configs/console-interactive.rvl.conf
             tests/qemu/fixtures/reference-image.manifest
             tests/qemu/fixtures/boot-seed-kernel.manifest
             tests/qemu/scripts/fetch-reference-image.sh
@@ -115,6 +117,7 @@ jobs:
             tests/qemu/scripts/extract-boot-seed-kernel.sh
             tests/qemu/scripts/prep-boot-seed-artifacts.sh
             tests/qemu/scripts/test-boot-seed-prep-policy.sh
+            tests/qemu/scripts/prep-console-interactive.sh
             .github/workflows/boot-seed-t3.yml
             zaquion-core/README.md
 
@@ -123,6 +126,7 @@ jobs:
             zaquion-core/ryoku-doctor/README.md
             zaquion-core/ryoku-virtlab/README.md
             zaquion-core/ryoku-init/README.md
+            zaquion-core/ryoku-console/README.md
           )
           for path in "${required[@]}"; do
             if [[ ! -f "$path" ]]; then

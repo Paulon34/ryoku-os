@@ -14,7 +14,8 @@ zaquion-core/
 ├── README.md
 ├── ryoku-doctor/           # read-only host diagnostics CLI
 ├── ryoku-virtlab/          # Virtual Lab harness T0/T1/T2/T3
-└── ryoku-init/             # Boot Seed PID 1 prototype (Mission 008)
+├── ryoku-init/             # Boot Seed PID 1 prototype (Mission 008)
+└── ryoku-console/          # Interactive console prototype (Mission 011; ≠ PID 1)
 ```
 
 ## License
@@ -44,9 +45,11 @@ cargo run -p ryoku-virtlab -- first-boot
 # boot-seed/T3 is opt-in (separate authorization; not part of `all`):
 # cargo run -p ryoku-virtlab -- boot-seed
 cargo test -p ryoku-init
+cargo test -p ryoku-console
+cargo run -q -p ryoku-console   # host REPL; not a guest boot
 ```
 
-Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1/first-boot/boot-seed **SKIPPED/NOT_RUN**; that is expected and must not fail `cargo test`. Reference Alpine boot is **not** a Ryoku OS boot. Boot seed marker PASS is **not** a finished Ryoku OS product boot.
+Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1/first-boot/boot-seed **SKIPPED/NOT_RUN**; that is expected and must not fail `cargo test`. Reference Alpine boot is **not** a Ryoku OS boot. Boot seed marker PASS is **not** a finished Ryoku OS product boot. Console builtins are **not** a product login shell.
 
 ## Crates
 
@@ -55,5 +58,6 @@ Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1
 | `ryoku-doctor` | bin (+ lib) | Host diagnostics (Mission 002+) |
 | `ryoku-virtlab` | bin (+ lib) | Virtual Lab T0–T3 harness |
 | `ryoku-init` | bin (+ lib) | Boot Seed PID 1 prototype (Mission 008) |
+| `ryoku-console` | bin (+ lib) | Interactive console prototype (Mission 011; separate from PID 1) |
 
 No privileged system services and no kernel code live here yet.
