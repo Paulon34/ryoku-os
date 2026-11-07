@@ -1,4 +1,4 @@
-# Mission 016 — Ryoku Adaptive Desktop package (extends 015.2.1 shell+launcher).
+# Mission 016 / 016.1 — Ryoku Adaptive Desktop (+ Performance) package.
 #
 # Builds musl init+console+shell-preview, packs ryoku-shell.cpio.gz
 # (+ DRM + evdev/virtio_input modules). Does NOT run QEMU.
@@ -14,6 +14,7 @@ on:
   pull_request:
     branches:
       - main
+      - "cursor/ryoku-adaptive-016*"
       - "cursor/ryoku-launcher-0152*"
       - "cursor/ryoku-shell-input-0151*"
       - "cursor/ryoku-shell-015*"
@@ -105,6 +106,8 @@ jobs:
           echo "GUEST_NOT_RUN=1" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "LAUNCHER_GUEST=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "ADAPTIVE_PROFILE=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
+          echo "ADAPTIVE_PERF=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
+          echo "PERFORMANCE_BENCHMARK=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "INPUT_FACT=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "MOUSE_INTERACTION=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "KEYBOARD_INTERACTION=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
@@ -142,11 +145,13 @@ jobs:
           mkdir -p "$PKG/bin-musl"
           cp -a tests/qemu/run/ryoku-boot-seed-vmlinuz "$PKG/"
           cp -a tests/qemu/run/ryoku-shell.cpio.gz "$PKG/"
+          cp -a tests/qemu/README-ADAPTIVE-PERF.md "$PKG/"
           cp -a tests/qemu/README-ADAPTIVE.md "$PKG/"
           cp -a tests/qemu/scripts/run-ryoku-shell-qemu.sh "$PKG/"
           cp -a tests/qemu/configs/console-shell.rvl.conf "$PKG/"
           cp -a tests/qemu/fixtures/virt-drm-modules.manifest "$PKG/"
           cp -a tests/qemu/run/virt-drm-modules/PROVENANCE.txt "$PKG/DRM-MODULES-PROVENANCE.txt"
+          cp -a docs/testing/ryoku-adaptive-0161.md "$PKG/"
           cp -a docs/testing/ryoku-adaptive-016.md "$PKG/"
           cp -a docs/testing/ryoku-shell-launcher-0152-1.md "$PKG/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
@@ -163,10 +168,10 @@ jobs:
           grep -q 'mode:     standalone' tests/qemu/results/ryoku-shell-staged-zip-plan.txt
           grep -q 'LAUNCHER_GUEST=NOT_RUN' tests/qemu/results/ryoku-shell-staged-zip-plan.txt
 
-      - name: Upload Ryoku adaptive VM artifacts
+      - name: Upload Ryoku adaptive-perf VM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ryoku-adaptive-vm-${{ github.sha }}
+          name: ryoku-adaptive-perf-vm-${{ github.sha }}
           path: tests/qemu/results/ryoku-shell-vm-package/
           if-no-files-found: error
           retention-days: 30

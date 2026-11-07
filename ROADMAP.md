@@ -125,7 +125,13 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Troca de perfil na sessão (F1/F2/F3); Ultra → fallback Balanced; métricas compose/blit/mem
 - [x] Sem fingir blur/transparência/3D/compositor/Wayland completo; sem redraw contínuo; sem clear visível
 - [x] Manual tip `572f77d` (≠ CI): **`ADAPTIVE_PROFILE_SWITCH=PASS_MANUAL`**, **`KEYBOARD_ARROWS_TAB=PASS_MANUAL`**, **`LITE_USABILITY=POSITIVE_MANUAL_FEEDBACK`**, **`BALANCED_USABILITY=POSITIVE_MANUAL_FEEDBACK`**, **`ULTRA_PERCEIVED_SLOWDOWN=REPORTED_UNMEASURED`**, **`PERFORMANCE_BENCHMARK=NOT_RUN`**
-- [ ] Mission **016.1** — Adaptive Performance (instrumentação; TCG ≠ hardware; guest até manual)
+
+## Fase 2.14 — Adaptive Performance (Missão 016.1)
+
+- [x] Instrumentação compose/present; selected vs effective; band compose; overlay off-by-default — code
+- [x] Lite vs Balanced compare helpers (samples only); Ultra=Balanced paint investigation; TCG ≠ hardware docs
+- [ ] Guest results **`GUEST_NOT_RUN`** until manual
+- [ ] **`PERFORMANCE_BENCHMARK`** remains **`NOT_RUN`** until measured harness
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

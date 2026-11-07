@@ -109,6 +109,7 @@ jobs:
             docs/testing/ryoku-shell-launcher.md
             docs/testing/ryoku-shell-launcher-0152-1.md
             docs/testing/ryoku-adaptive-016.md
+            docs/testing/ryoku-adaptive-0161.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
@@ -147,6 +148,7 @@ jobs:
             tests/qemu/README-SHELL-INPUT.md
             tests/qemu/README-SHELL-LAUNCHER.md
             tests/qemu/README-ADAPTIVE.md
+            tests/qemu/README-ADAPTIVE-PERF.md
             tests/qemu/configs/console-shell.rvl.conf
             zaquion-core/ryoku-shell-preview/README.md
             tests/qemu/README-VM.md

@@ -1,18 +1,24 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.2 / **016**).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.2 / **016** / **016.1**).
 //!
 //! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
 //! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
 //! (`ryoku-graphics-demo`).
 //!
 //! Mission **016** adds Adaptive Desktop Foundation profiles (Lite / Balanced /
-//! Ultra). Ultra is architecture-only (paint falls back to Balanced). This crate
-//! **never** invents `PASS_MANUAL` from host unit tests or CI.
+//! Ultra). Ultra is architecture-only (paint falls back to Balanced).
+//! Mission **016.1** adds Adaptive Performance instrumentation (compose/present
+//! metrics; optional overlay off-by-default). QEMU TCG ≠ hardware. This crate
+//! **never** invents `PASS_MANUAL` or guest timings from host unit tests or CI.
 
 #![forbid(unsafe_code)]
 
 mod adaptive;
+mod perf;
 
 pub use adaptive::{AdaptiveProfile, ProfileTheme, RenderPolicy};
+pub use perf::{
+    ultra_slowdown_investigation, FrameAccumulator, FrameSample, PerfOverlayPolicy, ProfileCompare,
+};
 
 use ryoku_graphics_demo::{blit_rgb_to_fb, blit_rgb_to_fb_rows, FbGeometry, RgbBuffer};
 
@@ -746,6 +752,164 @@ pub fn compose_shell_interactive(
     }
 }
 
+/// Compose only rows `[y0, y1)` into an existing scratch buffer.
+///
+/// Used for cursor-band dirty updates to avoid full-frame gradient work
+/// (Mission 016.1). Caller must have a prior full compose when chrome changes.
+pub fn compose_shell_band(
+    buf: &mut RgbBuffer,
+    layout: &ShellLayout,
+    ui: &InteractiveState,
+    y0: u32,
+    y1: u32,
+) {
+    let y0 = y0.min(buf.height);
+    let y1 = y1.min(buf.height).max(y0);
+    if y1 <= y0 {
+        return;
+    }
+    let profile = ui.profile;
+    let theme = profile.theme();
+    let band_h = (y1 - y0) as i32;
+
+    if profile.use_gradient_wallpaper() {
+        for y in y0..y1 {
+            let t = y * 255 / buf.height.max(1);
+            let r = theme.navy.0 as u32
+                + (theme.navy_deep.0 as u32).saturating_sub(theme.navy.0 as u32) * t / 255;
+            let g = theme.navy.1 as u32 * (255 - t) / 255 + theme.navy_deep.1 as u32 * t / 255;
+            let b = theme.navy.2 as u32 * (255 - t) / 255 + theme.teal_dim.2 as u32 * t / 400;
+            fill_rect(
+                buf,
+                0,
+                y as i32,
+                buf.width as i32,
+                1,
+                (r as u8, g as u8, b.min(255) as u8),
+            );
+        }
+    } else {
+        fill_rect(buf, 0, y0 as i32, layout.width as i32, band_h, theme.navy);
+    }
+
+    // Panel strip if band intersects.
+    if y0 < layout.panel_h {
+        let py1 = y1.min(layout.panel_h);
+        fill_rect(
+            buf,
+            0,
+            y0 as i32,
+            layout.width as i32,
+            (py1 - y0) as i32,
+            theme.panel,
+        );
+        if y0 < 2 || py1 >= layout.panel_h.saturating_sub(2) {
+            fill_rect(
+                buf,
+                0,
+                layout.panel_h as i32 - 2,
+                layout.width as i32,
+                2,
+                theme.teal_dim,
+            );
+        }
+        if y0 < layout.panel_h {
+            let text_scale = if layout.width >= 800 { 2 } else { 1 };
+            draw_text(buf, 12, 8, "RYOKU", text_scale, theme.teal);
+            let title = if matches!(profile, AdaptiveProfile::Ultra) {
+                "ULTRA ARCH"
+            } else {
+                "SHELL PREVIEW"
+            };
+            draw_text(
+                buf,
+                12 + 6 * 5 * text_scale + 8,
+                8,
+                title,
+                text_scale,
+                theme.text,
+            );
+            draw_text(
+                buf,
+                12 + 6 * 18 * text_scale + 16,
+                8,
+                profile.panel_tag(),
+                1,
+                theme.muted,
+            );
+            let status = ui.input_fact.panel_label();
+            let status_scale = if layout.width >= 900 { text_scale } else { 1 };
+            let status_w = status.len() as i32 * 6 * status_scale;
+            draw_text(
+                buf,
+                layout.width as i32 - status_w - 12,
+                8,
+                status,
+                status_scale,
+                theme.muted,
+            );
+        }
+    }
+
+    // Ultra honesty strip.
+    if matches!(profile, AdaptiveProfile::Ultra) && !ui.launcher_open {
+        let sy = layout.desktop_y as i32 + 8;
+        if sy >= y0 as i32 && sy < y1 as i32 {
+            draw_text(
+                buf,
+                16,
+                sy,
+                "ULTRA = ARCH ONLY - FALLBACK BALANCED - NO BLUR/3D/WAYLAND",
+                1,
+                theme.muted,
+            );
+        }
+    }
+
+    // Dock if band intersects dock vertical span.
+    let dock_y0 = layout.dock_y;
+    let dock_y1 = layout.dock_y + layout.dock_h;
+    if y1 > dock_y0 && y0 < dock_y1 {
+        fill_rounded(
+            buf,
+            layout.dock_x as i32,
+            layout.dock_y as i32,
+            layout.dock_w as i32,
+            layout.dock_h as i32,
+            12,
+            theme.dock,
+        );
+        for i in 0..DOCK_SLOTS {
+            let Some((ix, iy, icon, _)) = layout.dock_icon_rect(i) else {
+                continue;
+            };
+            let hovered = ui.hover_dock == Some(i);
+            let selected = ui.selected_dock == Some(i);
+            if hovered || selected {
+                fill_rounded(
+                    buf,
+                    ix - 3,
+                    iy - 3,
+                    icon + 6,
+                    icon + 6,
+                    8,
+                    if selected { theme.teal } else { theme.teal_dim },
+                );
+            }
+            let accent = if i == 0 { theme.teal } else { theme.teal_dim };
+            draw_icon_themed(buf, ix, iy, icon, accent, theme.panel);
+        }
+    }
+
+    draw_cursor(buf, ui.cursor_x, ui.cursor_y);
+}
+
+/// Draw optional perf overlay text (Mission 016.1; off-by-default policy).
+pub fn draw_perf_overlay(buf: &mut RgbBuffer, layout: &ShellLayout, line: &str) {
+    let y = (layout.panel_h as i32).saturating_sub(12).max(2);
+    draw_text(buf, 12, y, line, 1, COLOR_MUTED);
+}
+
 fn draw_icon_themed(
     buf: &mut RgbBuffer,
     x: i32,
@@ -951,6 +1115,23 @@ mod tests {
         ui.move_by(&l, 10_000, 10_000);
         assert!(ui.cursor_x < 320);
         assert!(ui.cursor_y < 240);
+    }
+
+    #[test]
+    fn compose_band_updates_cursor_rows_only() {
+        let layout = ShellLayout::for_fb(320, 240).unwrap();
+        let mut ui = InteractiveState::new(&layout);
+        ui.set_profile(AdaptiveProfile::Balanced);
+        ui.cursor_x = 40;
+        ui.cursor_y = 120;
+        let mut buf = RgbBuffer::new(layout.width, layout.height, COLOR_NAVY);
+        compose_shell_interactive(&mut buf, &layout, Some(&ui));
+        let before = buf.pixels.clone();
+        ui.cursor_y = 130;
+        compose_shell_band(&mut buf, &layout, &ui, 100, 150);
+        let stride = (layout.width * 3) as usize;
+        assert_eq!(&buf.pixels[..100 * stride], &before[..100 * stride]);
+        assert_ne!(buf.pixels, before);
     }
 
     #[test]

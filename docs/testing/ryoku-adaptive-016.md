@@ -34,7 +34,7 @@ Sem declarar blur / transparência / 3D / compositor / Wayland completo.
 
 ## Next
 
-Mission **016.1** — Adaptive Performance (instrumentação; TCG ≠ hardware).
+Mission **016.1** — Adaptive Performance: [`ryoku-adaptive-0161.md`](ryoku-adaptive-0161.md).
 
 ## Related
 
