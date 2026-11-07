@@ -195,7 +195,7 @@ jobs:
       - name: Upload Ryoku shell VM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ryoku-apps-vm-${{ github.sha }}
+          name: ryoku-desktop-input-vm-${{ github.sha }}
           path: tests/qemu/results/ryoku-shell-vm-package/
           if-no-files-found: error
           retention-days: 30

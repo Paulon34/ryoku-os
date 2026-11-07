@@ -26,11 +26,13 @@ use ryoku_graphics_demo::{
     classify_no_fb_reason, format_outcome, graphics_root_from_env, open_fb_rw, probe_fb0,
 };
 use ryoku_shell_preview::{
-    compose_shell_band, compose_shell_interactive, controlled_band, controlled_benchmark_enabled,
-    controlled_profile_order, dirty_band_for_cursor, draw_perf_overlay, instrumentation_cost_note,
-    merge_dirty, present_shell, present_shell_rows, ultra_slowdown_investigation, AdaptiveProfile,
-    ControlledProfileRun, FrameAccumulator, FrameSample, InputFact, InteractiveState,
-    PerfOverlayPolicy, ShellLayout, CONTROLLED_BAND_FRAMES, CONTROLLED_FULL_FRAMES, SHELL_IDENTITY,
+    close_focused, compose_shell_band, compose_shell_interactive, controlled_band,
+    controlled_benchmark_enabled, controlled_profile_order, cycle_focus, dirty_band_for_cursor,
+    draw_perf_overlay, instrumentation_cost_note, merge_dirty, minimize_focused, present_shell,
+    present_shell_rows, ultra_slowdown_investigation, AdaptiveProfile, ControlledProfileRun,
+    FrameAccumulator, FrameSample, InputFact, InteractiveState, PerfOverlayPolicy, ShellLayout,
+    CONTROLLED_BAND_FRAMES, CONTROLLED_FULL_FRAMES, SHELL_IDENTITY, SHORTCUT_CLOSE_FOCUSED,
+    SHORTCUT_CYCLE_FOCUS, SHORTCUT_MINIMIZE,
 };
 
 use crate::input::{
@@ -173,6 +175,21 @@ fn apply_discrete(
                 }
                 return (true, true);
             }
+            // Mission 019: desktop shortcuts (Q/W/M) — never override F1–F3.
+            if !ui.launcher_open {
+                if code == SHORTCUT_CLOSE_FOCUSED {
+                    let changed = close_focused(&mut ui.wm).is_some();
+                    return (changed, changed);
+                }
+                if code == SHORTCUT_CYCLE_FOCUS {
+                    let changed = cycle_focus(&mut ui.wm).is_some();
+                    return (changed, changed);
+                }
+                if code == SHORTCUT_MINIMIZE {
+                    let changed = minimize_focused(&mut ui.wm).is_some();
+                    return (changed, changed);
+                }
+            }
             let visual = if ui.launcher_open {
                 match code {
                     KEY_ESC => {
@@ -196,7 +213,11 @@ fn apply_discrete(
             } else {
                 match code {
                     KEY_ESC => {
-                        ui.close_launcher();
+                        if ui.wm.focus().is_some() {
+                            close_focused(&mut ui.wm);
+                        } else {
+                            ui.close_launcher();
+                        }
                         true
                     }
                     KEY_LEFT | KEY_UP => {
