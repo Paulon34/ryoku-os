@@ -152,7 +152,7 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.18 — Desktop Input (Missão 019)
 
-- [ ] Focus / drag / resize / dock; shortcuts sem conflito F1–F3; lifecycle
+- [x] Focus / drag / resize / dock; shortcuts Q/W/M sem conflito F1–F3; lifecycle — code
 - [ ] Guest **`GUEST_NOT_RUN`** until manual
 
 ## Fase 2.19 — Graphics Backend (Missão 020)

@@ -1,7 +1,7 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**018**).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**019**).
 //!
-//! Mission **017** WindowManager; **018** allowlisted internal apps via Launcher
-//! (About / System Monitor / Settings / Files RO) — no arbitrary exec.
+//! Mission **017** WM; **018** allowlisted apps; **019** desktop input / lifecycle
+//! shortcuts (Q/W/M) without conflicting F1–F3 profile keys.
 //! QEMU TCG ≠ hardware. This crate **never** invents `PASS_MANUAL` from CI.
 
 #![forbid(unsafe_code)]
@@ -9,6 +9,7 @@
 mod adaptive;
 mod apps;
 mod benchmark;
+mod desktop_input;
 mod perf;
 mod window;
 
@@ -18,6 +19,10 @@ pub use benchmark::{
     controlled_band, controlled_benchmark_enabled, controlled_profile_order,
     instrumentation_cost_note, ControlledProfileRun, ControlledSummary, CONTROLLED_BAND_FRAMES,
     CONTROLLED_FULL_FRAMES,
+};
+pub use desktop_input::{
+    close_focused, cycle_focus, is_desktop_shortcut, is_reserved_profile_key, lifecycle_label,
+    minimize_focused, SHORTCUT_CLOSE_FOCUSED, SHORTCUT_CYCLE_FOCUS, SHORTCUT_MINIMIZE,
 };
 pub use perf::{
     ultra_slowdown_investigation, FrameAccumulator, FrameSample, PerfOverlayPolicy, ProfileCompare,
