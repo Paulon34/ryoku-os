@@ -30,7 +30,7 @@ pub const RYOKU_GRAPHICS_RELEASE_TEXT: &str =
 
 /// Shell package release text (Mission 015) — separate from First Pixels package.
 pub const RYOKU_SHELL_RELEASE_TEXT: &str =
-    "ryoku-minimal 0.1.0 (Mission 019 desktop-input + apps + WM + adaptive)\n";
+    "ryoku-minimal 0.1.0 (Mission 020 graphics-backend + desktop stack 017-019)\n";
 
 /// Graphics demo binary member (Mission 014 package only).
 pub const REQUIRED_GRAPHICS_DEMO_MEMBER: &str = "./bin/ryoku-graphics-demo";

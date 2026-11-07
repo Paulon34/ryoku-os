@@ -157,7 +157,7 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.19 — Graphics Backend (Missão 020)
 
-- [ ] Abstração display/input; DRM/KMS estudo+fallback fb; Wayland docs only
+- [x] Abstração display/input; DRM/KMS estudo+fallback fb; Wayland docs only — code
 - [ ] Guest **`GUEST_NOT_RUN`** until manual
 
 ## Fase 3 — Primeiros serviços Zaquion Core

@@ -49,10 +49,11 @@
 
 ## Mission 020 — Graphics backend abstraction
 
-- Traits for display present + input source + compositor surface
+- `DisplayBackendKind` / `DisplayBackendSelection` / `InputBackendKind` / `DamageRegion`
 - Default: fbdev mmap path (014.2 / 015.2.1)
-- DRM/KMS: study + safe prototype **only if** it can fall back to fbdev
-- Wayland: architecture notes only — **not** a Wayland compositor
+- DRM/KMS: study + selection stub — **always falls back to fbdev** in 020 (no modeset ioctls)
+- Wayland: architecture notes only — **`WAYLAND=ARCH_ONLY`** (not a Wayland compositor)
+- Env allowlist: `RYOKU_DISPLAY_BACKEND=fbdev|drm`
 
 ## Explicit non-goals
 

@@ -28,11 +28,12 @@ use ryoku_graphics_demo::{
 use ryoku_shell_preview::{
     close_focused, compose_shell_band, compose_shell_interactive, controlled_band,
     controlled_benchmark_enabled, controlled_profile_order, cycle_focus, dirty_band_for_cursor,
-    draw_perf_overlay, instrumentation_cost_note, merge_dirty, minimize_focused, present_shell,
-    present_shell_rows, ultra_slowdown_investigation, AdaptiveProfile, ControlledProfileRun,
-    FrameAccumulator, FrameSample, InputFact, InteractiveState, PerfOverlayPolicy, ShellLayout,
-    CONTROLLED_BAND_FRAMES, CONTROLLED_FULL_FRAMES, SHELL_IDENTITY, SHORTCUT_CLOSE_FOCUSED,
-    SHORTCUT_CYCLE_FOCUS, SHORTCUT_MINIMIZE,
+    draw_perf_overlay, drm_kms_study_note, instrumentation_cost_note, merge_dirty,
+    minimize_focused, present_shell, present_shell_rows, ultra_slowdown_investigation,
+    wayland_runtime_status, AdaptiveProfile, ControlledProfileRun, DisplayBackendKind,
+    DisplayBackendSelection, FrameAccumulator, FrameSample, InputFact, InteractiveState,
+    PerfOverlayPolicy, ShellLayout, CONTROLLED_BAND_FRAMES, CONTROLLED_FULL_FRAMES, SHELL_IDENTITY,
+    SHORTCUT_CLOSE_FOCUSED, SHORTCUT_CYCLE_FOCUS, SHORTCUT_MINIMIZE,
 };
 
 use crate::input::{
@@ -497,10 +498,19 @@ fn main() -> ExitCode {
         }
     };
 
+    let display_sel = DisplayBackendSelection::resolve(
+        env::var("RYOKU_DISPLAY_BACKEND")
+            .ok()
+            .and_then(|s| DisplayBackendKind::parse(&s))
+            .unwrap_or_default(),
+    );
     eprintln!(
-        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 016.2)",
+        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 020)",
         root.display()
     );
+    eprintln!("{SHELL_IDENTITY}: {}", display_sel.serial_line());
+    eprintln!("{SHELL_IDENTITY}: {}", drm_kms_study_note());
+    eprintln!("{SHELL_IDENTITY}: {}", wayland_runtime_status());
 
     let (fb_path, sysfs_geom) = match probe_fb0(&root) {
         Ok(v) => v,
