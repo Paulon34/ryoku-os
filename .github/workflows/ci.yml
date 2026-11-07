@@ -112,6 +112,7 @@ jobs:
             docs/testing/ryoku-adaptive-0161.md
             docs/testing/ryoku-adaptive-0162.md
             docs/testing/ryoku-window-system-017.md
+            docs/testing/ryoku-internal-apps-018.md
             docs/architecture/RYOKU_DESKTOP_ARCHITECTURE.md
             docs/performance/targets.md
             docs/publishing/first-push.md
@@ -154,6 +155,7 @@ jobs:
             tests/qemu/README-ADAPTIVE-PERF.md
             tests/qemu/README-CONTROLLED-PERF.md
             tests/qemu/README-WINDOW.md
+            tests/qemu/README-APPS.md
             tests/qemu/configs/console-shell.rvl.conf
             zaquion-core/ryoku-shell-preview/README.md
             tests/qemu/README-VM.md

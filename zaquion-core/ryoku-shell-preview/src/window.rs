@@ -539,22 +539,43 @@ fn paint_window(
     );
 
     let client = w.client();
-    let line1 = match w.kind {
-        WindowKind::Demo => "INTERNAL WINDOW - NO EXT APP",
-        WindowKind::About => "RYOKU MINIMAL - NOT PRODUCT OS",
-        WindowKind::SystemMonitor => "MONITOR ILLUSTRATIVE - NO PROBES",
-        WindowKind::Settings => "SETTINGS ILLUSTRATIVE - NO PERSIST",
-        WindowKind::FilesRo => "FILES READ-ONLY - NO EXEC",
+    let lines: [&str; 3] = match w.kind {
+        WindowKind::Demo => [
+            "INTERNAL WINDOW - NO EXT APP",
+            "DIRTY REGIONS - NO FB CLEAR",
+            "LAUNCHER OPENS ALLOWLIST APPS",
+        ],
+        WindowKind::About => [
+            "RYOKU MINIMAL LAB SHELL",
+            "NOT A PRODUCT OS BOOT",
+            "NO WAYLAND / NO BLUR / NO 3D",
+        ],
+        WindowKind::SystemMonitor => [
+            "ILLUSTRATIVE METRICS ONLY",
+            "NO /PROC LIVE PROBES HERE",
+            "SEE HW CONSOLE FOR FACTS",
+        ],
+        WindowKind::Settings => [
+            "PROFILE VIA F1 F2 F3",
+            "NO PERSISTENCE STORE",
+            "ULTRA = ARCH FALLBACK",
+        ],
+        WindowKind::FilesRo => [
+            "READ-ONLY FILE LIST DEMO",
+            "/bin /dev /proc ILLUSTRATIVE",
+            "NO EXEC / NO WRITE",
+        ],
     };
-    draw_text(buf, client.x + 10, client.y + 12, line1, 1, COLOR_TEXT);
-    draw_text(
-        buf,
-        client.x + 10,
-        client.y + 28,
-        "DIRTY REGIONS - NO FB CLEAR",
-        1,
-        COLOR_MUTED,
-    );
+    for (i, line) in lines.iter().enumerate() {
+        draw_text(
+            buf,
+            client.x + 10,
+            client.y + 12 + (i as i32) * 16,
+            line,
+            1,
+            if i == 0 { COLOR_TEXT } else { COLOR_MUTED },
+        );
+    }
 }
 
 /// Desktop work area below panel / above dock.
