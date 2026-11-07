@@ -87,7 +87,10 @@ Document the failure in the mission report. A safe follow-up is an official Alpi
 - Downloads Alpine **only** on that disposable runner
 - Uploads `tests/qemu/results/` (+ checksum/sig sidecars) as artifacts — no secrets
 
-Until the workflow branch is pushed and a real Actions run is recorded, CI status for verified boot is **`NOT_RUN`**.
+**Milestone (Mission 007.1):** verified reference boot **PASS** on Actions run
+[`42319912088`](https://github.com/Paulon34/ryoku-os/actions/runs/42319912088)
+(`main` @ `b65c3bc`, Alpine virt 3.21.9, QEMU TCG, serial `Alpine` + `login:`).
+That remains **reference Linux**, not Ryoku OS.
 
 ## Exact plan to run first boot (after QEMU + image authorized)
 

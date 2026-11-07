@@ -1,4 +1,4 @@
-//! `ryoku-virtlab` CLI — T0 / T1 / first-boot.
+//! `ryoku-virtlab` CLI — T0 / T1 / first-boot / boot-seed.
 
 use std::env;
 use std::fs;
@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use ryoku_virtlab::lab::discover_lab_root_from;
 use ryoku_virtlab::report::{exit_code, format_lab_report};
-use ryoku_virtlab::{run_first_boot, run_t0, run_t1, HostToolProbe};
+use ryoku_virtlab::{run_boot_seed, run_first_boot, run_t0, run_t1, HostToolProbe};
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
@@ -24,7 +24,9 @@ fn main() -> ExitCode {
             println!("ryoku-virtlab {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        "t0" | "t1" | "first-boot" | "t2" | "all" => run_suite(args[0].as_str()),
+        "t0" | "t1" | "first-boot" | "t2" | "boot-seed" | "t3" | "all" => {
+            run_suite(args[0].as_str())
+        }
         "print-lab-paths" => print_lab_paths(),
         other => {
             eprintln!("error: unknown command `{other}`");
@@ -46,9 +48,11 @@ fn run_suite(which: &str) -> ExitCode {
     let mut results = Vec::new();
     let label = match which {
         "t2" => "first-boot",
+        "t3" => "boot-seed",
         other => other,
     };
 
+    // `all` keeps historical T0+T1+T2 only — T3 is opt-in until authorized.
     if which == "t0" || which == "all" {
         results.extend(run_t0(&lab_root, &probe));
     }
@@ -57,6 +61,9 @@ fn run_suite(which: &str) -> ExitCode {
     }
     if which == "first-boot" || which == "t2" || which == "all" {
         results.extend(run_first_boot(&lab_root, &probe));
+    }
+    if which == "boot-seed" || which == "t3" {
+        results.extend(run_boot_seed(&lab_root, &probe));
     }
 
     let title = format!("Ryoku Virtual Lab ({label})");
@@ -88,11 +95,17 @@ fn print_lab_paths() -> ExitCode {
     let iso = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso");
     let sha = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.sha256");
     let asc = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.asc");
+    let kernel = lab_root.join("run/ryoku-boot-seed-vmlinuz");
+    let initrd = lab_root.join("run/ryoku-boot-seed.cpio.gz");
     println!("lab_root_abs={}", lab_root.display());
     println!("iso_abs={}", iso.display());
     println!("iso_exists={}", iso.is_file());
     println!("sha256_sidecar_exists={}", sha.is_file());
     println!("asc_sidecar_exists={}", asc.is_file());
+    println!("boot_seed_kernel_abs={}", kernel.display());
+    println!("boot_seed_kernel_exists={}", kernel.is_file());
+    println!("boot_seed_initrd_abs={}", initrd.display());
+    println!("boot_seed_initrd_exists={}", initrd.is_file());
     if sha.is_file() && !iso.is_file() {
         eprintln!(
             "error: path inconsistency — checksum sidecar present but ISO missing at harness path"
@@ -120,20 +133,23 @@ fn ensure_lab_dirs(lab_root: &Path) -> Result<(), String> {
 fn print_help() {
     println!(
         "\
-ryoku-virtlab — Ryoku Virtual Lab harness (T0/T1/first-boot)
+ryoku-virtlab — Ryoku Virtual Lab harness (T0/T1/first-boot/boot-seed)
 
 USAGE:
     ryoku-virtlab all
     ryoku-virtlab t0
     ryoku-virtlab t1
     ryoku-virtlab first-boot
+    ryoku-virtlab boot-seed
     ryoku-virtlab print-lab-paths
     ryoku-virtlab --help
 
 NOTES:
     T0 always runs without QEMU.
     T1 / first-boot SKIPPED or NOT_RUN when QEMU or the reference ISO is absent.
+    `all` runs T0+T1+T2 only — boot-seed/T3 is opt-in (separate authorization).
     Reference Linux boot is NEVER reported as Ryoku OS boot.
+    Boot seed marker PASS ≠ finished Ryoku OS product boot.
     Never attaches host physical disks; never uses sudo or package installs.
 "
     );

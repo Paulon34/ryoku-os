@@ -1,4 +1,4 @@
-//! Ryoku Virtual Lab — safe QEMU harness (T0 / T1 / first-boot).
+//! Ryoku Virtual Lab — safe QEMU harness (T0 / T1 / first-boot / boot-seed).
 //!
 //! # Safety contract
 //!
@@ -7,13 +7,16 @@
 //! - Never uses sudo, never installs packages, never changes KVM permissions.
 //! - T1 may start the **emulator**; guest OS boot requires an authorized image.
 //! - **Reference Linux boot ≠ Ryoku OS boot** (see `boot` / docs/testing/reference-linux.md).
+//! - **Boot seed ≠ Ryoku OS product boot** (see `boot_seed` / docs/testing/boot-seed.md).
 
 #![forbid(unsafe_code)]
 
 pub mod argv;
 pub mod boot;
+pub mod boot_seed;
 pub mod config;
 pub mod exec;
+pub mod initramfs;
 pub mod lab;
 pub mod report;
 pub mod security;
@@ -23,6 +26,7 @@ pub mod t1;
 pub mod tools;
 
 pub use boot::run_first_boot;
+pub use boot_seed::run_boot_seed;
 pub use config::{AccelMode, NetworkMode, VmConfig};
 pub use lab::{discover_lab_root_from, resolve_lab_asset};
 pub use report::format_lab_report;

@@ -36,7 +36,7 @@ ryoku-virtlab
 | QEMU absent | **SKIPPED** | **NOT_RUN** |
 | QEMU present, emulator-only config | **PASS**/**FAIL** (spawn/timeout) | **NOT_RUN** (no guest image) |
 
-### First-boot / T2 — reference Linux (Missions 005–006)
+### First-boot / T2 — reference Linux (Missions 005–007.1)
 
 | Situation | `t2.reference_linux_boot` | `t2.ryoku_os_boot` |
 |-----------|---------------------------|--------------------|
@@ -46,7 +46,24 @@ ryoku-virtlab
 
 **Reference Linux boot ≠ Ryoku OS boot.** QEMU start ≠ Linux boot. See [reference-linux.md](reference-linux.md).
 
-**Never** claim Ryoku OS booted without a bootable Ryoku kernel/system under test.
+**Milestone:** Alpine virt 3.21.9 first-boot under QEMU TCG **PASS**ed on GitHub Actions
+(run `42319912088`, Mission 007.1). That validates the harness only.
+
+### Boot Seed / T3 — first-party init (Mission 008)
+
+Separate QEMU profile from Alpine T2: temporary lab **kernel** + Ryoku **initramfs**
+(`configs/t3-boot-seed.rvl.conf`). Opt-in via `ryoku-virtlab boot-seed` (not part of `all`).
+
+| Situation | `t3.boot_seed` | `t3.ryoku_os_product_boot` |
+|-----------|----------------|----------------------------|
+| QEMU absent | **NOT_RUN** (after SKIPPED qemu case) | **NOT_RUN** |
+| kernel/initrd missing | **NOT_RUN** | **NOT_RUN** |
+| Guest serial has `RYOKU_BOOT_SEED_READY` | **PASS** | **Always NOT_RUN** |
+
+See [boot-seed.md](boot-seed.md) and [ADR-0002](../architecture/ADR-0002.md).
+Real T3 guest execution needs **separate authorization**.
+
+**Never** claim Ryoku OS product boot from the seed alone.
 
 ## Current environment limits (foundation host)
 
@@ -60,8 +77,8 @@ Recorded by `ryoku-doctor` / Mission 002–003:
 
 | Target | How Virtual Lab helps |
 |--------|------------------------|
-| Kernel smoke | Attach disposable kernel under `tests/qemu/run/` + serial expectations |
-| ISO / installer | Later T3/T4 from `docs/testing/qemu-strategy.md` |
+| Boot seed (T3) | Kernel + `ryoku-init` initramfs; marker `RYOKU_BOOT_SEED_READY` |
+| ISO / installer | Later tiers from `docs/testing/qemu-strategy.md` |
 | UI / Desktop | Graphical steps only after headless smokes are green |
 
 ## Related

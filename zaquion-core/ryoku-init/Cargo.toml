@@ -1,0 +1,21 @@
+[package]
+name = "ryoku-init"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Ryoku Boot Seed — minimal PID 1 init prototype (serial identity marker)"
+readme = "README.md"
+keywords = ["ryoku", "init", "boot-seed"]
+categories = ["os"]
+
+[dependencies]
+# Stdlib only (Mission 008). Static musl build documented in README for initramfs.
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ryoku-init"
+path = "src/main.rs"
