@@ -1,22 +1,19 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**017**).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**018**).
 //!
-//! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
-//! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
-//! (`ryoku-graphics-demo`).
-//!
-//! Mission **016** adaptive profiles; **016.1** perf metrics; **016.2** controlled
-//! benchmark (opt-in). Mission **017** adds an in-process WindowManager (geometry,
-//! focus, z-order, dirty regions) — no external apps, no Wayland compositor claim.
+//! Mission **017** WindowManager; **018** allowlisted internal apps via Launcher
+//! (About / System Monitor / Settings / Files RO) — no arbitrary exec.
 //! QEMU TCG ≠ hardware. This crate **never** invents `PASS_MANUAL` from CI.
 
 #![forbid(unsafe_code)]
 
 mod adaptive;
+mod apps;
 mod benchmark;
 mod perf;
 mod window;
 
 pub use adaptive::{AdaptiveProfile, ProfileTheme, RenderPolicy};
+pub use apps::{launcher_allowlist_complete, InternalApp};
 pub use benchmark::{
     controlled_band, controlled_benchmark_enabled, controlled_profile_order,
     instrumentation_cost_note, ControlledProfileRun, ControlledSummary, CONTROLLED_BAND_FRAMES,
@@ -316,11 +313,8 @@ impl InteractiveState {
             }
             if let Some(c) = ll.hit_category(self.cursor_x, self.cursor_y) {
                 self.launcher_focus = c;
-                // 017: SYSTEM opens WM demo window (no external exec).
-                if c == 0 {
-                    self.open_demo_window(layout);
-                    self.close_launcher();
-                }
+                // 018: allowlisted internal apps only (no arbitrary exec).
+                self.open_launcher_app(layout, c);
                 return;
             }
             if !ll.contains(self.cursor_x, self.cursor_y)
@@ -347,11 +341,23 @@ impl InteractiveState {
 
     /// Open an internal demo window (Mission 017 — no external app).
     pub fn open_demo_window(&mut self, layout: &ShellLayout) {
+        self.open_kind_window(layout, WindowKind::Demo);
+    }
+
+    /// Mission 018 — open allowlisted app from launcher category index.
+    pub fn open_launcher_app(&mut self, layout: &ShellLayout, category: usize) {
+        if let Some(app) = InternalApp::from_launcher_category(category) {
+            self.open_kind_window(layout, app.kind());
+            self.close_launcher();
+        }
+    }
+
+    pub fn open_kind_window(&mut self, layout: &ShellLayout, kind: WindowKind) {
         let desk = desktop_work_area(layout.panel_h, layout.dock_y, layout.width, layout.height);
         self.wm.set_desktop(desk);
         let n = self.wm.windows().len() as i32;
-        let geom = Rect::new(40 + n * 24, desk.y + 20 + n * 16, 280, 160);
-        self.wm.create(WindowKind::Demo, geom);
+        let geom = Rect::new(40 + n * 24, desk.y + 20 + n * 16, 300, 180);
+        self.wm.create(kind, geom);
     }
 
     /// Pointer motion while dragging title/resize (017 basic; 019 expands).
@@ -402,10 +408,7 @@ impl InteractiveState {
 
     pub fn activate_selected(&mut self, layout: &ShellLayout) {
         if self.launcher_open {
-            if self.launcher_focus == 0 {
-                self.open_demo_window(layout);
-                self.close_launcher();
-            }
+            self.open_launcher_app(layout, self.launcher_focus);
             return;
         }
         if self.selected_dock == Some(0) {

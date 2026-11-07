@@ -147,7 +147,7 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.17 — Internal Apps (Missão 018)
 
-- [ ] Launcher → WM; About / System Monitor / Settings / Files RO allowlist
+- [x] Launcher → WM; About / System Monitor / Settings / Files RO allowlist — code
 - [ ] Guest **`GUEST_NOT_RUN`** until manual
 
 ## Fase 2.18 — Desktop Input (Missão 019)
