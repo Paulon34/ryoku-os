@@ -79,12 +79,19 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Sessão QEMU guest autorizada — **`interactive_guest_boot=PASS_MANUAL`** (Paulo; tip `fecc0b5`; CI ≠ boot)
 - [ ] `clear` guest; product OS boot (não claims)
 
-## Fase 2.8 — Hardware probe (Missão 013)
+## Fase 2.8 — Hardware probe (Missão 013) — closeout
 
 - [x] Mount `proc`/`sys` após READY (antes do console); WARN se falhar; T3 intacto
 - [x] Crate `ryoku-hwprobe` + builtins `hw summary|cpu|pci|drivers`
 - [x] Anúncio READY single-channel; banner ASCII; docs splash Missão 014
-- [ ] Guest boot 013 = **NOT_RUN** até evidência manual nova
+- [x] Guest 013 **`PASS_MANUAL`** (2026-11-07; tip `649b850`; ≠ CI)
+- [ ] First pixels / gráfico (Missão 014) — **NOT_RUN**
+
+## Fase 2.9 — First Pixels (Missão 014) — planejado / em curso
+
+- [ ] Inspeção DRM/KMS/fb/virtio-gpu no lab kernel (sem assumir driver só por PCI)
+- [ ] `hw graphics` + perfil QEMU gráfico separado (serial intacto; dual gate)
+- [ ] `ryoku-graphics-demo` protótipo estático; FIRST_PIXELS só após teste visual real
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

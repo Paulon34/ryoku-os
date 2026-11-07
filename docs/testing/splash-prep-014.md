@@ -23,3 +23,11 @@ after proc/sys mount attempts) and before spawning `ryoku-console`.
 Do **not** treat the ASCII banner as a product boot splash. T3 Boot Seed path
 must remain free of decorative banners that could confuse evidence logs (013
 prints the banner only on the Minimal interactive path).
+
+## Status after Mission 013 closeout
+
+| Item | Status |
+|------|--------|
+| ASCII banner in guest | **PASS_MANUAL** (013) |
+| Graphical DRM/fb path | **NOT_RUN** (Mission 014) |
+| `FIRST_PIXELS` | **NOT_RUN** until a real visual test is recorded |
