@@ -100,6 +100,7 @@ jobs:
             docs/testing/boot-seed.md
             docs/testing/boot-seed-t3.md
             docs/testing/console.md
+            docs/testing/ryoku-minimal.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
@@ -114,11 +115,18 @@ jobs:
             tests/qemu/scripts/fetch-reference-image-lib.sh
             tests/qemu/scripts/test-fetch-policy.sh
             tests/qemu/scripts/build-boot-seed-initramfs.sh
+            tests/qemu/scripts/build-ryoku-minimal-initramfs.sh
             tests/qemu/scripts/extract-boot-seed-kernel.sh
             tests/qemu/scripts/prep-boot-seed-artifacts.sh
             tests/qemu/scripts/test-boot-seed-prep-policy.sh
             tests/qemu/scripts/prep-console-interactive.sh
+            tests/qemu/scripts/plan-minimal-guest-console-test.sh
+            tests/qemu/scripts/run-ryoku-minimal-qemu.sh
+            tests/qemu/scripts/prep-ryoku-minimal-artifacts.sh
+            tests/qemu/scripts/test-ryoku-minimal-vm-zip.sh
+            tests/qemu/README-VM.md
             .github/workflows/boot-seed-t3.yml
+            .github/workflows/ryoku-minimal-package.yml
             zaquion-core/README.md
 
             zaquion-core/LICENSE-MIT

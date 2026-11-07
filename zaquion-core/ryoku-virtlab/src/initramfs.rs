@@ -1,7 +1,10 @@
-//! Minimal newc cpio helpers for Boot Seed structure tests / packing (Mission 008.5).
+//! Minimal newc cpio helpers for Boot Seed / Ryoku Minimal (Mission 008.5 / 012).
 //!
 //! Packs only staged content — never host system paths or real `/dev` nodes from the host.
 //! Char devices are encoded as **archive metadata** (newc headers), not created with mknod/sudo.
+//!
+//! - [`boot_seed_members`] — original T3 (init + `/dev/console` only) — **unchanged**.
+//! - [`ryoku_minimal_members`] — experimental Minimal FS + `ryoku-console` (interactive).
 
 use std::fs;
 use std::io::{self, Write};
@@ -11,6 +14,15 @@ use std::path::{Component, Path, PathBuf};
 pub const REQUIRED_INIT_MEMBER: &str = "./init";
 /// Console device member (char 5:1).
 pub const REQUIRED_CONSOLE_MEMBER: &str = "./dev/console";
+/// Interactive console binary (Ryoku Minimal only — **not** in original T3).
+pub const REQUIRED_CONSOLE_BIN_MEMBER: &str = "./bin/ryoku-console";
+/// Release identity file (Ryoku Minimal).
+pub const REQUIRED_RELEASE_MEMBER: &str = "./etc/ryoku-release";
+/// Default home directory member (Ryoku Minimal).
+pub const REQUIRED_HOME_MEMBER: &str = "./home/ryoku";
+
+/// Default contents of `./etc/ryoku-release` in Minimal initramfs.
+pub const RYOKU_RELEASE_TEXT: &str = "ryoku-minimal 0.1.0 (Mission 012)\n";
 
 const S_IFREG: u32 = 0o100_000;
 const S_IFDIR: u32 = 0o040_000;
@@ -120,6 +132,8 @@ impl NewcMember {
 }
 
 /// Canonical Boot Seed archive members: dirs + `/dev/console` (5,1) + `/init`.
+///
+/// **T3 contract:** no `./bin/ryoku-console` — PID 1 must stay idle after READY.
 #[must_use]
 pub fn boot_seed_members(init_bytes: &[u8]) -> Vec<NewcMember> {
     vec![
@@ -132,9 +146,52 @@ pub fn boot_seed_members(init_bytes: &[u8]) -> Vec<NewcMember> {
     ]
 }
 
+/// Ryoku Minimal experimental initramfs members (Mission 012).
+///
+/// Layout: `/init`, `/bin/ryoku-console`, `/dev/console`, `/etc/ryoku-release`,
+/// `/home/ryoku/`, plus standard empty dirs.
+#[must_use]
+pub fn ryoku_minimal_members(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    release_text: &str,
+) -> Vec<NewcMember> {
+    vec![
+        NewcMember::dir("./dev", 0o755),
+        NewcMember::chr("./dev/console", 0o600, 5, 1),
+        NewcMember::dir("./bin", 0o755),
+        NewcMember::dir("./etc", 0o755),
+        NewcMember::dir("./home", 0o755),
+        NewcMember::dir("./home/ryoku", 0o755),
+        NewcMember::dir("./proc", 0o755),
+        NewcMember::dir("./sys", 0o755),
+        NewcMember::dir("./tmp", 0o755),
+        NewcMember::file("./init", 0o755, init_bytes.to_vec()),
+        NewcMember::file("./bin/ryoku-console", 0o755, console_bytes.to_vec()),
+        NewcMember::file(
+            "./etc/ryoku-release",
+            0o644,
+            release_text.as_bytes().to_vec(),
+        ),
+    ]
+}
+
 /// Write a boot-seed newc archive (uncompressed).
 pub fn write_boot_seed_newc(init_bytes: &[u8], out: &mut dyn Write) -> io::Result<()> {
     write_newc_archive(&boot_seed_members(init_bytes), out)
+}
+
+/// Write a Ryoku Minimal newc archive (uncompressed).
+pub fn write_ryoku_minimal_newc(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    release_text: &str,
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    write_newc_archive(
+        &ryoku_minimal_members(init_bytes, console_bytes, release_text),
+        out,
+    )
 }
 
 /// Write an arbitrary newc archive then TRAILER.
@@ -292,11 +349,8 @@ pub fn list_newc_members(archive: &[u8]) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Validate a boot-seed archive has executable `./init` and `./dev/console` char 5:1.
-pub fn validate_boot_seed_cpio(archive: &[u8]) -> Result<(), String> {
-    let members = parse_newc_members(archive)?;
+fn validate_common_init_and_console(members: &[ParsedNewc]) -> Result<(), String> {
     let names: Vec<_> = members.iter().map(|m| m.name.as_str()).collect();
-    // No unexpected absolute / host-looking members.
     for n in &names {
         assert_safe_member_name(n)?;
         if *n == "." || n.starts_with("./..") {
@@ -334,6 +388,57 @@ pub fn validate_boot_seed_cpio(archive: &[u8]) -> Result<(), String> {
     }
     if console.filesize != 0 {
         return Err("char device must have filesize 0".into());
+    }
+    Ok(())
+}
+
+/// Validate a boot-seed archive has executable `./init` and `./dev/console` char 5:1.
+pub fn validate_boot_seed_cpio(archive: &[u8]) -> Result<(), String> {
+    let members = parse_newc_members(archive)?;
+    validate_common_init_and_console(&members)?;
+    // Original T3 must NOT ship the interactive console binary.
+    if members
+        .iter()
+        .any(|m| m.name == "./bin/ryoku-console" || m.name == "bin/ryoku-console")
+    {
+        return Err("boot-seed archive must not contain ./bin/ryoku-console (use Minimal)".into());
+    }
+    Ok(())
+}
+
+/// Validate Ryoku Minimal archive: boot-seed basics + console bin + release + home.
+pub fn validate_ryoku_minimal_cpio(archive: &[u8]) -> Result<(), String> {
+    let members = parse_newc_members(archive)?;
+    validate_common_init_and_console(&members)?;
+    let console_bin = members
+        .iter()
+        .find(|m| m.name == "./bin/ryoku-console" || m.name == "bin/ryoku-console")
+        .ok_or_else(|| "missing ./bin/ryoku-console".to_string())?;
+    if (console_bin.mode & S_IFREG) != S_IFREG {
+        return Err("ryoku-console is not a regular file".into());
+    }
+    if (console_bin.mode & 0o111) == 0 {
+        return Err("ryoku-console is not executable".into());
+    }
+    if console_bin.filesize == 0 {
+        return Err("ryoku-console is empty".into());
+    }
+    let release = members
+        .iter()
+        .find(|m| m.name == "./etc/ryoku-release" || m.name == "etc/ryoku-release")
+        .ok_or_else(|| "missing ./etc/ryoku-release".to_string())?;
+    if (release.mode & S_IFREG) != S_IFREG {
+        return Err("ryoku-release is not a regular file".into());
+    }
+    if release.filesize == 0 {
+        return Err("ryoku-release is empty".into());
+    }
+    let home = members
+        .iter()
+        .find(|m| m.name == "./home/ryoku" || m.name == "home/ryoku")
+        .ok_or_else(|| "missing ./home/ryoku".to_string())?;
+    if (home.mode & S_IFDIR) != S_IFDIR {
+        return Err("./home/ryoku is not a directory".into());
     }
     Ok(())
 }
@@ -380,6 +485,26 @@ pub fn pack_boot_seed_from_init_path(init_path: &Path) -> Result<Vec<u8>, String
     let mut out = Vec::new();
     write_boot_seed_newc(&data, &mut out).map_err(|e| e.to_string())?;
     validate_boot_seed_cpio(&out)?;
+    Ok(out)
+}
+
+/// Pack Ryoku Minimal initramfs from init + console static binaries.
+pub fn pack_ryoku_minimal_from_paths(
+    init_path: &Path,
+    console_path: &Path,
+    release_text: &str,
+) -> Result<Vec<u8>, String> {
+    let init = fs::read(init_path).map_err(|e| format!("read init: {e}"))?;
+    let console = fs::read(console_path).map_err(|e| format!("read console: {e}"))?;
+    if init.is_empty() {
+        return Err("init binary empty".into());
+    }
+    if console.is_empty() {
+        return Err("console binary empty".into());
+    }
+    let mut out = Vec::new();
+    write_ryoku_minimal_newc(&init, &console, release_text, &mut out).map_err(|e| e.to_string())?;
+    validate_ryoku_minimal_cpio(&out)?;
     Ok(out)
 }
 
@@ -439,6 +564,41 @@ mod tests {
         assert!(validate_boot_seed_cpio(&buf)
             .unwrap_err()
             .contains("console"));
+    }
+
+    #[test]
+    fn boot_seed_rejects_console_binary() {
+        let mut buf = Vec::new();
+        write_ryoku_minimal_newc(b"INIT", b"CONSOLE", RYOKU_RELEASE_TEXT, &mut buf).unwrap();
+        assert!(validate_boot_seed_cpio(&buf)
+            .unwrap_err()
+            .contains("ryoku-console"));
+    }
+
+    #[test]
+    fn ryoku_minimal_has_required_layout() {
+        let mut buf = Vec::new();
+        write_ryoku_minimal_newc(
+            b"INIT_BYTES",
+            b"CONSOLE_BYTES",
+            RYOKU_RELEASE_TEXT,
+            &mut buf,
+        )
+        .unwrap();
+        validate_ryoku_minimal_cpio(&buf).unwrap();
+        let parsed = parse_newc_members(&buf).unwrap();
+        let names: Vec<_> = parsed.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"./init"));
+        assert!(names.contains(&"./bin/ryoku-console"));
+        assert!(names.contains(&"./dev/console"));
+        assert!(names.contains(&"./etc/ryoku-release"));
+        assert!(names.contains(&"./home/ryoku"));
+        let bin = parsed
+            .iter()
+            .find(|m| m.name == "./bin/ryoku-console")
+            .unwrap();
+        assert_ne!(bin.mode & 0o111, 0);
+        assert_eq!(bin.filesize, "CONSOLE_BYTES".len() as u32);
     }
 
     #[test]

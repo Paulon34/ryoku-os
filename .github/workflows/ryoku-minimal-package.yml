@@ -1,0 +1,174 @@
+# Mission 012 FINAL — Ryoku Minimal VM package (NOT Boot Seed T3)
+#
+# Builds static musl ryoku-init + ryoku-console, packs ryoku-minimal.cpio.gz,
+# extracts lab kernel via the verified Alpine virt channel, records SHA256SUMS,
+# uploads downloadable artifacts. Does NOT run QEMU / guest interactive boot.
+#
+# Separate from boot-seed-t3.yml (file-serial READY evidence). T3 artifacts untouched.
+name: ryoku-minimal-package
+
+on:
+  push:
+    branches: ["cursor/ryoku-minimal-012"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ryoku-minimal-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.83.0"
+  SOURCE_DATE_EPOCH: "1700000000"
+  RYOKU_FETCH_EXECUTE: "1"
+  RYOKU_VERIFY_GPG: "1"
+  RYOKU_KERNEL_EXTRACT_EXECUTE: "1"
+  RYOKU_MINIMAL_PREP_EXECUTE: "1"
+  RYOKU_MINIMAL_INITRAMFS_EXECUTE: "1"
+  # Never authorize guest QEMU in this package workflow.
+  RYOKU_MINIMAL_QEMU_EXECUTE: "0"
+  RYOKU_T3_EXECUTE: "0"
+
+jobs:
+  package:
+    name: musl-initramfs-kernel-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install extract/pack tools (Ubuntu packages only)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            gnupg \
+            ca-certificates \
+            curl \
+            gzip \
+            genisoimage \
+            xorriso \
+            musl-tools \
+            build-essential
+          isoinfo -version || true
+          xorriso -version || true
+          # QEMU not required for this package job (interactive boot = NOT_RUN).
+
+      - name: Install Rust toolchain (+ musl target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-musl
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zaquion-core -> target
+
+      - name: fmt / check / test / clippy
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace
+          cargo test --workspace
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Fetch + verify Alpine virt 3.21.9 (official CDN only)
+        run: |
+          set -euo pipefail
+          mkdir -p tests/qemu/results tests/qemu/run
+          tests/qemu/scripts/fetch-reference-image.sh
+          sha256sum tests/qemu/run/alpine-virt-3.21.9-x86_64.iso | tee tests/qemu/results/iso-sha256.txt
+
+      - name: Extract boot/vmlinuz-virt → ryoku-boot-seed-vmlinuz
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/extract-boot-seed-kernel.sh
+          test -f tests/qemu/run/ryoku-boot-seed-vmlinuz
+
+      - name: Build musl binaries + pack ryoku-minimal.cpio.gz + SHA256SUMS
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/prep-ryoku-minimal-artifacts.sh
+          test -f tests/qemu/run/ryoku-minimal.cpio.gz
+          test -f tests/qemu/results/ryoku-minimal-SHA256SUMS.txt
+          # Prove static ELF again (honest FAIL if missing).
+          test -x zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init
+          test -x zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console
+          (
+            cd zaquion-core
+            cargo run -q -p ryoku-virtlab -- check-static-elf \
+              target/x86_64-unknown-linux-musl/release/ryoku-init
+            cargo run -q -p ryoku-virtlab -- check-static-elf \
+              target/x86_64-unknown-linux-musl/release/ryoku-console
+          )
+          # T3 boot-seed initrd must NOT be overwritten by Minimal pack.
+          if [[ -f tests/qemu/run/ryoku-boot-seed.cpio.gz ]]; then
+            echo "note: T3 initrd present alongside Minimal (ok if both exist)"
+          fi
+          cat tests/qemu/results/ryoku-minimal-SHA256SUMS.txt
+
+      - name: Standalone ZIP layout test (no QEMU, no repo dependency)
+        run: |
+          set -euo pipefail
+          chmod +x tests/qemu/scripts/run-ryoku-minimal-qemu.sh
+          chmod +x tests/qemu/scripts/test-ryoku-minimal-vm-zip.sh
+          tests/qemu/scripts/test-ryoku-minimal-vm-zip.sh | tee tests/qemu/results/ryoku-minimal-zip-test.txt
+
+      - name: Plan/validate QEMU helper in repo mode (no guest boot)
+        run: |
+          set -euo pipefail
+          test -f tests/qemu/run/SHA256SUMS.txt
+          tests/qemu/scripts/run-ryoku-minimal-qemu.sh | tee tests/qemu/results/ryoku-minimal-qemu-plan.txt
+          grep -q 'mode:     repo' tests/qemu/results/ryoku-minimal-qemu-plan.txt
+          grep -q 'OK: SHA256SUMS verified' tests/qemu/results/ryoku-minimal-qemu-plan.txt
+          if grep -q 'AUTHORIZED: starting QEMU' tests/qemu/results/ryoku-minimal-qemu-plan.txt; then
+            echo "Honesty violation: package workflow must not start QEMU"
+            exit 1
+          fi
+          echo "interactive_guest_boot=NOT_RUN" | tee -a tests/qemu/results/ryoku-minimal-qemu-plan.txt
+
+      - name: Stage downloadable VM package
+        run: |
+          set -euo pipefail
+          PKG=tests/qemu/results/ryoku-minimal-vm-package
+          rm -rf "$PKG"
+          mkdir -p "$PKG"
+          cp -a tests/qemu/run/ryoku-boot-seed-vmlinuz "$PKG/"
+          cp -a tests/qemu/run/ryoku-minimal.cpio.gz "$PKG/"
+          cp -a tests/qemu/README-VM.md "$PKG/"
+          cp -a tests/qemu/scripts/run-ryoku-minimal-qemu.sh "$PKG/"
+          cp -a tests/qemu/configs/console-interactive.rvl.conf "$PKG/"
+          mkdir -p "$PKG/bin-musl"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console "$PKG/bin-musl/"
+          (
+            cd "$PKG"
+            sha256sum ryoku-boot-seed-vmlinuz ryoku-minimal.cpio.gz \
+              bin-musl/ryoku-init bin-musl/ryoku-console \
+              | tee SHA256SUMS.txt
+          )
+          # Smoke the staged ZIP layout in-place (still no QEMU).
+          ( cd "$PKG" && RYOKU_MINIMAL_QEMU_EXECUTE=0 ./run-ryoku-minimal-qemu.sh ) \
+            | tee tests/qemu/results/ryoku-minimal-staged-zip-plan.txt
+          grep -q 'mode:     standalone' tests/qemu/results/ryoku-minimal-staged-zip-plan.txt
+          ls -la "$PKG"
+          for f in ryoku-boot-seed-vmlinuz ryoku-minimal.cpio.gz SHA256SUMS.txt README-VM.md run-ryoku-minimal-qemu.sh; do
+            test -s "$PKG/$f" || { echo "missing/empty $f"; exit 1; }
+          done
+
+      - name: Upload Ryoku Minimal VM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryoku-minimal-vm-${{ github.sha }}
+          path: tests/qemu/results/ryoku-minimal-vm-package/
+          if-no-files-found: error
+          retention-days: 30

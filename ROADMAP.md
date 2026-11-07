@@ -62,15 +62,34 @@ Ver [docs/testing/boot-seed.md](docs/testing/boot-seed.md), [boot-seed-t3.md](do
 - [x] Crate `ryoku-console` (help/version/status/echo/clear) separado do PID 1
 - [x] Parser limitado (sem shell) + testes de segurança
 - [x] Perfil QEMU `console-interactive` (`serial_log=stdio`) **sem** substituir T3 file-serial
-- [ ] Boot guest interativo real / wiring console após READY (missão futura)
+- [x] Wiring console após READY + Minimal FS (Missão 012)
+- [x] Boot guest interativo **PASS_MANUAL** (2026-11-07; ZIP 012.1; ≠ CI)
 - [ ] Claim de shell de produto (nunca nesta fase)
 
-Ver [docs/testing/console.md](docs/testing/console.md).
+Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/testing/ryoku-minimal.md).
+
+## Fase 2.7 — Ryoku Minimal (Missão 012 / 012.1) — closeout
+
+- [x] `ryoku-init` spawna `ryoku-console` uma vez após READY (se `/bin/ryoku-console` existir)
+- [x] Initramfs experimental separado do T3 (`ryoku-minimal.cpio.gz`)
+- [x] Builtins `pwd` / `ls` / `cat` + testes sem QEMU
+- [x] Perfil interativo + planos de harness
+- [x] Hardening FS (symlinks/cap/host root) + `!` em echo
+- [x] Pacote VM self-contained (musl + cpio + lab kernel + launcher hash gate)
+- [x] Sessão QEMU guest autorizada — **`interactive_guest_boot=PASS_MANUAL`** (Paulo; tip `fecc0b5`; CI ≠ boot)
+- [ ] `clear` guest; product OS boot (não claims)
+
+## Fase 2.8 — Hardware probe (Missão 013) — planejado / em curso
+
+- [ ] Mount `proc`/`sys` após READY (antes do console); WARN se falhar
+- [ ] Crate `ryoku-hwprobe` + builtins `hw summary|cpu|pci|drivers`
+- [ ] Anúncio READY single-channel; banner ASCII; docs splash Missão 014
+- [ ] Guest boot 013 = **NOT_RUN** até evidência manual nova
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 
 - [ ] Definição de IPC/API inicial (ex.: socket + schema versionado)
-- [ ] Serviço piloto (ex.: inventário de hardware read-only ou healthd)
+- [ ] Serviço piloto além do inventário read-only de hardware (013)
 - [ ] Empacotamento experimental (deb e/ou nix flake) em `compatibility/`
 - [ ] Testes unitários + integração no QEMU
 
@@ -104,4 +123,5 @@ Ver [docs/testing/console.md](docs/testing/console.md).
 
 ## Sugestão de próxima missão
 
-**Missão 006 (após review 005):** autorizar install QEMU + `RYOKU_FETCH_EXECUTE=1`, capturar serial evidence de Alpine reference boot; **ou** pin LTS do kernel + inventário de licença do Ryoku Desktop. Continuar sem ISO Ryoku. Branch protection / Advisories no GitHub se ainda pendentes.
+**Missão 013:** probe de hardware read-only (`proc`/`sys`, `hw *` no console) após Minimal **PASS_MANUAL**.  
+**Missão 014 (docs):** splash/banner visual — preparar só documentação após 013. Continuar sem ISO de produto.

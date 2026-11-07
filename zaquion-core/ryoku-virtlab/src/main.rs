@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ryoku_virtlab::elf_static::prove_static_x86_64_elf;
-use ryoku_virtlab::initramfs::{pack_boot_seed_from_init_path, validate_boot_seed_cpio};
+use ryoku_virtlab::initramfs::{
+    pack_boot_seed_from_init_path, pack_ryoku_minimal_from_paths, validate_boot_seed_cpio,
+    validate_ryoku_minimal_cpio, RYOKU_RELEASE_TEXT,
+};
 use ryoku_virtlab::lab::discover_lab_root_from;
 use ryoku_virtlab::report::{exit_code, format_lab_report};
 use ryoku_virtlab::{run_boot_seed, run_first_boot, run_t0, run_t1, HostToolProbe};
@@ -116,6 +119,78 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "pack-ryoku-minimal-cpio" => {
+            // Mission 012 — Minimal initramfs with console (separate from T3 boot-seed).
+            // usage: pack-ryoku-minimal-cpio --init <bin> --console <bin> --out <file.cpio>
+            let mut init: Option<PathBuf> = None;
+            let mut console: Option<PathBuf> = None;
+            let mut out: Option<PathBuf> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--init" => {
+                        i += 1;
+                        init = args.get(i).map(PathBuf::from);
+                    }
+                    "--console" => {
+                        i += 1;
+                        console = args.get(i).map(PathBuf::from);
+                    }
+                    "--out" => {
+                        i += 1;
+                        out = args.get(i).map(PathBuf::from);
+                    }
+                    other => {
+                        eprintln!("error: unknown arg `{other}`");
+                        return ExitCode::from(2);
+                    }
+                }
+                i += 1;
+            }
+            let (Some(init), Some(console), Some(out)) = (init, console, out) else {
+                eprintln!(
+                    "usage: ryoku-virtlab pack-ryoku-minimal-cpio --init <bin> --console <bin> --out <file.cpio>"
+                );
+                return ExitCode::from(2);
+            };
+            if let Err(err) = prove_static_x86_64_elf(&init) {
+                eprintln!("REFUSE pack: init not proven static x86_64: {err}");
+                return ExitCode::from(1);
+            }
+            if let Err(err) = prove_static_x86_64_elf(&console) {
+                eprintln!("REFUSE pack: console not proven static x86_64: {err}");
+                return ExitCode::from(1);
+            }
+            match pack_ryoku_minimal_from_paths(&init, &console, RYOKU_RELEASE_TEXT) {
+                Ok(bytes) => {
+                    if let Err(err) = validate_ryoku_minimal_cpio(&bytes) {
+                        eprintln!("REFUSE pack: validation failed: {err}");
+                        return ExitCode::from(1);
+                    }
+                    if let Some(parent) = out.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    match fs::File::create(&out).and_then(|mut f| f.write_all(&bytes)) {
+                        Ok(()) => {
+                            println!(
+                                "OK: wrote Minimal {} ({} bytes newc)",
+                                out.display(),
+                                bytes.len()
+                            );
+                            ExitCode::SUCCESS
+                        }
+                        Err(err) => {
+                            eprintln!("error writing {}: {err}", out.display());
+                            ExitCode::from(1)
+                        }
+                    }
+                }
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    ExitCode::from(1)
+                }
+            }
+        }
         other => {
             eprintln!("error: unknown command `{other}`");
             print_help();
@@ -184,6 +259,7 @@ fn print_lab_paths() -> ExitCode {
     let asc = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.asc");
     let kernel = lab_root.join("run/ryoku-boot-seed-vmlinuz");
     let initrd = lab_root.join("run/ryoku-boot-seed.cpio.gz");
+    let minimal = lab_root.join("run/ryoku-minimal.cpio.gz");
     println!("lab_root_abs={}", lab_root.display());
     println!("iso_abs={}", iso.display());
     println!("iso_exists={}", iso.is_file());
@@ -193,6 +269,8 @@ fn print_lab_paths() -> ExitCode {
     println!("boot_seed_kernel_exists={}", kernel.is_file());
     println!("boot_seed_initrd_abs={}", initrd.display());
     println!("boot_seed_initrd_exists={}", initrd.is_file());
+    println!("ryoku_minimal_initrd_abs={}", minimal.display());
+    println!("ryoku_minimal_initrd_exists={}", minimal.is_file());
     if sha.is_file() && !iso.is_file() {
         eprintln!(
             "error: path inconsistency — checksum sidecar present but ISO missing at harness path"
@@ -231,6 +309,7 @@ USAGE:
     ryoku-virtlab print-lab-paths
     ryoku-virtlab check-static-elf <path>
     ryoku-virtlab pack-boot-seed-cpio --init <bin> --out <file.cpio>
+    ryoku-virtlab pack-ryoku-minimal-cpio --init <bin> --console <bin> --out <file.cpio>
     ryoku-virtlab --help
 
 NOTES:
@@ -239,6 +318,7 @@ NOTES:
     `all` runs T0+T1+T2 only — boot-seed/T3 is opt-in (separate authorization).
     Reference Linux boot is NEVER reported as Ryoku OS boot.
     Boot seed PASS requires guest serial `ryoku-init: pid=1` AND `RYOKU_BOOT_SEED_READY`.
+    Ryoku Minimal (`pack-ryoku-minimal-cpio`) is separate from T3 file-serial evidence.
     Never attaches host physical disks; never uses sudo or package installs.
 "
     );

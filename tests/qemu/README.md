@@ -31,9 +31,15 @@ cargo run -p ryoku-virtlab -- all          # T0+T1+T2 only
 # tests/qemu/scripts/extract-boot-seed-kernel.sh
 # tests/qemu/scripts/prep-boot-seed-artifacts.sh
 # tests/qemu/scripts/test-boot-seed-prep-policy.sh
-# Console interactive prep (Mission 011; no guest boot):
+# Console / Minimal interactive prep (Mission 012 FINAL; no guest boot here):
+# tests/qemu/scripts/build-ryoku-minimal-initramfs.sh
+# tests/qemu/scripts/prep-ryoku-minimal-artifacts.sh
+# tests/qemu/scripts/run-ryoku-minimal-qemu.sh   # plan+validate; QEMU gated
 # tests/qemu/scripts/prep-console-interactive.sh
+# tests/qemu/scripts/plan-minimal-guest-console-test.sh
 # cargo test -p ryoku-console
+# VM package README: tests/qemu/README-VM.md
+# Workflow: .github/workflows/ryoku-minimal-package.yml (not T3)
 ```
 
 Reference Alpine fetch (default **dry-run**, no download):
@@ -50,9 +56,11 @@ Downloads never use `curl -L`; every redirect hop must stay on the allowlisted H
 See [docs/testing/reference-linux.md](../../docs/testing/reference-linux.md). **Reference Linux ≠ Ryoku OS.**
 
 First-boot Alpine TCG **PASS** is a completed milestone (Mission 007.1). Boot Seed
-docs: [boot-seed.md](../../docs/testing/boot-seed.md). Console prep:
-[console.md](../../docs/testing/console.md) (`console-interactive.rvl.conf` uses
-`serial_log=stdio` and must not replace T3 file-serial).
+docs: [boot-seed.md](../../docs/testing/boot-seed.md). Console / Minimal:
+[console.md](../../docs/testing/console.md),
+[ryoku-minimal.md](../../docs/testing/ryoku-minimal.md)
+(`console-interactive.rvl.conf` uses `serial_log=stdio` + Minimal initrd and must
+not replace T3 file-serial).
 
 ## Outcomes
 
