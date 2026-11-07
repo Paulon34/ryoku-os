@@ -75,7 +75,8 @@ Profile `configs/console-interactive.rvl.conf` sets `serial_log=stdio`,
 `shutdown=none`, and Minimal initrd `ryoku-minimal.cpio.gz`. After READY,
 `ryoku-init` may spawn `ryoku-console` when that binary is present. It does
 **not** replace T3 file-serial evidence and guest boot is **not** executed in
-Mission 012. See [console.md](console.md) and [ryoku-minimal.md](ryoku-minimal.md).
+Mission 012 / 012.1: host+CI package **PASS**; interactive guest **`PASS_MANUAL`**
+(2026-11-07; not CI). See [console.md](console.md) and [ryoku-minimal.md](ryoku-minimal.md).
 
 ## Current environment limits (foundation host)
 

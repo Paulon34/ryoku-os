@@ -7,9 +7,9 @@
 | Static musl `ryoku-init` + `ryoku-console` | Built on disposable CI |
 | `ryoku-minimal.cpio.gz` experimental initramfs | Packed on disposable CI |
 | Lab kernel `ryoku-boot-seed-vmlinuz` | Verified Alpine virt channel (ADR-0002) |
-| Interactive QEMU guest boot | **NOT_RUN** unless you set both auth env vars |
+| Interactive QEMU guest boot | **`PASS_MANUAL`** once (2026-11-07, Paulo + 012.1 ZIP tip `fecc0b5`); **not** CI |
 | Product OS / Desktop | **Not** claimed |
-| T3 Boot Seed evidence path | **Preserved** (not required to use this ZIP) |
+| T3 Boot Seed evidence path | **Preserved** / separate (not required to use this ZIP) |
 
 ## Download → extract → validate
 
@@ -50,7 +50,7 @@ From a full checkout after CI/local pack placed blobs under `tests/qemu/run/`
 tests/qemu/scripts/run-ryoku-minimal-qemu.sh
 ```
 
-## Future authorized execute (manual)
+## Authorized execute (manual)
 
 Requires `qemu-system-x86_64` on a disposable/authorized machine:
 
@@ -62,7 +62,10 @@ RYOKU_MINIMAL_QEMU_EXECUTE=1 RYOKU_MINIMAL_QEMU_CONFIRM=RUN \
 Both env vars are required. Shape: TCG, 256 MB, 1 CPU, `-nic none`, no host disks,
 `-display none -serial stdio -monitor none`.
 
-Expected serial: `ryoku-init: pid=1` → `RYOKU_BOOT_SEED_READY` → console → `ryoku>`.
+Expected serial: `ryoku-init: pid=1` → `RYOKU_BOOT_SEED_READY` → console → `ryoku>`.  
+Manual run (2026-11-07) confirmed that path with command matrix in
+[`docs/testing/ryoku-minimal.md`](../../docs/testing/ryoku-minimal.md)
+(`interactive_guest_boot=PASS_MANUAL`). CI still does **not** execute guest boot.
 
 ## Package contents
 
