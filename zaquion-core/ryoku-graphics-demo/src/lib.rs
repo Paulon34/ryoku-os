@@ -1,8 +1,9 @@
-//! Ryoku graphics demo — First Pixels prototype (Mission 014).
+//! Ryoku graphics demo — First Pixels prototype (Mission 014 / 014.1).
 //!
 //! Builds an in-memory RGB24 framebuffer with a static title, then blits into a
-//! caller-provided `/dev/fb0` mapping. No DRM modeset, no handmade GPU command
-//! streams, no animation.
+//! caller-provided `/dev/fb0` mapping when a real framebuffer node exists.
+//! Prefers fbdev. DRM-only (card without fb0) is reported honestly — no dumb-buffer
+//! modeset/3D in this mission (isolated for a later step).
 //!
 //! **`FIRST_PIXELS` is never auto-claimed PASS** — requires human visual confirmation.
 
@@ -230,9 +231,60 @@ pub fn blit_rgb_to_fb(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> io:
 
 #[derive(Debug)]
 pub enum PresentOutcome {
-    SoftwareOnly { width: u32, height: u32 },
-    Fb0Presented { width: u32, height: u32, bpp: u32 },
-    NoSurface { reason: String },
+    SoftwareOnly {
+        width: u32,
+        height: u32,
+    },
+    Fb0Presented {
+        width: u32,
+        height: u32,
+        bpp: u32,
+    },
+    /// DRM card visible but no usable `/dev/fb0` — no present claimed.
+    DrmOnlyNoFb {
+        detail: String,
+    },
+    NoSurface {
+        reason: String,
+    },
+}
+
+/// Read-only surface inventory under `root` (guest `/` or fixture).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceProbe {
+    pub fb0: bool,
+    pub dri_card0: bool,
+    pub sysfs_drm: bool,
+    pub sysfs_graphics: bool,
+}
+
+#[must_use]
+pub fn probe_surfaces(root: &Path) -> SurfaceProbe {
+    SurfaceProbe {
+        fb0: root.join("dev/fb0").exists(),
+        dri_card0: root.join("dev/dri/card0").exists(),
+        sysfs_drm: root.join("sys/class/drm").is_dir(),
+        sysfs_graphics: root.join("sys/class/graphics").is_dir(),
+    }
+}
+
+#[must_use]
+pub fn format_surface_probe(p: &SurfaceProbe) -> String {
+    format!(
+        "{DEMO_IDENTITY}: surface probe fb0={} dri_card0={} sysfs_drm={} sysfs_graphics={}\n",
+        yes_no(p.fb0),
+        yes_no(p.dri_card0),
+        yes_no(p.sysfs_drm),
+        yes_no(p.sysfs_graphics),
+    )
+}
+
+fn yes_no(v: bool) -> &'static str {
+    if v {
+        "yes"
+    } else {
+        "no"
+    }
 }
 
 /// Safe software-only path for unit tests (no mmap).
@@ -249,13 +301,25 @@ pub fn present_to_mmap(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> io
 }
 
 /// Probe whether `/dev/fb0` + sysfs geometry exist under `root`.
+///
+/// If DRM nodes exist without fb0, returns an error that callers should treat as
+/// DRM-only (no fake present). Dumb-buffer modeset is intentionally out of scope.
 pub fn probe_fb0(root: &Path) -> Result<(PathBuf, FbGeometry), String> {
+    let surfaces = probe_surfaces(root);
     let fb_path = root.join("dev/fb0");
     if !fb_path.exists() {
+        if surfaces.dri_card0 || surfaces.sysfs_drm {
+            return Err(format!(
+                "{DEMO_IDENTITY}: DRM visible without /dev/fb0 — refusing unpresented buffer \
+                 (dumb-buffer/modeset not enabled in 014.1; prefer fbdev path). \
+                 dri_card0={} sysfs_drm={}",
+                yes_no(surfaces.dri_card0),
+                yes_no(surfaces.sysfs_drm)
+            ));
+        }
         return Err(format!(
             "{DEMO_IDENTITY}: missing {} — no framebuffer node \
-             (Alpine virt DRM/fb often modular; Minimal cpio ships no modules; \
-              PCI display class alone ≠ driver)",
+             (need matching virtio_gpu/fb modules; PCI virtio-pci alone ≠ DRM/fb)",
             fb_path.display()
         ));
     }
@@ -266,6 +330,16 @@ pub fn probe_fb0(root: &Path) -> Result<(PathBuf, FbGeometry), String> {
         )
     })?;
     Ok((fb_path, geom))
+}
+
+/// Classify a missing-fb probe error as DRM-only vs no surface.
+#[must_use]
+pub fn classify_no_fb_reason(reason: String) -> PresentOutcome {
+    if reason.contains("DRM visible without") {
+        PresentOutcome::DrmOnlyNoFb { detail: reason }
+    } else {
+        PresentOutcome::NoSurface { reason }
+    }
 }
 
 pub fn open_fb_rw(path: &Path) -> io::Result<File> {
@@ -296,9 +370,12 @@ pub fn format_outcome(out: &PresentOutcome) -> String {
             height,
             bpp,
         } => format!(
-            "{DEMO_IDENTITY}: wrote title into /dev/fb0 ({width}x{height} bpp={bpp}); \
+            "{DEMO_IDENTITY}: presented successfully into /dev/fb0 ({width}x{height} bpp={bpp}); \
              visual FIRST_PIXELS still requires human confirmation (NOT auto-PASS)\n"
         ),
+        PresentOutcome::DrmOnlyNoFb { detail } => {
+            format!("{detail}\n{DEMO_IDENTITY}: FIRST_PIXELS=NOT_RUN (DRM without fb0)\n")
+        }
         PresentOutcome::NoSurface { reason } => format!("{reason}\n"),
     }
 }
@@ -363,5 +440,32 @@ mod tests {
         assert!(err.contains("missing"));
         assert!(!err.contains("PASS"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probe_drm_without_fb_is_honest() {
+        let dir = std::env::temp_dir().join(format!("ryoku-gfx-drm-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("dev/dri")).unwrap();
+        fs::write(dir.join("dev/dri/card0"), b"").unwrap();
+        fs::create_dir_all(dir.join("sys/class/drm")).unwrap();
+        let err = probe_fb0(&dir).unwrap_err();
+        assert!(err.contains("DRM visible without"));
+        let out = classify_no_fb_reason(err);
+        match out {
+            PresentOutcome::DrmOnlyNoFb { .. } => {}
+            other => panic!("expected DrmOnlyNoFb, got {other:?}"),
+        }
+        let s = format_outcome(&out);
+        assert!(s.contains("FIRST_PIXELS=NOT_RUN"));
+        assert!(!s.contains("FIRST_PIXELS=PASS"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn title_lines_match_mission_copy() {
+        assert_eq!(TITLE_LINES[0], "RYOKU OS");
+        assert_eq!(TITLE_LINES[1], "Minimal Developer Preview");
+        assert_eq!(TITLE_LINES[2], "Rust Userland");
     }
 }

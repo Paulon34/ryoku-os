@@ -8,9 +8,9 @@ use std::process::ExitCode;
 
 use ryoku_virtlab::elf_static::prove_static_x86_64_elf;
 use ryoku_virtlab::initramfs::{
-    pack_boot_seed_from_init_path, pack_ryoku_graphics_from_paths, pack_ryoku_minimal_from_paths,
-    validate_boot_seed_cpio, validate_ryoku_minimal_cpio, RYOKU_GRAPHICS_RELEASE_TEXT,
-    RYOKU_RELEASE_TEXT,
+    pack_boot_seed_from_init_path, pack_ryoku_graphics_from_paths_with_modules,
+    pack_ryoku_minimal_from_paths, validate_boot_seed_cpio, validate_ryoku_minimal_cpio,
+    RYOKU_GRAPHICS_RELEASE_TEXT, RYOKU_RELEASE_TEXT,
 };
 use ryoku_virtlab::lab::discover_lab_root_from;
 use ryoku_virtlab::report::{exit_code, format_lab_report};
@@ -121,10 +121,12 @@ fn main() -> ExitCode {
             }
         }
         "pack-ryoku-graphics-cpio" => {
-            // Mission 014 — Minimal + ryoku-graphics-demo (does not replace serial Minimal package).
+            // Mission 014/014.1 — Minimal + graphics-demo (+ optional DRM modules).
+            // Does not replace serial Minimal package.
             let mut init: Option<PathBuf> = None;
             let mut console: Option<PathBuf> = None;
             let mut demo: Option<PathBuf> = None;
+            let mut modules: Option<PathBuf> = None;
             let mut out: Option<PathBuf> = None;
             let mut i = 1;
             while i < args.len() {
@@ -141,6 +143,10 @@ fn main() -> ExitCode {
                         i += 1;
                         demo = args.get(i).map(PathBuf::from);
                     }
+                    "--modules-dir" => {
+                        i += 1;
+                        modules = args.get(i).map(PathBuf::from);
+                    }
                     "--out" => {
                         i += 1;
                         out = args.get(i).map(PathBuf::from);
@@ -155,7 +161,8 @@ fn main() -> ExitCode {
             let (Some(init), Some(console), Some(demo), Some(out)) = (init, console, demo, out)
             else {
                 eprintln!(
-                    "usage: ryoku-virtlab pack-ryoku-graphics-cpio --init <bin> --console <bin> --graphics-demo <bin> --out <file.cpio>"
+                    "usage: ryoku-virtlab pack-ryoku-graphics-cpio --init <bin> --console <bin> \
+                     --graphics-demo <bin> [--modules-dir <staged>] --out <file.cpio>"
                 );
                 return ExitCode::from(2);
             };
@@ -169,18 +176,24 @@ fn main() -> ExitCode {
                     return ExitCode::from(1);
                 }
             }
-            match pack_ryoku_graphics_from_paths(
+            match pack_ryoku_graphics_from_paths_with_modules(
                 &init,
                 &console,
                 &demo,
                 RYOKU_GRAPHICS_RELEASE_TEXT,
+                modules.as_deref(),
             ) {
                 Ok(bytes) => match fs::File::create(&out).and_then(|mut f| f.write_all(&bytes)) {
                     Ok(()) => {
                         println!(
-                            "OK: wrote {} ({} bytes newc graphics preview)",
+                            "OK: wrote {} ({} bytes newc graphics preview{})",
                             out.display(),
-                            bytes.len()
+                            bytes.len(),
+                            if modules.is_some() {
+                                " + DRM modules"
+                            } else {
+                                ""
+                            }
                         );
                         ExitCode::SUCCESS
                     }

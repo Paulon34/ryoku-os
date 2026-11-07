@@ -1,0 +1,41 @@
+# Mission 014.1 — pinned Alpine virt DRM modules for lab kernel 6.12.114-0-virt
+# Third-party Alpine modloop — not Ryoku OS; not NixOS host modules.
+#
+# Source: Alpine netboot-3.21.9 modloop-virt (matches ISO alpine-virt-3.21.9 vmlinuz).
+# Lab kernel sha256 (ryoku-boot-seed-vmlinuz):
+#   cf36621501708b6c264a8dd5193d4b661551326bb28b3b8b09e90c514854bfd1
+
+name = alpine-virt-drm-modules
+kernel_release = 6.12.114-0-virt
+kernel_sha256 = cf36621501708b6c264a8dd5193d4b661551326bb28b3b8b09e90c514854bfd1
+modloop_url = https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/netboot-3.21.9/modloop-virt
+modloop_sha256 = 09f6c5bcd565b4b851daffe8cc1aa17f48fdfb9fe42ab52e59cda7bcd2599240
+modloop_member_prefix = modules/6.12.114-0-virt/
+guest_modules_root = lib/modules/6.12.114-0-virt
+vermagic_prefix = 6.12.114-0-virt
+
+# Load order (dependencies first) — relative to guest_modules_root
+module = kernel/drivers/virtio/virtio_dma_buf.ko
+module_sha256 = baec3730f9480496a89f2d502355d86c00f5827fa0ba76154ec74d53ab28356c
+module = kernel/drivers/video/fbdev/core/syscopyarea.ko
+module_sha256 = 5f372dfc404a99346cd4938584efb7afcb00ba23f4d8c6a8fe27e68838460174
+module = kernel/drivers/video/fbdev/core/sysfillrect.ko
+module_sha256 = 5dc31e3a993ed59c53b682071f59a0dbe0ed2d91c455860aa6cae23800e795ae
+module = kernel/drivers/video/fbdev/core/sysimgblt.ko
+module_sha256 = e3e6735cfa716dce8503790dfe749d823385e8636a42ff95e7f3078cfbfe71bd
+module = kernel/drivers/video/fbdev/core/fb_sys_fops.ko
+module_sha256 = e1cbfcf40005fb375f69deb10f1967adfeb870602843a1b6f020d984ee2f9729
+module = kernel/drivers/gpu/drm/drm_panel_orientation_quirks.ko
+module_sha256 = 3cd1f6f6f60bb7f4c0155d7ef53f58327cd6166d7a5fafda03d7a70d1f1f9ada
+module = kernel/drivers/i2c/i2c-core.ko
+module_sha256 = fa6a78a202564e6756dfef8e037528f1f32d4db83b514c9e54f06eadca7691c7
+module = kernel/drivers/gpu/drm/drm.ko
+module_sha256 = 249837530bc9ed1c7a534592bfd5aa720da979eb545c309e569d891e6b7e649c
+module = kernel/drivers/video/fbdev/core/fb.ko
+module_sha256 = 9ccc73e4b53583fde4d30ff9f829e70711e0f85f547f2ca31147c48643cef3cf
+module = kernel/drivers/gpu/drm/drm_kms_helper.ko
+module_sha256 = 3f9a21d4434c2a045fad9131a85d57a72151c4a0de5eb32a2e2816076e776afa
+module = kernel/drivers/gpu/drm/drm_shmem_helper.ko
+module_sha256 = 0174746ee5901623c1792fd769a255af75270ecbf15f01ba46937b7543d8558d
+module = kernel/drivers/gpu/drm/virtio/virtio-gpu.ko
+module_sha256 = 8b1a465ecea0314749fb6bd63a0f303856775fd92fdb6641421b24fd7302faf6

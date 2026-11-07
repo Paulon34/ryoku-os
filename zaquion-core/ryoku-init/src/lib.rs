@@ -11,10 +11,14 @@
 //! ASCII banner before that spawn. The original Boot Seed initramfs lacks the
 //! console binary, so T3 behavior stays idle-after-READY with **no** mounts /
 //! **no** console (READY contract unchanged).
+//!
+//! Mission 014.1 adds a **graphics profile** when `/bin/ryoku-graphics-demo` is
+//! present: PID 1 may load an allowlisted Alpine virt DRM module set and start
+//! the demo once. Serial Minimal / T3 packages omit that binary → unchanged.
 
 #![forbid(unsafe_code)]
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// Printed by `ryoku-init` as process identity.
 pub const PROCESS_IDENTITY: &str = "ryoku-init";
@@ -27,6 +31,30 @@ pub const PID1_IDENTITY_MARKER: &str = "ryoku-init: pid=1";
 
 /// Guest path for the interactive console binary (Ryoku Minimal initramfs only).
 pub const CONSOLE_BIN_PATH: &str = "/bin/ryoku-console";
+
+/// Guest path for the graphics demo (graphics package only — Mission 014/014.1).
+pub const GRAPHICS_DEMO_BIN_PATH: &str = "/bin/ryoku-graphics-demo";
+
+/// Guest modules root for the pinned Alpine virt lab kernel (Mission 014.1).
+pub const VIRT_DRM_MODULES_ROOT: &str = "/lib/modules/6.12.114-0-virt";
+
+/// Allowlisted DRM/fb modules relative to [`VIRT_DRM_MODULES_ROOT`] (load order).
+///
+/// Exact Alpine netboot-3.21.9 modloop members — never NixOS host `/lib/modules`.
+pub const VIRT_DRM_ALLOWLIST: &[&str] = &[
+    "kernel/drivers/virtio/virtio_dma_buf.ko",
+    "kernel/drivers/video/fbdev/core/syscopyarea.ko",
+    "kernel/drivers/video/fbdev/core/sysfillrect.ko",
+    "kernel/drivers/video/fbdev/core/sysimgblt.ko",
+    "kernel/drivers/video/fbdev/core/fb_sys_fops.ko",
+    "kernel/drivers/gpu/drm/drm_panel_orientation_quirks.ko",
+    "kernel/drivers/i2c/i2c-core.ko",
+    "kernel/drivers/gpu/drm/drm.ko",
+    "kernel/drivers/video/fbdev/core/fb.ko",
+    "kernel/drivers/gpu/drm/drm_kms_helper.ko",
+    "kernel/drivers/gpu/drm/drm_shmem_helper.ko",
+    "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko",
+];
 
 /// True when `pid` is the init process id.
 #[must_use]
@@ -87,6 +115,18 @@ pub fn guest_interactive_mode() -> bool {
     interactive_console_present(Path::new(CONSOLE_BIN_PATH))
 }
 
+/// True when the graphics demo binary is present (graphics package profile).
+#[must_use]
+pub fn graphics_demo_present(demo_path: &Path) -> bool {
+    demo_path.is_file()
+}
+
+/// Default guest check for graphics profile (Mission 014.1).
+#[must_use]
+pub fn guest_graphics_profile() -> bool {
+    graphics_demo_present(Path::new(GRAPHICS_DEMO_BIN_PATH))
+}
+
 /// Message when interactive console will be started (after READY; never fakes READY).
 #[must_use]
 pub fn interactive_start_line() -> String {
@@ -97,6 +137,55 @@ pub fn interactive_start_line() -> String {
 #[must_use]
 pub fn interactive_done_line(detail: &str) -> String {
     format!("{PROCESS_IDENTITY}: console finished ({detail}); remaining as PID 1\n")
+}
+
+/// Serial line before allowlisted DRM module load (graphics profile only).
+#[must_use]
+pub fn graphics_modules_start_line() -> String {
+    format!(
+        "{PROCESS_IDENTITY}: graphics profile — loading allowlisted virt DRM modules \
+         under {VIRT_DRM_MODULES_ROOT}\n"
+    )
+}
+
+/// Serial line before controlled graphics demo start (never duplicates READY).
+#[must_use]
+pub fn graphics_demo_start_line() -> String {
+    format!("{PROCESS_IDENTITY}: graphics profile — starting {GRAPHICS_DEMO_BIN_PATH}\n")
+}
+
+/// Serial line when graphics demo exits or fails; PID 1 continues to console.
+#[must_use]
+pub fn graphics_demo_done_line(detail: &str) -> String {
+    format!("{PROCESS_IDENTITY}: graphics demo finished ({detail}); continuing\n")
+}
+
+/// Refuse `..`, absolute paths, and names outside the allowlist.
+#[must_use]
+pub fn is_allowlisted_module_rel(rel: &str) -> bool {
+    if rel.is_empty() || rel.starts_with('/') || rel.contains('\0') {
+        return false;
+    }
+    for c in Path::new(rel).components() {
+        match c {
+            Component::Normal(_) => {}
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return false;
+            }
+        }
+    }
+    VIRT_DRM_ALLOWLIST.iter().any(|a| *a == rel)
+}
+
+/// Resolve guest path for an allowlisted module relative path.
+pub fn allowlisted_module_guest_path(rel: &str) -> Result<String, String> {
+    if !is_allowlisted_module_rel(rel) {
+        return Err(format!("module path not allowlisted: {rel}"));
+    }
+    Ok(format!("{VIRT_DRM_MODULES_ROOT}/{rel}"))
 }
 
 /// ASCII banner after READY / mounts, before console (Mission 013).
@@ -190,5 +279,45 @@ mod tests {
         assert!(b.contains("not a product OS boot"));
         assert!(!b.contains(BOOT_SEED_READY_MARKER));
         assert!(b.is_ascii());
+    }
+
+    #[test]
+    fn graphics_profile_absent_by_default_path() {
+        let missing = Path::new("/bin/ryoku-graphics-demo-definitely-missing-for-test");
+        assert!(!graphics_demo_present(missing));
+    }
+
+    #[test]
+    fn graphics_messages_do_not_emit_ready_or_first_pixels_pass() {
+        for s in [
+            graphics_modules_start_line(),
+            graphics_demo_start_line(),
+            graphics_demo_done_line("ok"),
+        ] {
+            assert!(!s.contains(BOOT_SEED_READY_MARKER), "{s}");
+            assert!(!s.contains("FIRST_PIXELS=PASS"), "{s}");
+        }
+        assert!(graphics_demo_start_line().contains(GRAPHICS_DEMO_BIN_PATH));
+    }
+
+    #[test]
+    fn allowlist_rejects_escape_and_unknown() {
+        assert!(is_allowlisted_module_rel(
+            "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko"
+        ));
+        assert!(!is_allowlisted_module_rel("../etc/passwd"));
+        assert!(!is_allowlisted_module_rel("/lib/modules/x.ko"));
+        assert!(!is_allowlisted_module_rel("kernel/drivers/gpu/drm/evil.ko"));
+        assert!(allowlisted_module_guest_path("kernel/drivers/gpu/drm/drm.ko").is_ok());
+        assert!(allowlisted_module_guest_path("../x").is_err());
+    }
+
+    #[test]
+    fn allowlist_has_twelve_modules_ending_with_virtio_gpu() {
+        assert_eq!(VIRT_DRM_ALLOWLIST.len(), 12);
+        assert!(VIRT_DRM_ALLOWLIST
+            .last()
+            .unwrap()
+            .ends_with("virtio-gpu.ko"));
     }
 }

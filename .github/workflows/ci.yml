@@ -129,6 +129,10 @@ jobs:
             tests/qemu/scripts/test-ryoku-minimal-vm-zip.sh
             tests/qemu/scripts/test-ryoku-graphics-vm-zip.sh
             tests/qemu/scripts/run-ryoku-graphics-qemu.sh
+            tests/qemu/scripts/prep-ryoku-graphics-artifacts.sh
+            tests/qemu/scripts/fetch-virt-drm-modules.sh
+            tests/qemu/scripts/test-virt-drm-modules-policy.sh
+            tests/qemu/fixtures/virt-drm-modules.manifest
             tests/qemu/README-GRAPHICS.md
             tests/qemu/configs/console-graphics.rvl.conf
             tests/qemu/README-VM.md

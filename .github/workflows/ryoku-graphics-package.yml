@@ -1,7 +1,8 @@
-# Mission 014 — Ryoku Minimal GRAPHICS preview package (separate from serial Minimal).
+# Mission 014 / 014.1 — Ryoku Minimal GRAPHICS preview package (separate from serial Minimal).
 #
-# Builds musl init+console+graphics-demo, packs ryoku-graphics.cpio.gz, reuses lab
-# kernel extract, uploads downloadable artifacts + SHA256SUMS. Does NOT run QEMU.
+# Builds musl init+console+graphics-demo, fetches pinned Alpine virt DRM modules,
+# packs ryoku-graphics.cpio.gz (+ modules), reuses lab kernel extract, uploads
+# downloadable artifacts + SHA256SUMS. Does NOT run QEMU.
 # Does NOT replace ryoku-minimal-package / ryoku-minimal.cpio.gz.
 name: ryoku-graphics-package
 
@@ -27,6 +28,7 @@ env:
   RYOKU_VERIFY_GPG: "1"
   RYOKU_KERNEL_EXTRACT_EXECUTE: "1"
   RYOKU_GRAPHICS_PREP_EXECUTE: "1"
+  RYOKU_DRM_MODULES_EXECUTE: "1"
   RYOKU_GRAPHICS_QEMU_EXECUTE: "0"
   RYOKU_MINIMAL_QEMU_EXECUTE: "0"
   RYOKU_T3_EXECUTE: "0"
@@ -47,7 +49,8 @@ jobs:
             musl-tools \
             gzip \
             xorriso \
-            cpio
+            cpio \
+            squashfs-tools
 
       - name: Install Rust toolchain (+ musl target)
         uses: dtolnay/rust-toolchain@master
@@ -72,16 +75,22 @@ jobs:
           tests/qemu/scripts/extract-boot-seed-kernel.sh
           test -f tests/qemu/run/ryoku-boot-seed-vmlinuz
 
-      - name: Build musl + pack ryoku-graphics.cpio.gz
+      - name: Build musl + pack ryoku-graphics.cpio.gz (+ DRM modules)
         run: |
           set -euo pipefail
+          chmod +x tests/qemu/scripts/fetch-virt-drm-modules.sh
           chmod +x tests/qemu/scripts/prep-ryoku-graphics-artifacts.sh
           tests/qemu/scripts/prep-ryoku-graphics-artifacts.sh
           test -f tests/qemu/run/ryoku-graphics.cpio.gz
           test -f tests/qemu/run/SHA256SUMS-graphics.txt
+          test -f tests/qemu/run/virt-drm-modules/PROVENANCE.txt
           test -x zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-graphics-demo
+          # Ensure allowlisted virtio-gpu.ko is inside the graphics cpio (not serial Minimal).
+          gzip -dc tests/qemu/run/ryoku-graphics.cpio.gz | cpio -t 2>/dev/null \
+            | grep -qx './lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/virtio/virtio-gpu.ko'
           # Serial Minimal artifact must not be required/overwritten here.
           echo "graphics_package_build=PASS" | tee tests/qemu/results/ryoku-graphics-status.txt
+          echo "drm_modules_packed=PASS" | tee -a tests/qemu/results/ryoku-graphics-status.txt
           echo "first_graphical_boot=NOT_RUN" | tee -a tests/qemu/results/ryoku-graphics-status.txt
           echo "FIRST_PIXELS=NOT_RUN" | tee -a tests/qemu/results/ryoku-graphics-status.txt
 
@@ -114,6 +123,9 @@ jobs:
           cp -a tests/qemu/README-GRAPHICS.md "$PKG/"
           cp -a tests/qemu/scripts/run-ryoku-graphics-qemu.sh "$PKG/"
           cp -a tests/qemu/configs/console-graphics.rvl.conf "$PKG/"
+          cp -a tests/qemu/fixtures/virt-drm-modules.manifest "$PKG/"
+          cp -a tests/qemu/run/virt-drm-modules/PROVENANCE.txt "$PKG/DRM-MODULES-PROVENANCE.txt"
+          cp -a tests/qemu/run/virt-drm-modules/SHA256SUMS.txt "$PKG/DRM-MODULES-SHA256SUMS.txt"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console "$PKG/bin-musl/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-graphics-demo "$PKG/bin-musl/"

@@ -1,7 +1,7 @@
-//! Guest/host entry for `ryoku-graphics-demo` (Mission 014).
+//! Guest/host entry for `ryoku-graphics-demo` (Mission 014 / 014.1).
 //!
 //! `mmap` of `/dev/fb0` requires a single unsafe call via `memmap2`; library
-//! code stays `forbid(unsafe_code)`.
+//! code stays `forbid(unsafe_code)`. Prefers real fb0. DRM-only → honest fail.
 
 #![allow(unsafe_code)]
 
@@ -9,8 +9,9 @@ use std::process::ExitCode;
 
 use memmap2::MmapMut;
 use ryoku_graphics_demo::{
-    format_outcome, graphics_root_from_env, open_fb_rw, present_to_mmap, probe_fb0, render_title,
-    PresentOutcome, RgbBuffer,
+    classify_no_fb_reason, format_outcome, format_surface_probe, graphics_root_from_env,
+    open_fb_rw, present_to_mmap, probe_fb0, probe_surfaces, render_title, PresentOutcome,
+    RgbBuffer,
 };
 
 fn main() -> ExitCode {
@@ -22,17 +23,33 @@ fn main() -> ExitCode {
         }
     };
 
+    eprintln!(
+        "ryoku-graphics-demo: device discovered / surface inventory under {}",
+        root.display()
+    );
+    let surfaces = probe_surfaces(&root);
+    eprint!("{}", format_surface_probe(&surfaces));
+
     let mut buf = RgbBuffer::new(640, 480, (0, 0, 0));
     render_title(&mut buf);
 
     let (fb_path, geom) = match probe_fb0(&root) {
         Ok(v) => v,
         Err(reason) => {
-            let out = PresentOutcome::NoSurface { reason };
+            let out = classify_no_fb_reason(reason);
             eprint!("{}", format_outcome(&out));
             return ExitCode::from(1);
         }
     };
+
+    eprintln!(
+        "ryoku-graphics-demo: surface available: {} ({}x{} bpp={} stride={})",
+        fb_path.display(),
+        geom.width,
+        geom.height,
+        geom.bpp,
+        geom.stride
+    );
 
     let file = match open_fb_rw(&fb_path) {
         Ok(f) => f,
