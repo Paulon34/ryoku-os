@@ -104,8 +104,10 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.11 — Interactive Shell Input (Missão 015.1)
 
-- [ ] Guest evdev mouse + keyboard; event loop; dock hit-test / launcher panel
-- [ ] INPUT_GUEST / MOUSE / KEYBOARD = **NOT_RUN** até confirmação manual
+- [x] Guest evdev mouse + keyboard path; event loop; dock hit-test / launcher panel (code)
+- [x] QEMU virtio keyboard + tablet; Alpine `evdev` + `virtio_input` modules
+- [x] PID1: shell background + serial console + reap (no zombies)
+- [ ] **`INPUT_GUEST` / `MOUSE_INTERACTION` / `KEYBOARD_INTERACTION` = `NOT_RUN`** até confirmação manual
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

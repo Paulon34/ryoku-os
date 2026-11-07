@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Mission 015 — Ryoku Shell Preview QEMU helper (plan-only by default).
+# Mission 015.1 — Ryoku Shell Preview + guest input QEMU helper (plan-only by default).
 # Dual gate: RYOKU_SHELL_QEMU_EXECUTE=1 + RYOKU_SHELL_QEMU_CONFIRM=RUN
+# Adds virtio keyboard + tablet so the guest can expose /dev/input/event*.
 set -euo pipefail
 
 fail() { echo "error: $*" >&2; exit 1; }
@@ -49,7 +50,7 @@ case "$DISPLAY_BACKEND" in
   *) fail "RYOKU_SHELL_DISPLAY must be gtk|sdl|none (got $DISPLAY_BACKEND)" ;;
 esac
 
-echo "Ryoku Minimal SHELL QEMU helper (Mission 015)"
+echo "Ryoku Minimal SHELL QEMU helper (Mission 015.1 interactive)"
 echo "  mode:     $MODE"
 echo "  package:  $PKG"
 echo "  kernel:   $KERNEL"
@@ -57,7 +58,8 @@ echo "  initrd:   $INITRD"
 echo "  sums:     $SUMS"
 echo "  display:  $DISPLAY_BACKEND"
 echo "  execute:  $EXECUTE (0=plan/validate; 1 needs CONFIRM=RUN)"
-echo "  note:     shell graphical guest=NOT_RUN until human visual confirm; input=NOT_RUN (015.1)"
+echo "  note:     INPUT_GUEST=NOT_RUN MOUSE_INTERACTION=NOT_RUN KEYBOARD_INTERACTION=NOT_RUN until human"
+echo "  note:     shell graphical guest=NOT_RUN unless SHELL_PREVIEW already PASS_MANUAL on 015 tip"
 
 [[ -f "$SUMS" ]] || fail "missing SHA256SUMS at $SUMS"
 [[ -f "$KERNEL" ]] || fail "missing lab kernel $KERNEL"
@@ -86,17 +88,19 @@ esac
 echo
 echo "PLAN (reproducible argv — not executed unless authorized):"
 echo "  qemu-system-x86_64 \\"
-echo "    -name ryoku-virtlab-shell-preview \\"
+echo "    -name ryoku-virtlab-shell-input \\"
 echo "    -accel tcg -m 256 -smp 1 \\"
 echo "    ${DISPLAY_ARGS[*]} -nodefaults -nic none \\"
 echo "    -device virtio-vga \\"
+echo "    -device virtio-keyboard-pci \\"
+echo "    -device virtio-tablet-pci \\"
 echo "    -kernel $KERNEL \\"
 echo "    -initrd $INITRD \\"
 echo "    -append 'console=ttyS0' \\"
 echo "    -serial stdio -monitor none \\"
 echo "    -machine type=pc"
 echo
-echo "Honesty: shell package ships ryoku-shell-preview (not graphics-demo). FIRST_PIXELS preserved on 014 package."
+echo "Honesty: guest evdev only (not host /dev/input). No Bash/Hyprland/Wayland. No arbitrary app exec."
 
 if [[ "$EXECUTE" != "1" ]]; then
   echo "OK: plan+validate only ($MODE). Set RYOKU_SHELL_QEMU_EXECUTE=1 RYOKU_SHELL_QEMU_CONFIRM=RUN for guest (authorized)."
@@ -111,9 +115,9 @@ if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
   fail "qemu-system-x86_64 not found"
 fi
 
-echo "AUTHORIZED: starting QEMU shell profile (TCG, nic=none, serial=stdio)…"
+echo "AUTHORIZED: starting QEMU shell+input profile (TCG, nic=none, serial=stdio)…"
 exec qemu-system-x86_64 \
-  -name ryoku-virtlab-shell-preview \
+  -name ryoku-virtlab-shell-input \
   -accel tcg \
   -m 256 \
   -smp 1 \
@@ -121,6 +125,8 @@ exec qemu-system-x86_64 \
   -nodefaults \
   -nic none \
   -device virtio-vga \
+  -device virtio-keyboard-pci \
+  -device virtio-tablet-pci \
   -kernel "$KERNEL" \
   -initrd "$INITRD" \
   -append "console=ttyS0" \
