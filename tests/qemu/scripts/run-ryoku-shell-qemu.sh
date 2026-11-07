@@ -50,7 +50,7 @@ case "$DISPLAY_BACKEND" in
   *) fail "RYOKU_SHELL_DISPLAY must be gtk|sdl|none (got $DISPLAY_BACKEND)" ;;
 esac
 
-echo "Ryoku Minimal SHELL QEMU helper (Mission 015.1 interactive)"
+echo "Ryoku Minimal SHELL QEMU helper (Mission 015.2 launcher)"
 echo "  mode:     $MODE"
 echo "  package:  $PKG"
 echo "  kernel:   $KERNEL"
@@ -58,8 +58,8 @@ echo "  initrd:   $INITRD"
 echo "  sums:     $SUMS"
 echo "  display:  $DISPLAY_BACKEND"
 echo "  execute:  $EXECUTE (0=plan/validate; 1 needs CONFIRM=RUN)"
-echo "  note:     INPUT_GUEST=NOT_RUN MOUSE_INTERACTION=NOT_RUN KEYBOARD_INTERACTION=NOT_RUN until human"
-echo "  note:     shell graphical guest=NOT_RUN unless SHELL_PREVIEW already PASS_MANUAL on 015 tip"
+echo "  note:     LAUNCHER_GUEST=NOT_RUN INPUT_FACT=NOT_RUN MOUSE/KEYBOARD=NOT_RUN until human"
+echo "  note:     panel facts are UNAVAILABLE/DETECTED/EVENTS RECEIVED — never auto PASS_MANUAL"
 
 [[ -f "$SUMS" ]] || fail "missing SHA256SUMS at $SUMS"
 [[ -f "$KERNEL" ]] || fail "missing lab kernel $KERNEL"
@@ -86,6 +86,10 @@ case "$DISPLAY_BACKEND" in
 esac
 
 echo
+# Graphical shell profile only: hide fbcon hardware cursor (rest flicker ≠ tearing).
+# Serial/T3/minimal packages do NOT set vt.global_cursor_default.
+APPEND_CMDLINE="console=ttyS0 vt.global_cursor_default=0"
+
 echo "PLAN (reproducible argv — not executed unless authorized):"
 echo "  qemu-system-x86_64 \\"
 echo "    -name ryoku-virtlab-shell-input \\"
@@ -96,11 +100,12 @@ echo "    -device virtio-keyboard-pci \\"
 echo "    -device virtio-tablet-pci \\"
 echo "    -kernel $KERNEL \\"
 echo "    -initrd $INITRD \\"
-echo "    -append 'console=ttyS0' \\"
+echo "    -append '$APPEND_CMDLINE' \\"
 echo "    -serial stdio -monitor none \\"
 echo "    -machine type=pc"
 echo
 echo "Honesty: guest evdev only (not host /dev/input). No Bash/Hyprland/Wayland. No arbitrary app exec."
+echo "Honesty: vt.global_cursor_default=0 is fbcon cursor hide (not DRM pageflip / not GTK tear claim)."
 
 if [[ "$EXECUTE" != "1" ]]; then
   echo "OK: plan+validate only ($MODE). Set RYOKU_SHELL_QEMU_EXECUTE=1 RYOKU_SHELL_QEMU_CONFIRM=RUN for guest (authorized)."
@@ -129,7 +134,7 @@ exec qemu-system-x86_64 \
   -device virtio-tablet-pci \
   -kernel "$KERNEL" \
   -initrd "$INITRD" \
-  -append "console=ttyS0" \
+  -append "$APPEND_CMDLINE" \
   -serial stdio \
   -monitor none \
   -machine type=pc

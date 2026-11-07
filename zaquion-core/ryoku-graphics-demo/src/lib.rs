@@ -287,9 +287,27 @@ pub fn read_fb0_geometry(root: &Path) -> io::Result<FbGeometry> {
 
 /// Blit RGB888 software buffer into an fb mmap (32bpp XRGB little-endian or 24bpp BGR).
 ///
-/// Writes at most `min(src, geom)` pixels; never past `visible` capacity. Source may be
-/// smaller than the FB (title buffer vs odd QEMU modes like 941×474).
+/// Mission **015.2.1**: does **not** clear the visible mmap first (that caused
+/// GRAPHICS_FLICKER). Compose a full frame in the Rust RGB buffer, convert to the
+/// real fb pixel format, then copy **by scanline**. Never writes past
+/// `visible_bytes` / map length. fbdev has **no** vblank/pageflip guarantee —
+/// DRM pageflip is a future evolution (docs only).
+///
+/// Writes at most `min(src, geom)` pixels. Source may be smaller than the FB
+/// (title buffer vs odd QEMU modes like 941×474 / 941×993).
 pub fn blit_rgb_to_fb(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> io::Result<()> {
+    blit_rgb_to_fb_rows(map, geom, src, 0, geom.height.min(src.height))
+}
+
+/// Blit a half-open row range `[y0, y1)` (dirty-region helper). Same format rules
+/// as [`blit_rgb_to_fb`]; never clears and never writes outside the map.
+pub fn blit_rgb_to_fb_rows(
+    map: &mut [u8],
+    geom: &FbGeometry,
+    src: &RgbBuffer,
+    y0: u32,
+    y1: u32,
+) -> io::Result<()> {
     let plan = validate_fb_geometry(geom.clone(), None, "blit")
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     if map.len() < plan.visible_bytes {
@@ -309,13 +327,17 @@ pub fn blit_rgb_to_fb(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> io:
     }
     let bpp = geom.bpp;
     let bpp_bytes = (bpp / 8) as usize;
-    // Clear only the visible region (not beyond reported capacity).
-    for b in map.iter_mut().take(plan.visible_bytes) {
-        *b = 0;
-    }
     let copy_w = geom.width.min(src.width);
-    let copy_h = geom.height.min(src.height);
-    for y in 0..copy_h {
+    let max_h = geom.height.min(src.height);
+    let y0 = y0.min(max_h);
+    let y1 = y1.min(max_h);
+    if y0 >= y1 {
+        return Ok(());
+    }
+    // Scanline convert: build one row in a scratch, then copy into mmap.
+    // Avoids per-pixel store thrash and never blanks the visible surface first.
+    let mut row = vec![0u8; (copy_w as usize) * bpp_bytes];
+    for y in y0..y1 {
         for x in 0..copy_w {
             let si = ((y as usize) * (src.width as usize) + (x as usize)) * 3;
             if si + 2 >= src.pixels.len() {
@@ -327,24 +349,31 @@ pub fn blit_rgb_to_fb(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> io:
             let r = src.pixels[si];
             let g = src.pixels[si + 1];
             let b = src.pixels[si + 2];
-            let di = (y as usize) * (geom.stride as usize) + (x as usize) * bpp_bytes;
-            if di + bpp_bytes > plan.visible_bytes {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("OOB dest pixel x={x} y={y} di={di} bpp_bytes={bpp_bytes}"),
-                ));
-            }
+            let oi = (x as usize) * bpp_bytes;
             if bpp == 32 {
-                map[di] = b;
-                map[di + 1] = g;
-                map[di + 2] = r;
-                map[di + 3] = 0;
+                row[oi] = b;
+                row[oi + 1] = g;
+                row[oi + 2] = r;
+                row[oi + 3] = 0;
             } else {
-                map[di] = b;
-                map[di + 1] = g;
-                map[di + 2] = r;
+                row[oi] = b;
+                row[oi + 1] = g;
+                row[oi + 2] = r;
             }
         }
+        let di = (y as usize) * (geom.stride as usize);
+        let n = (copy_w as usize) * bpp_bytes;
+        if di + n > plan.visible_bytes || di + n > map.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "OOB dest row y={y} di={di} n={n} visible={}",
+                    plan.visible_bytes
+                ),
+            ));
+        }
+        map[di..di + n].copy_from_slice(&row[..n]);
+        // Leave stride padding untouched (no clear of trailing bytes).
     }
     Ok(())
 }
@@ -540,6 +569,54 @@ mod tests {
         assert_eq!(map[0], 0);
         assert_eq!(map[1], 0);
         assert_eq!(map[2], 255);
+    }
+
+    #[test]
+    fn blit_does_not_clear_stride_padding() {
+        // 015.2.1: no visible clear — padding beyond copy_w*bpp must stay intact.
+        let src = RgbBuffer::new(1, 1, (10, 20, 30));
+        let geom = FbGeometry {
+            width: 1,
+            height: 1,
+            bpp: 32,
+            stride: 16,
+        };
+        let mut map = vec![0xAAu8; 16];
+        blit_rgb_to_fb(&mut map, &geom, &src).unwrap();
+        assert_eq!(&map[0..4], &[30, 20, 10, 0]);
+        assert!(map[4..].iter().all(|&b| b == 0xAA));
+    }
+
+    #[test]
+    fn blit_rows_only_touches_range() {
+        let src = RgbBuffer::new(2, 4, (1, 2, 3));
+        let geom = FbGeometry {
+            width: 2,
+            height: 4,
+            bpp: 32,
+            stride: 8,
+        };
+        let mut map = vec![0x55u8; 8 * 4];
+        blit_rgb_to_fb_rows(&mut map, &geom, &src, 1, 2).unwrap();
+        // Row 0 untouched.
+        assert!(map[0..8].iter().all(|&b| b == 0x55));
+        // Row 1 written.
+        assert_eq!(&map[8..12], &[3, 2, 1, 0]);
+        // Row 2 untouched.
+        assert!(map[16..24].iter().all(|&b| b == 0x55));
+    }
+
+    #[test]
+    fn valid_paulo_dims_941x993() {
+        // 015.2.1 manual FAIL_MANUAL flicker tip: 941×993 32bpp stride 3764.
+        let geom = FbGeometry {
+            width: 941,
+            height: 993,
+            bpp: 32,
+            stride: 3764,
+        };
+        let plan = validate_fb_geometry(geom, None, "test").unwrap();
+        assert_eq!(plan.visible_bytes, 3764 * 993);
     }
 
     #[test]
