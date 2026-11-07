@@ -57,6 +57,9 @@ pub const VIRT_DRM_ALLOWLIST: &[&str] = &[
     "kernel/drivers/gpu/drm/drm_kms_helper.ko",
     "kernel/drivers/gpu/drm/drm_shmem_helper.ko",
     "kernel/drivers/gpu/drm/virtio/virtio-gpu.ko",
+    // Mission 015.1 — guest evdev + virtio input (after DRM/fb).
+    "kernel/drivers/input/evdev.ko",
+    "kernel/drivers/virtio/virtio_input.ko",
 ];
 
 /// True when `pid` is the init process id.
@@ -357,11 +360,10 @@ mod tests {
     }
 
     #[test]
-    fn allowlist_has_twelve_modules_ending_with_virtio_gpu() {
-        assert_eq!(VIRT_DRM_ALLOWLIST.len(), 12);
-        assert!(VIRT_DRM_ALLOWLIST
-            .last()
-            .unwrap()
-            .ends_with("virtio-gpu.ko"));
+    fn allowlist_has_drm_then_input_modules() {
+        assert_eq!(VIRT_DRM_ALLOWLIST.len(), 14);
+        assert!(VIRT_DRM_ALLOWLIST[11].ends_with("virtio-gpu.ko"));
+        assert!(VIRT_DRM_ALLOWLIST[12].ends_with("evdev.ko"));
+        assert!(VIRT_DRM_ALLOWLIST[13].ends_with("virtio_input.ko"));
     }
 }

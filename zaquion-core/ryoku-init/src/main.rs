@@ -155,28 +155,21 @@ fn announce_graphics_inventory() {
     ));
 }
 
-/// Controlled start of `/bin/ryoku-shell-preview` once (Mission 015). Prefer over graphics-demo
-/// to avoid dual FB presenters in the same guest.
-fn run_shell_preview_once_best_effort() {
+/// Spawn `/bin/ryoku-shell-preview` in the background (Mission 015.1).
+///
+/// Does **not** wait — shell event loop stays alive while serial console runs.
+/// stdin is null (input is guest evdev, not serial). WARN + continue on failure.
+fn spawn_shell_preview_background_best_effort() -> Option<std::process::Child> {
     announce(&shell_preview_start_line());
     announce_graphics_inventory();
 
-    let stdin = match open_console_rw() {
-        Ok(f) => f,
-        Err(err) => {
-            announce(&shell_preview_done_line(&format!(
-                "WARN open console for shell stdin failed: {err}"
-            )));
-            return;
-        }
-    };
     let stdout = match open_console_rw() {
         Ok(f) => f,
         Err(err) => {
             announce(&shell_preview_done_line(&format!(
                 "WARN open console for shell stdout failed: {err}"
             )));
-            return;
+            return None;
         }
     };
     let stderr = match open_console_rw() {
@@ -185,44 +178,49 @@ fn run_shell_preview_once_best_effort() {
             announce(&shell_preview_done_line(&format!(
                 "WARN open console for shell stderr failed: {err}"
             )));
-            return;
+            return None;
         }
     };
 
-    let child = Command::new(SHELL_PREVIEW_BIN_PATH)
+    match Command::new(SHELL_PREVIEW_BIN_PATH)
         .env("RYOKU_GRAPHICS_ROOT", "/")
         .env("RYOKU_CONSOLE_ROOT", "/")
-        .stdin(Stdio::from(stdin))
+        .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
-        .spawn();
-
-    match child {
-        Ok(mut child) => match child.wait() {
-            Ok(status) if status.success() => {
-                announce(
-                    "ryoku-init: shell preview presented (exit 0); graphical guest confirm still NOT_RUN; input NOT_RUN (015.1)\n",
-                );
-                announce(&shell_preview_done_line(&format!("exit {status}")));
-            }
-            Ok(status) => {
-                announce(&format!(
-                    "ryoku-init: WARN shell preview failed (status {status}); serial console continues\n"
-                ));
-                announce(&shell_preview_done_line(&format!("exit {status}")));
-            }
-            Err(err) => {
-                announce(&format!(
-                    "ryoku-init: WARN shell preview wait failed: {err}; serial console continues\n"
-                ));
-                announce(&shell_preview_done_line(&format!("wait failed: {err}")));
-            }
-        },
+        .spawn()
+    {
+        Ok(child) => {
+            announce(
+                "ryoku-init: shell preview spawned in background (stays alive with serial); \
+                 INPUT_GUEST/MOUSE_INTERACTION/KEYBOARD_INTERACTION=NOT_RUN until manual\n",
+            );
+            Some(child)
+        }
         Err(err) => {
             announce(&format!(
                 "ryoku-init: WARN shell preview spawn failed: {err}; serial console continues\n"
             ));
             announce(&shell_preview_done_line(&format!("spawn failed: {err}")));
+            None
+        }
+    }
+}
+
+/// Reap a background shell child without blocking (no zombies).
+fn poll_reap_shell(child: &mut Option<std::process::Child>) {
+    let Some(c) = child.as_mut() else {
+        return;
+    };
+    match c.try_wait() {
+        Ok(Some(status)) => {
+            announce(&shell_preview_done_line(&format!("exit {status}")));
+            *child = None;
+        }
+        Ok(None) => {}
+        Err(err) => {
+            announce(&shell_preview_done_line(&format!("wait failed: {err}")));
+            *child = None;
         }
     }
 }
@@ -354,9 +352,10 @@ fn run_interactive_console_once() {
     }
 }
 
-fn idle_forever() -> ! {
+fn idle_forever_reaping(mut shell: Option<std::process::Child>) -> ! {
     loop {
-        thread::sleep(Duration::from_secs(3600));
+        poll_reap_shell(&mut shell);
+        thread::sleep(Duration::from_secs(1));
     }
 }
 
@@ -370,6 +369,8 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    let mut shell_child = None;
+
     // READY already emitted. Optional Minimal interactive path (separate from T3).
     if guest_interactive_mode() {
         // Mounts are Minimal-only; T3 (no console binary) skips this and stays idle.
@@ -381,15 +382,16 @@ fn main() -> ExitCode {
         if guest_any_graphics_profile() {
             load_virt_drm_modules_best_effort();
             if guest_shell_profile() {
-                run_shell_preview_once_best_effort();
+                // 015.1: shell stays alive in background; serial console also runs.
+                shell_child = spawn_shell_preview_background_best_effort();
             } else if guest_graphics_profile() {
                 run_graphics_demo_once_best_effort();
             }
         }
         run_interactive_console_once();
-        // No uncontrolled restart — fall through to idle.
+        // No uncontrolled restart — fall through to idle (keep reaping shell).
     }
 
     // PID 1 must not return (T3 and post-console Minimal alike).
-    idle_forever();
+    idle_forever_reaping(shell_child);
 }

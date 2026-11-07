@@ -1,16 +1,21 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.1).
 //!
 //! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
 //! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
-//! (`ryoku-graphics-demo`). Input (evdev) is **015.1 / NOT_RUN**.
+//! (`ryoku-graphics-demo`).
 //!
-//! Components are illustrative until mouse/keyboard — documented, not interactive.
+//! Mission **015.1** adds guest-evdev interactive state (cursor, dock hit-test,
+//! launcher panel). Guest interaction statuses remain **NOT_RUN** until manual
+//! confirm — this crate never invents PASS from host unit tests.
 
 #![forbid(unsafe_code)]
 
 use ryoku_graphics_demo::{blit_rgb_to_fb, FbGeometry, RgbBuffer};
 
 pub const SHELL_IDENTITY: &str = "ryoku-shell-preview";
+
+/// Dock icon slot count (first icon opens Launcher).
+pub const DOCK_SLOTS: usize = 5;
 
 /// Brand / chrome colors (navy + teal).
 pub const COLOR_NAVY: (u8, u8, u8) = (0x0a, 0x16, 0x2e);
@@ -63,6 +68,139 @@ impl ShellLayout {
             desktop_h,
         })
     }
+
+    /// Icon pixel size for the dock.
+    #[must_use]
+    pub fn icon_size(&self) -> i32 {
+        (self.dock_h as i32 - 16).clamp(24, 48)
+    }
+
+    /// Gap between dock icons (and edges).
+    #[must_use]
+    pub fn icon_gap(&self) -> i32 {
+        let icon = self.icon_size();
+        let slots = DOCK_SLOTS as i32;
+        (self.dock_w as i32 - slots * icon) / (slots + 1)
+    }
+
+    /// Axis-aligned rect for dock icon `index` → `(x, y, w, h)`.
+    #[must_use]
+    pub fn dock_icon_rect(&self, index: usize) -> Option<(i32, i32, i32, i32)> {
+        if index >= DOCK_SLOTS {
+            return None;
+        }
+        let icon = self.icon_size();
+        let gap = self.icon_gap();
+        let ix = self.dock_x as i32 + gap + (index as i32) * (icon + gap);
+        let iy = self.dock_y as i32 + (self.dock_h as i32 - icon) / 2;
+        Some((ix, iy, icon, icon))
+    }
+}
+
+/// Interactive UI state (Mission 015.1). Host tests may drive this; guest PASS is manual.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InteractiveState {
+    pub cursor_x: i32,
+    pub cursor_y: i32,
+    pub hover_dock: Option<usize>,
+    pub selected_dock: Option<usize>,
+    pub launcher_open: bool,
+    pub left_down: bool,
+}
+
+impl InteractiveState {
+    #[must_use]
+    pub fn new(layout: &ShellLayout) -> Self {
+        Self {
+            cursor_x: (layout.width / 2) as i32,
+            cursor_y: (layout.height / 2) as i32,
+            hover_dock: None,
+            selected_dock: None,
+            launcher_open: false,
+            left_down: false,
+        }
+    }
+
+    /// Clamp cursor into FB bounds.
+    pub fn clamp_cursor(&mut self, layout: &ShellLayout) {
+        self.cursor_x = self
+            .cursor_x
+            .clamp(0, layout.width.saturating_sub(1) as i32);
+        self.cursor_y = self
+            .cursor_y
+            .clamp(0, layout.height.saturating_sub(1) as i32);
+    }
+
+    /// Move by relative delta and clamp.
+    pub fn move_by(&mut self, layout: &ShellLayout, dx: i32, dy: i32) {
+        self.cursor_x += dx;
+        self.cursor_y += dy;
+        self.clamp_cursor(layout);
+        self.refresh_hover(layout);
+    }
+
+    /// Absolute pointer position (tablet).
+    pub fn move_abs(&mut self, layout: &ShellLayout, x: i32, y: i32) {
+        self.cursor_x = x;
+        self.cursor_y = y;
+        self.clamp_cursor(layout);
+        self.refresh_hover(layout);
+    }
+
+    pub fn refresh_hover(&mut self, layout: &ShellLayout) {
+        self.hover_dock = hit_test_dock(layout, self.cursor_x, self.cursor_y);
+    }
+
+    /// Primary click (press). First dock icon opens Launcher; no arbitrary exec.
+    pub fn on_primary_press(&mut self, layout: &ShellLayout) {
+        self.left_down = true;
+        if let Some(idx) = hit_test_dock(layout, self.cursor_x, self.cursor_y) {
+            self.selected_dock = Some(idx);
+            if idx == 0 {
+                self.launcher_open = true;
+            }
+        }
+    }
+
+    pub fn on_primary_release(&mut self) {
+        self.left_down = false;
+    }
+
+    /// Close launcher (Esc).
+    pub fn close_launcher(&mut self) {
+        self.launcher_open = false;
+    }
+
+    /// Keyboard dock navigation (Left/Right/Tab). Enter activates selection.
+    pub fn nav_dock(&mut self, layout: &ShellLayout, delta: i32) {
+        let cur = self.selected_dock.or(self.hover_dock).unwrap_or(0) as i32;
+        let next = (cur + delta).rem_euclid(DOCK_SLOTS as i32) as usize;
+        self.selected_dock = Some(next);
+        self.hover_dock = Some(next);
+        if let Some((ix, iy, w, h)) = layout.dock_icon_rect(next) {
+            self.cursor_x = ix + w / 2;
+            self.cursor_y = iy + h / 2;
+        }
+    }
+
+    pub fn activate_selected(&mut self) {
+        if self.selected_dock == Some(0) {
+            self.launcher_open = true;
+        }
+    }
+}
+
+/// Hit-test dock icons. Returns slot index or `None`.
+#[must_use]
+pub fn hit_test_dock(layout: &ShellLayout, x: i32, y: i32) -> Option<usize> {
+    for i in 0..DOCK_SLOTS {
+        if let Some((ix, iy, w, h)) = layout.dock_icon_rect(i) {
+            if x >= ix && x < ix + w && y >= iy && y < iy + h {
+                return Some(i);
+            }
+        }
+    }
+    None
 }
 
 /// Tiny 5×7 glyphs (subset for shell chrome).
@@ -77,9 +215,12 @@ fn glyph(ch: char) -> Option<[u8; 7]> {
         '2' => Some([0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F]),
         '5' => Some([0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E]),
         'A' => Some([0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11]),
+        'B' => Some([0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E]),
         'C' => Some([0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E]),
         'D' => Some([0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E]),
         'E' => Some([0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F]),
+        'F' => Some([0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10]),
+        'G' => Some([0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F]),
         'H' => Some([0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11]),
         'I' => Some([0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E]),
         'K' => Some([0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11]),
@@ -94,6 +235,7 @@ fn glyph(ch: char) -> Option<[u8; 7]> {
         'U' => Some([0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E]),
         'V' => Some([0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04]),
         'W' => Some([0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11]),
+        'X' => Some([0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11]),
         'Y' => Some([0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04]),
         _ => None,
     }
@@ -189,8 +331,49 @@ pub fn draw_icon(buf: &mut RgbBuffer, x: i32, y: i32, size: i32, accent: (u8, u8
     );
 }
 
+/// Draw a simple cursor (arrow-ish) at FB coordinates — clipped.
+pub fn draw_cursor(buf: &mut RgbBuffer, x: i32, y: i32) {
+    // 11×15 pointer silhouette (white + navy outline).
+    const ROWS: &[&[u8]] = &[
+        b"10000000000",
+        b"11000000000",
+        b"12100000000",
+        b"12210000000",
+        b"12221000000",
+        b"12222100000",
+        b"12222210000",
+        b"12222221000",
+        b"12222222100",
+        b"12222111110",
+        b"12122100000",
+        b"11012210000",
+        b"10001210000",
+        b"00001221000",
+        b"00000110000",
+    ];
+    for (row_i, row) in ROWS.iter().enumerate() {
+        for (col_i, ch) in row.iter().enumerate() {
+            let rgb = match ch {
+                b'1' => COLOR_NAVY_DEEP,
+                b'2' => COLOR_TEXT,
+                _ => continue,
+            };
+            put(buf, x + col_i as i32, y + row_i as i32, rgb);
+        }
+    }
+}
+
 /// Compose the full shell chrome into `buf` (must already match layout size).
 pub fn compose_shell(buf: &mut RgbBuffer, layout: &ShellLayout) {
+    compose_shell_interactive(buf, layout, None);
+}
+
+/// Compose chrome + optional interactive overlays (cursor / hover / launcher).
+pub fn compose_shell_interactive(
+    buf: &mut RgbBuffer,
+    layout: &ShellLayout,
+    ui: Option<&InteractiveState>,
+) {
     // Desktop wallpaper (vertical navy→deep gradient).
     for y in 0..buf.height {
         let t = y * 255 / buf.height.max(1);
@@ -235,8 +418,8 @@ pub fn compose_shell(buf: &mut RgbBuffer, layout: &ShellLayout) {
         text_scale,
         COLOR_TEXT,
     );
-    // Status (right) — illustrative clock/status; not live.
-    let status = "DEV PREVIEW";
+    // Status (right) — honesty: guest input still NOT_RUN until manual.
+    let status = "INPUT NOT_RUN";
     let status_w = status.len() as i32 * 6 * text_scale;
     draw_text(
         buf,
@@ -266,7 +449,34 @@ pub fn compose_shell(buf: &mut RgbBuffer, layout: &ShellLayout) {
             buf,
             card_x + 16,
             card_y + 18 + 10 * text_scale + 8,
-            "INPUT NOT_RUN - 015.1",
+            "GUEST EVDEV 015.1",
+            text_scale,
+            COLOR_MUTED,
+        );
+    }
+
+    // Launcher panel (first dock icon) — illustrative; no app exec.
+    if ui.is_some_and(|u| u.launcher_open) {
+        let lw = (layout.width as i32 * 40 / 100).clamp(200, 360);
+        let lh = (layout.desktop_h as i32 * 55 / 100).clamp(120, 280);
+        let lx = 24;
+        let ly = layout.desktop_y as i32 + 16;
+        fill_rounded(buf, lx, ly, lw, lh, 12, COLOR_PANEL);
+        fill_rect(buf, lx, ly, lw, 3, COLOR_TEAL);
+        draw_text(buf, lx + 16, ly + 16, "LAUNCHER", text_scale, COLOR_TEAL);
+        draw_text(
+            buf,
+            lx + 16,
+            ly + 16 + 12 * text_scale,
+            "ILLUSTRATIVE - ESC CLOSES",
+            text_scale,
+            COLOR_MUTED,
+        );
+        draw_text(
+            buf,
+            lx + 16,
+            ly + 16 + 24 * text_scale,
+            "NO APP EXEC",
             text_scale,
             COLOR_MUTED,
         );
@@ -282,14 +492,29 @@ pub fn compose_shell(buf: &mut RgbBuffer, layout: &ShellLayout) {
         12,
         COLOR_DOCK,
     );
-    let icon = (layout.dock_h as i32 - 16).clamp(24, 48);
-    let slots = 5i32;
-    let gap = (layout.dock_w as i32 - slots * icon) / (slots + 1);
-    for i in 0..slots {
-        let ix = layout.dock_x as i32 + gap + i * (icon + gap);
-        let iy = layout.dock_y as i32 + (layout.dock_h as i32 - icon) / 2;
+    for i in 0..DOCK_SLOTS {
+        let Some((ix, iy, icon, _)) = layout.dock_icon_rect(i) else {
+            continue;
+        };
+        let hovered = ui.and_then(|u| u.hover_dock) == Some(i);
+        let selected = ui.and_then(|u| u.selected_dock) == Some(i);
+        if hovered || selected {
+            fill_rounded(
+                buf,
+                ix - 3,
+                iy - 3,
+                icon + 6,
+                icon + 6,
+                8,
+                if selected { COLOR_TEAL } else { COLOR_TEAL_DIM },
+            );
+        }
         let accent = if i == 0 { COLOR_TEAL } else { COLOR_TEAL_DIM };
         draw_icon(buf, ix, iy, icon, accent);
+    }
+
+    if let Some(u) = ui {
+        draw_cursor(buf, u.cursor_x, u.cursor_y);
     }
 }
 
@@ -298,6 +523,18 @@ pub fn render_shell(width: u32, height: u32) -> Result<(RgbBuffer, ShellLayout),
     let layout = ShellLayout::for_fb(width, height)?;
     let mut buf = RgbBuffer::new(layout.width, layout.height, COLOR_NAVY);
     compose_shell(&mut buf, &layout);
+    Ok((buf, layout))
+}
+
+/// Render with interactive overlays.
+pub fn render_shell_interactive(
+    width: u32,
+    height: u32,
+    ui: &InteractiveState,
+) -> Result<(RgbBuffer, ShellLayout), String> {
+    let layout = ShellLayout::for_fb(width, height)?;
+    let mut buf = RgbBuffer::new(layout.width, layout.height, COLOR_NAVY);
+    compose_shell_interactive(&mut buf, &layout, Some(ui));
     Ok((buf, layout))
 }
 
@@ -359,5 +596,43 @@ mod tests {
     fn no_gpu_claim_in_identity() {
         assert!(!SHELL_IDENTITY.contains("wayland"));
         assert!(!SHELL_IDENTITY.contains("gpu"));
+    }
+
+    #[test]
+    fn dock_hit_test_first_icon() {
+        let l = ShellLayout::for_fb(941, 474).unwrap();
+        let (ix, iy, w, h) = l.dock_icon_rect(0).unwrap();
+        assert_eq!(hit_test_dock(&l, ix + w / 2, iy + h / 2), Some(0));
+        assert_eq!(hit_test_dock(&l, 0, 0), None);
+    }
+
+    #[test]
+    fn launcher_opens_on_first_icon_click() {
+        let l = ShellLayout::for_fb(941, 474).unwrap();
+        let mut ui = InteractiveState::new(&l);
+        let (ix, iy, w, h) = l.dock_icon_rect(0).unwrap();
+        ui.move_abs(&l, ix + w / 2, iy + h / 2);
+        ui.on_primary_press(&l);
+        assert!(ui.launcher_open);
+        ui.close_launcher();
+        assert!(!ui.launcher_open);
+    }
+
+    #[test]
+    fn keyboard_nav_wraps_dock() {
+        let l = ShellLayout::for_fb(941, 474).unwrap();
+        let mut ui = InteractiveState::new(&l);
+        ui.selected_dock = Some(0);
+        ui.nav_dock(&l, -1);
+        assert_eq!(ui.selected_dock, Some(DOCK_SLOTS - 1));
+    }
+
+    #[test]
+    fn cursor_clamped_to_fb() {
+        let l = ShellLayout::for_fb(320, 240).unwrap();
+        let mut ui = InteractiveState::new(&l);
+        ui.move_by(&l, 10_000, 10_000);
+        assert!(ui.cursor_x < 320);
+        assert!(ui.cursor_y < 240);
     }
 }

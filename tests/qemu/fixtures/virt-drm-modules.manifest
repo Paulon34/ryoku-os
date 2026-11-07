@@ -39,3 +39,8 @@ module = kernel/drivers/gpu/drm/drm_shmem_helper.ko
 module_sha256 = 0174746ee5901623c1792fd769a255af75270ecbf15f01ba46937b7543d8558d
 module = kernel/drivers/gpu/drm/virtio/virtio-gpu.ko
 module_sha256 = 8b1a465ecea0314749fb6bd63a0f303856775fd92fdb6641421b24fd7302faf6
+# Mission 015.1 — guest evdev + virtio input (Alpine virt; not host modules)
+module = kernel/drivers/input/evdev.ko
+module_sha256 = daa5c7fe9875f29be582cc683c4aeb40263a9880cf1b8ed101cf689e7a7683c2
+module = kernel/drivers/virtio/virtio_input.ko
+module_sha256 = 64c9a12278dd221ae7a7231b5cb47611f5fdfc5ad3588991690a3fd3b1a72812

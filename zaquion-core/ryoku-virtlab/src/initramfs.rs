@@ -30,7 +30,7 @@ pub const RYOKU_GRAPHICS_RELEASE_TEXT: &str =
 
 /// Shell package release text (Mission 015) — separate from First Pixels package.
 pub const RYOKU_SHELL_RELEASE_TEXT: &str =
-    "ryoku-minimal 0.1.0 (Mission 015 shell preview + virt DRM modules)\n";
+    "ryoku-minimal 0.1.0 (Mission 015.1 shell + guest evdev + virt DRM/input modules)\n";
 
 /// Graphics demo binary member (Mission 014 package only).
 pub const REQUIRED_GRAPHICS_DEMO_MEMBER: &str = "./bin/ryoku-graphics-demo";
@@ -55,6 +55,9 @@ pub const REQUIRED_GRAPHICS_MODULE_MEMBERS: &[&str] = &[
     "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/drm_kms_helper.ko",
     "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/drm_shmem_helper.ko",
     "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/virtio/virtio-gpu.ko",
+    // Mission 015.1 — guest input (shell + graphics packages share the staged tree).
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/input/evdev.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/virtio/virtio_input.ko",
 ];
 
 const S_IFREG: u32 = 0o100_000;
@@ -290,6 +293,7 @@ pub fn append_graphics_modules(
         "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm",
         "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/virtio",
         "./lib/modules/6.12.114-0-virt/kernel/drivers/i2c",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/input",
     ] {
         if !members.iter().any(|m| m.name == dir) {
             members.push(NewcMember::dir(dir, 0o755));

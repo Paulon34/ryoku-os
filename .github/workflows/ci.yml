@@ -105,6 +105,7 @@ jobs:
             docs/testing/splash-prep-014.md
             docs/testing/ryoku-graphics.md
             docs/testing/ryoku-shell.md
+            docs/testing/ryoku-shell-input.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
@@ -140,6 +141,7 @@ jobs:
             tests/qemu/scripts/run-ryoku-shell-qemu.sh
             tests/qemu/scripts/test-ryoku-shell-vm-zip.sh
             tests/qemu/README-SHELL.md
+            tests/qemu/README-SHELL-INPUT.md
             tests/qemu/configs/console-shell.rvl.conf
             zaquion-core/ryoku-shell-preview/README.md
             tests/qemu/README-VM.md
