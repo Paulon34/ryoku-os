@@ -119,12 +119,13 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [ ] **`KEYBOARD_INTERACTION` / `LAUNCHER_CLOSE` = `NOT_CONFIRMED`**
 - [x] Prior FAIL preserved: tip `052c84c` **`GRAPHICS_FLICKER=FAIL_MANUAL`**
 
-## Fase 2.13 — Adaptive Desktop Foundation (Missão 016)
+## Fase 2.13 — Adaptive Desktop Foundation (Missão 016) — CLOSEOUT
 
 - [x] Perfis Lite / Balanced / Ultra (tema, layout, animação, políticas de render) — code
 - [x] Troca de perfil na sessão (F1/F2/F3); Ultra → fallback Balanced; métricas compose/blit/mem
 - [x] Sem fingir blur/transparência/3D/compositor/Wayland completo; sem redraw contínuo; sem clear visível
-- [ ] Guest results **`GUEST_NOT_RUN`** until manual
+- [x] Manual tip `572f77d` (≠ CI): **`ADAPTIVE_PROFILE_SWITCH=PASS_MANUAL`**, **`KEYBOARD_ARROWS_TAB=PASS_MANUAL`**, **`LITE_USABILITY=POSITIVE_MANUAL_FEEDBACK`**, **`BALANCED_USABILITY=POSITIVE_MANUAL_FEEDBACK`**, **`ULTRA_PERCEIVED_SLOWDOWN=REPORTED_UNMEASURED`**, **`PERFORMANCE_BENCHMARK=NOT_RUN`**
+- [ ] Mission **016.1** — Adaptive Performance (instrumentação; TCG ≠ hardware; guest até manual)
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

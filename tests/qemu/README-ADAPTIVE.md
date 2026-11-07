@@ -1,12 +1,19 @@
-# Ryoku Minimal — adaptive desktop package (Mission 016)
+# Ryoku Minimal — adaptive desktop package (Mission 016) — CLOSEOUT
 
 Independent ZIP stacked on Mission 015.2.1 (PR #11). Does **not** run QEMU in CI/agent.
+
+Tip validado (manual): **`572f77d`**.
 
 | Check | Status |
 |-------|--------|
 | Musl init + console + shell-preview + DRM/input | CI **PASS** (host) |
-| Guest adaptive / launcher / input | **`GUEST_NOT_RUN`** until human |
+| **`ADAPTIVE_PROFILE_SWITCH`** | **`PASS_MANUAL`** |
+| **`KEYBOARD_ARROWS_TAB`** | **`PASS_MANUAL`** |
+| **`LITE_USABILITY` / `BALANCED_USABILITY`** | **`POSITIVE_MANUAL_FEEDBACK`** |
+| **`ULTRA_PERCEIVED_SLOWDOWN`** | **`REPORTED_UNMEASURED`** |
+| **`PERFORMANCE_BENCHMARK`** | **`NOT_RUN`** |
 | Blur / 3D / Wayland compositor | **Not** claimed |
+| Ultra paint | falls back to **Balanced** (arch only) |
 
 ## Manual (NixOS)
 
