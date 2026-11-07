@@ -23,6 +23,14 @@ const BOOT_SEED_CONFIG: &str = "configs/t3-boot-seed.rvl.conf";
 const BOOT_SEED_MARKER: &str = "RYOKU_BOOT_SEED_READY";
 const PID1_IDENTITY_MARKER: &str = "ryoku-init: pid=1";
 
+/// Guest T3 QEMU spawn requires explicit authorization (`RYOKU_T3_EXECUTE=1`).
+///
+/// Mission 009: prevents accidental local/CI T3 even when kernel+initrd exist.
+#[must_use]
+pub fn t3_guest_execute_authorized() -> bool {
+    std::env::var("RYOKU_T3_EXECUTE").ok().as_deref() == Some("1")
+}
+
 /// Run Boot Seed / T3 cases. Safe when QEMU or kernel/initrd are absent.
 pub fn run_boot_seed<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResult> {
     let tools = detect_tools(probe);
@@ -108,6 +116,24 @@ pub fn run_boot_seed<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResult
         return results;
     }
 
+    if !t3_guest_execute_authorized() {
+        results.push(
+            CaseResult::new(
+                "t3.boot_seed",
+                Outcome::NotRun,
+                "T3 guest spawn gated — set RYOKU_T3_EXECUTE=1 only under authorization",
+            )
+            .with_detail(
+                "Mission 009 harness guard: kernel/initrd may exist, but QEMU guest boot \
+                 is refused without RYOKU_T3_EXECUTE=1 (authorized boot-seed-t3 workflow). \
+                 Accidental local `boot-seed` must not claim a real T3 run."
+                    .to_string(),
+            ),
+        );
+        results.push(ryoku_product_not_claimed());
+        return results;
+    }
+
     let accel = match tools.select_accel(cfg.accel) {
         Ok(a) => a,
         Err(err) => {
@@ -179,7 +205,7 @@ pub fn run_boot_seed<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResult
             CaseResult::new(
                 "t3.boot_seed",
                 Outcome::Pass,
-                "guest serial contains RYOKU_BOOT_SEED_READY (first-party init)",
+                "guest serial contains ryoku-init: pid=1 and RYOKU_BOOT_SEED_READY",
             )
             .with_detail(format!("serial_tail=\n{}", trim_tail(&serial_text, 600))),
         );
@@ -195,16 +221,18 @@ pub fn run_boot_seed<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResult
             "all_markers_matched_in_serial",
         );
     } else {
+        let reason = classify_serial_fail(&serial_text, exec.timed_out);
         results.push(
             CaseResult::new(
                 "t3.boot_seed",
                 Outcome::Fail,
-                format!("boot seed markers missing: {missing:?}"),
+                format!("boot seed serial FAIL ({reason}): missing {missing:?}"),
             )
             .with_detail(format!(
-                "timed_out={} duration_ms={}\nserial_tail=\n{}",
+                "timed_out={} duration_ms={} serial_bytes={}\nserial_tail=\n{}",
                 exec.timed_out,
                 exec.duration_ms,
+                serial_text.len(),
                 trim_tail(&serial_text, 800)
             )),
         );
@@ -217,12 +245,28 @@ pub fn run_boot_seed<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResult
             &markers,
             &missing,
             "FAIL",
-            "markers_missing_in_serial",
+            reason,
         );
     }
 
     results.push(ryoku_product_not_claimed());
     results
+}
+
+/// Classify serial FAIL for evidence JSON (empty vs timeout vs partial markers).
+#[must_use]
+pub fn classify_serial_fail(serial: &str, timed_out: bool) -> &'static str {
+    if serial.is_empty() {
+        if timed_out {
+            "timeout_empty_serial"
+        } else {
+            "empty_serial"
+        }
+    } else if timed_out {
+        "timeout_markers_missing"
+    } else {
+        "markers_missing_in_serial"
+    }
 }
 
 fn case_policy_seed_not_product() -> CaseResult {
@@ -519,5 +563,39 @@ mod tests {
     #[test]
     fn product_boot_stays_not_run() {
         assert_eq!(ryoku_product_not_claimed().outcome, Outcome::NotRun);
+    }
+
+    #[test]
+    fn classify_empty_and_timeout_serial() {
+        assert_eq!(classify_serial_fail("", true), "timeout_empty_serial");
+        assert_eq!(classify_serial_fail("", false), "empty_serial");
+        assert_eq!(
+            classify_serial_fail("partial noise", true),
+            "timeout_markers_missing"
+        );
+        assert_eq!(
+            classify_serial_fail("partial noise", false),
+            "markers_missing_in_serial"
+        );
+        // Empty serial never passes marker helper.
+        let markers = required_markers();
+        assert!(!serial_markers_pass("", &markers));
+    }
+
+    #[test]
+    fn t3_execute_gate_defaults_closed() {
+        // Ensure the helper is false unless the env var is explicitly "1".
+        // (Test process must not inherit RYOKU_T3_EXECUTE=1 from a parent.)
+        let prev = std::env::var_os("RYOKU_T3_EXECUTE");
+        std::env::remove_var("RYOKU_T3_EXECUTE");
+        assert!(!t3_guest_execute_authorized());
+        std::env::set_var("RYOKU_T3_EXECUTE", "0");
+        assert!(!t3_guest_execute_authorized());
+        std::env::set_var("RYOKU_T3_EXECUTE", "1");
+        assert!(t3_guest_execute_authorized());
+        match prev {
+            Some(v) => std::env::set_var("RYOKU_T3_EXECUTE", v),
+            None => std::env::remove_var("RYOKU_T3_EXECUTE"),
+        }
     }
 }

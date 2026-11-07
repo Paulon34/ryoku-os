@@ -60,8 +60,12 @@ Separate QEMU profile from Alpine T2: temporary lab **kernel** + Ryoku **initram
 | kernel/initrd missing | **NOT_RUN** | **NOT_RUN** |
 | Guest serial has `RYOKU_BOOT_SEED_READY` | **PASS** | **Always NOT_RUN** |
 
-See [boot-seed.md](boot-seed.md) and [ADR-0002](../architecture/ADR-0002.md).
-Real T3 guest execution needs **separate authorization**.
+See [boot-seed.md](boot-seed.md), [boot-seed-t3.md](boot-seed-t3.md), and
+[ADR-0002](../architecture/ADR-0002.md).
+
+Mission 009 adds: extract/prep dry-run scripts, manual `boot-seed-t3.yml`
+(not dispatched), and harness env gate **`RYOKU_T3_EXECUTE=1`** before any
+guest spawn. Real T3 still needs **separate authorization**.
 
 **Never** claim Ryoku OS product boot from the seed alone.
 
