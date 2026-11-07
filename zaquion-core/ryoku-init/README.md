@@ -1,8 +1,10 @@
 # `ryoku-init` — Ryoku Boot Seed (Mission 008)
 
-Minimal **PID 1** prototype for early QEMU smoke tests. Prints a stable serial
-marker `RYOKU_BOOT_SEED_READY` so Virtual Lab **T3** can verify a *Ryoku-owned*
-guest process — **not** Alpine reference boot, and **not** a finished Ryoku OS.
+Minimal **PID 1** prototype for early QEMU smoke tests. Emits
+`RYOKU_BOOT_SEED_READY` **only when `pid == 1`**. Non-PID-1 invocations print a
+diagnostic (no READY) and exit non-zero. Virtual Lab **T3** requires guest serial
+`ryoku-init: pid=1` **and** `RYOKU_BOOT_SEED_READY` — **not** Alpine reference boot,
+and **not** a finished Ryoku OS.
 
 ## Build (dev / tests)
 
@@ -16,8 +18,8 @@ cargo test -p ryoku-init
 
 Initramfs must ship a **statically linked** `init`. A glibc/gnu PIE binary needs
 `/lib64/ld-linux-x86-64.so.2` + `libc.so.6`, which this minimal initramfs does
-**not** include. The packer **refuses** dynamic binaries unless
-`RYOKU_INITRAMFS_ALLOW_DYNAMIC=1` (structure tests only — never real T3).
+**not** include. The packer **refuses** dynamic binaries via `check-static-elf` (ELF byte analysis;
+**not** `ldd`). `RYOKU_INITRAMFS_ALLOW_DYNAMIC=1` is **blocked** for guest packing.
 
 ```bash
 rustup target add x86_64-unknown-linux-musl

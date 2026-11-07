@@ -450,10 +450,17 @@ initrd = run/ryoku-boot-seed.cpio.gz
 append = console=ttyS0 earlyprintk=serial
 iso = none
 serial_log = results/serial-t3-boot-seed.log
-boot_markers = RYOKU_BOOT_SEED_READY
+boot_markers = ryoku-init: pid=1|RYOKU_BOOT_SEED_READY
 shutdown = monitor_quit
 ";
         let cfg = VmConfig::parse(text, lab()).unwrap();
+        assert_eq!(
+            cfg.boot_markers,
+            vec![
+                "ryoku-init: pid=1".to_string(),
+                "RYOKU_BOOT_SEED_READY".to_string()
+            ]
+        );
         assert!(cfg
             .kernel
             .as_ref()

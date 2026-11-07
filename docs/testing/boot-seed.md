@@ -5,7 +5,7 @@
 | Claim | Meaning |
 |-------|---------|
 | T2 Alpine PASS | Harness + reference Linux (completed Mission 007.1) |
-| `t3.boot_seed` PASS | First-party `ryoku-init` printed `RYOKU_BOOT_SEED_READY` on **guest serial** |
+| `t3.boot_seed` PASS | Guest serial has `ryoku-init: pid=1` **and** `RYOKU_BOOT_SEED_READY` (PID 1 only) |
 | Ryoku OS product boot | **Not** claimed by the seed alone |
 
 See [ADR-0002](../architecture/ADR-0002.md).
@@ -66,7 +66,7 @@ Config: `tests/qemu/configs/t3-boot-seed.rvl.conf`
 - `accel = tcg`, `network = none`
 - `kernel = run/…`, `initrd = run/ryoku-boot-seed.cpio.gz`
 - `append = console=ttyS0 earlyprintk=serial`
-- `boot_markers = RYOKU_BOOT_SEED_READY`
+- `boot_markers = ryoku-init: pid=1|RYOKU_BOOT_SEED_READY` (serial-only)
 
 ## Future T3 procedure (requires separate authorization)
 
@@ -74,7 +74,8 @@ Config: `tests/qemu/configs/t3-boot-seed.rvl.conf`
 2. `cargo build -p ryoku-init --release` (musl static when available).
 3. `RYOKU_INITRAMFS_EXECUTE=1 tests/qemu/scripts/build-boot-seed-initramfs.sh`
 4. `cargo run -p ryoku-virtlab -- boot-seed` (or `t3`) on a host/runner with QEMU.
-5. PASS only if **guest serial** contains `RYOKU_BOOT_SEED_READY` from `ryoku-init`.
+5. PASS only if **guest serial** contains both `ryoku-init: pid=1` and
+   `RYOKU_BOOT_SEED_READY` (emitted only when the guest process is PID 1).
 6. Still do **not** rename that to “Ryoku OS booted.”
 
 Mission 008 stops before step 4 execution.

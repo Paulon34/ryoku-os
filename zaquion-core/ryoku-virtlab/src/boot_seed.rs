@@ -21,6 +21,7 @@ use crate::tools::{detect_tools, ToolProbe};
 
 const BOOT_SEED_CONFIG: &str = "configs/t3-boot-seed.rvl.conf";
 const BOOT_SEED_MARKER: &str = "RYOKU_BOOT_SEED_READY";
+const PID1_IDENTITY_MARKER: &str = "ryoku-init: pid=1";
 
 /// Run Boot Seed / T3 cases. Safe when QEMU or kernel/initrd are absent.
 pub fn run_boot_seed<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResult> {
@@ -247,13 +248,17 @@ fn case_config_loads(lab_root: &Path) -> CaseResult {
                 && cfg
                     .required_boot_markers()
                     .iter()
+                    .any(|m| m == PID1_IDENTITY_MARKER)
+                && cfg
+                    .required_boot_markers()
+                    .iter()
                     .any(|m| m == BOOT_SEED_MARKER) =>
         {
             CaseResult::new(
                 "t3.config",
                 Outcome::Pass,
                 format!(
-                    "loaded `{}` with kernel+initrd+append + marker {:?}",
+                    "loaded `{}` with kernel+initrd+append + markers {:?}",
                     cfg.name,
                     cfg.required_boot_markers()
                 ),
@@ -262,7 +267,7 @@ fn case_config_loads(lab_root: &Path) -> CaseResult {
         Ok(_) => CaseResult::new(
             "t3.config",
             Outcome::Fail,
-            "config missing kernel, initrd, append, or RYOKU_BOOT_SEED_READY marker",
+            "config missing kernel, initrd, append, or required pid=1 + READY markers",
         ),
         Err(err) => CaseResult::new("t3.config", Outcome::Fail, err.to_string()),
     }
@@ -307,11 +312,11 @@ fn case_argv_kernel_initrd(lab_root: &Path, tools: &crate::tools::ToolsReport) -
 }
 
 fn case_marker_constant() -> CaseResult {
-    if BOOT_SEED_MARKER == "RYOKU_BOOT_SEED_READY" {
+    if BOOT_SEED_MARKER == "RYOKU_BOOT_SEED_READY" && PID1_IDENTITY_MARKER == "ryoku-init: pid=1" {
         CaseResult::new(
             "t3.marker_identity",
             Outcome::Pass,
-            "serial marker constant matches ryoku-init contract",
+            "serial markers require ryoku-init: pid=1 AND RYOKU_BOOT_SEED_READY",
         )
     } else {
         CaseResult::new("t3.marker_identity", Outcome::Fail, "marker constant drift")
@@ -467,11 +472,27 @@ mod tests {
             .any(|r| r.id == "t3.boot_seed" && r.outcome == Outcome::Pass));
     }
 
+    fn required_markers() -> Vec<String> {
+        vec![
+            PID1_IDENTITY_MARKER.to_string(),
+            BOOT_SEED_MARKER.to_string(),
+        ]
+    }
+
     #[test]
     fn serial_marker_must_come_from_guest_text() {
-        let markers = vec![BOOT_SEED_MARKER.to_string()];
+        let markers = required_markers();
         assert!(!serial_markers_pass("", &markers));
         assert!(!serial_markers_pass("QEMU emulator version", &markers));
+        // READY alone is insufficient.
+        assert!(!serial_markers_pass("RYOKU_BOOT_SEED_READY\n", &markers));
+        // pid=1 alone is insufficient.
+        assert!(!serial_markers_pass("ryoku-init: pid=1\n", &markers));
+        // Non-PID1 identity must not PASS even with READY decoy.
+        assert!(!serial_markers_pass(
+            "ryoku-init: pid=42 seed=mission-008\nRYOKU_BOOT_SEED_READY\n",
+            &markers
+        ));
         assert!(serial_markers_pass(
             "ryoku-init: pid=1 seed=mission-008\nRYOKU_BOOT_SEED_READY\n",
             &markers
@@ -480,16 +501,15 @@ mod tests {
 
     #[test]
     fn qemu_process_streams_cannot_fake_serial_pass() {
-        // Mirrors T2 honesty: PASS eligibility uses serial_markers_pass(serial) only.
-        let markers = vec![BOOT_SEED_MARKER.to_string()];
-        let stdout = format!("harness noise\n{BOOT_SEED_MARKER}\n");
-        let stderr = format!("{BOOT_SEED_MARKER}\n");
+        let markers = required_markers();
+        let stdout = format!("{PID1_IDENTITY_MARKER}\n{BOOT_SEED_MARKER}\n");
+        let stderr = stdout.clone();
         assert!(
             !crate::boot::reference_boot_pass_eligible("", &stdout, &stderr, &markers),
-            "marker only in QEMU stdout/stderr must not PASS t3.boot_seed"
+            "markers only in QEMU stdout/stderr must not PASS t3.boot_seed"
         );
         assert!(crate::boot::reference_boot_pass_eligible(
-            &format!("ryoku-init\n{BOOT_SEED_MARKER}\n"),
+            &format!("{PID1_IDENTITY_MARKER} seed=mission-008\n{BOOT_SEED_MARKER}\n"),
             &stdout,
             &stderr,
             &markers

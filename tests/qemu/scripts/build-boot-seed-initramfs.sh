@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# Build a minimal Ryoku Boot Seed initramfs (Mission 008 / 008.5).
+# Build a minimal Ryoku Boot Seed initramfs (Mission 008.5 final fixes).
 # DEFAULT: dry-run (no write). Set RYOKU_INITRAMFS_EXECUTE=1 to pack.
-# No root/sudo, no host system file copies — only the ryoku-init binary as /init.
-# No network downloads. No physical disks.
+#
+# Safety:
+# - No root/sudo, no host /dev node copies, no network downloads, no disks.
+# - /init must be proven static x86_64 ELF via ryoku-virtlab check-static-elf
+#   (byte analysis — does NOT use ldd).
+# - CPIO includes ./dev/console as char 5:1 via reproducible newc metadata
+#   (Rust packer), not mknod on the host.
+# - RYOKU_INITRAMFS_ALLOW_DYNAMIC is rejected for real guest prep (always refuse).
+# - Stale musl artifacts are not reused if the current musl build fails.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -11,132 +18,89 @@ OUT="$ROOT/$OUT_REL"
 EXECUTE="${RYOKU_INITRAMFS_EXECUTE:-0}"
 ALLOW_DYNAMIC="${RYOKU_INITRAMFS_ALLOW_DYNAMIC:-0}"
 MUSL_TARGET="x86_64-unknown-linux-musl"
-BIN_RELEASE="$ROOT/zaquion-core/target/release/ryoku-init"
-BIN_DEBUG="$ROOT/zaquion-core/target/debug/ryoku-init"
 BIN_MUSL="$ROOT/zaquion-core/target/${MUSL_TARGET}/release/ryoku-init"
-# Controlled metadata for reproducible packing (when execute=1).
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1700000000}"
 
 echo "Ryoku boot-seed initramfs builder"
 echo "  out:     $OUT"
 echo "  execute: $EXECUTE (0=dry-run, 1=pack)"
-echo "  allow_dynamic: $ALLOW_DYNAMIC (0=refuse dynamically linked /init)"
 
-pick_bin() {
-  if [[ -x "$BIN_MUSL" ]]; then
-    echo "$BIN_MUSL"
-  elif [[ -x "$BIN_RELEASE" ]]; then
-    echo "$BIN_RELEASE"
-  elif [[ -x "$BIN_DEBUG" ]]; then
-    echo "$BIN_DEBUG"
-  else
-    return 1
-  fi
-}
-
-# True when the ELF needs a dynamic loader (unsafe for bare initramfs).
-is_dynamically_linked() {
-  local bin="$1"
-  if command -v ldd >/dev/null 2>&1; then
-    # ldd prints "not a dynamic executable" / "statically linked" for static bins.
-    if ldd "$bin" 2>&1 | grep -Eqi 'not a dynamic executable|statically linked'; then
-      return 1
-    fi
-    # Any "=>" dependency means dynamic.
-    if ldd "$bin" 2>&1 | grep -q '=>'; then
-      return 0
-    fi
-  fi
-  if command -v readelf >/dev/null 2>&1; then
-    if readelf -l "$bin" 2>/dev/null | grep -q 'Requesting program interpreter'; then
-      return 0
-    fi
-    return 1
-  fi
-  # Cannot prove static — treat as dynamic (fail-closed) unless overridden.
-  return 0
-}
+if [[ "$ALLOW_DYNAMIC" == "1" ]]; then
+  echo "error: RYOKU_INITRAMFS_ALLOW_DYNAMIC=1 is blocked for guest prep." >&2
+  echo "  Real T3 packing requires a proven-static musl /init. Structure tests use Rust unit tests." >&2
+  exit 1
+fi
 
 if [[ "$EXECUTE" != "1" ]]; then
   echo
-  echo "DRY-RUN: would build (prefer musl static) and pack /init into $OUT_REL"
+  echo "DRY-RUN: would musl-build + static-prove + pack newc (with ./dev/console 5:1) → $OUT_REL"
   echo "  cd zaquion-core"
-  echo "  rustup target add $MUSL_TARGET   # when available"
+  echo "  rustup target add $MUSL_TARGET"
   echo "  cargo build -p ryoku-init --release --target $MUSL_TARGET"
-  echo "  # fallback structure-only (NOT for real T3 guest): cargo build -p ryoku-init --release"
+  echo "  cargo run -p ryoku-virtlab -- check-static-elf target/${MUSL_TARGET}/release/ryoku-init"
   echo "  RYOKU_INITRAMFS_EXECUTE=1 $0"
-  echo "NOTE: Real T3 guest requires a statically linked /init (musl). Dynamic gnu will be refused."
+  echo "NOTE: Dynamic glibc binaries are refused. No ALLOW_DYNAMIC override for guest packing."
   exit 0
 fi
 
-if ! command -v cpio >/dev/null 2>&1; then
-  echo "error: cpio not found (needed only for authorized packing)" >&2
-  exit 1
-fi
 if ! command -v gzip >/dev/null 2>&1; then
   echo "error: gzip not found" >&2
   exit 1
 fi
 
-echo "Building ryoku-init (prefer musl static)…"
+echo "Building ryoku-init for $MUSL_TARGET (required; no stale fallback)…"
 (
   cd "$ROOT/zaquion-core"
-  if command -v rustup >/dev/null 2>&1 && rustup target list --installed 2>/dev/null | grep -qx "$MUSL_TARGET"; then
-    cargo build -p ryoku-init --release --target "$MUSL_TARGET" || {
-      echo "warning: musl target build failed; will evaluate fallback binary" >&2
-    }
-  elif command -v rustup >/dev/null 2>&1; then
-    echo "note: $MUSL_TARGET not installed (rustup target add $MUSL_TARGET + musl linker on a disposable builder)"
-  fi
-  # Always produce a host release binary for local structure experiments.
-  cargo build -p ryoku-init --release
-)
-
-BIN="$(pick_bin)" || {
-  echo "error: ryoku-init binary not found after build" >&2
-  exit 1
-}
-echo "Using binary: $BIN"
-
-if is_dynamically_linked "$BIN"; then
-  if [[ "$ALLOW_DYNAMIC" != "1" ]]; then
-    echo "error: refusing dynamically linked /init for initramfs (guest has no glibc/ld-linux)." >&2
-    echo "  Build static: rustup target add $MUSL_TARGET && cargo build -p ryoku-init --release --target $MUSL_TARGET" >&2
-    echo "  Or set RYOKU_INITRAMFS_ALLOW_DYNAMIC=1 only for host structure tests (NOT real T3)." >&2
+  if ! command -v rustup >/dev/null 2>&1; then
+    echo "error: rustup required to build musl target" >&2
     exit 1
   fi
-  echo "warning: packing dynamically linked binary (ALLOW_DYNAMIC=1) — NOT suitable for real T3 guest"
-else
-  echo "OK: binary appears statically linked (or no dynamic interpreter)"
+  if ! rustup target list --installed 2>/dev/null | grep -qx "$MUSL_TARGET"; then
+    echo "error: $MUSL_TARGET not installed. On a disposable builder: rustup target add $MUSL_TARGET" >&2
+    exit 1
+  fi
+  # Remove prior musl artifact so a failed rebuild cannot reuse a stale binary.
+  rm -f "$BIN_MUSL"
+  cargo build -p ryoku-init --release --target "$MUSL_TARGET"
+)
+
+if [[ ! -x "$BIN_MUSL" ]]; then
+  echo "error: musl ryoku-init missing after build ($BIN_MUSL) — refusing stale/missing binary" >&2
+  exit 1
 fi
+
+echo "Proving static x86_64 ELF (no ldd)…"
+(
+  cd "$ROOT/zaquion-core"
+  cargo run -q -p ryoku-virtlab -- check-static-elf "$BIN_MUSL"
+)
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/ryoku-initramfs.XXXXXX")"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
-mkdir -p "$WORKDIR/root"
-# Controlled copy: only our binary → ./init (mode 0755). No host /lib, /bin, disks.
-cp -f "$BIN" "$WORKDIR/root/init"
-chmod 0755 "$WORKDIR/root/init"
-# Normalize mtime for more reproducible archives.
-touch -d "@${SOURCE_DATE_EPOCH}" "$WORKDIR/root/init" 2>/dev/null || true
-
-# Empty dirs only (no device nodes without root; virt kernels usually mount devtmpfs).
-mkdir -p "$WORKDIR/root/dev" "$WORKDIR/root/proc" "$WORKDIR/root/sys" "$WORKDIR/root/tmp"
-touch -d "@${SOURCE_DATE_EPOCH}" \
-  "$WORKDIR/root/dev" "$WORKDIR/root/proc" "$WORKDIR/root/sys" "$WORKDIR/root/tmp" 2>/dev/null || true
-
+CPIO_RAW="$WORKDIR/ryoku-boot-seed.cpio"
 mkdir -p "$(dirname "$OUT")"
+
+echo "Packing newc via ryoku-virtlab (includes ./dev/console char 5:1 metadata)…"
 (
-  cd "$WORKDIR/root"
-  # Sorted find → more stable member order.
-  find . -print0 | LC_ALL=C sort -z | cpio --null --create --format=newc --owner=0:0 2>/dev/null \
-    | gzip -n >"$OUT"
+  cd "$ROOT/zaquion-core"
+  cargo run -q -p ryoku-virtlab -- pack-boot-seed-cpio --init "$BIN_MUSL" --out "$CPIO_RAW"
 )
 
-# Sanity: archive non-empty and lists ./init
-gzip -dc "$OUT" | cpio -t 2>/dev/null | tee "$WORKDIR/list.txt" | grep -E '^\./init$' >/dev/null
-# Permissions: newc mode for regular file should be executable (0755).
+gzip -n -c "$CPIO_RAW" >"$OUT"
+
+# Structure sanity without extracting device nodes onto the host.
+python3 - <<'PY' "$CPIO_RAW"
+import sys
+path = sys.argv[1]
+data = open(path, "rb").read()
+assert data.startswith(b"070701"), "not newc"
+assert b"./init\0" in data or b"init\0" in data, "missing init name"
+assert b"./dev/console\0" in data or b"dev/console\0" in data, "missing console name"
+print("OK: raw newc contains ./init and ./dev/console name records")
+PY
+
 echo "OK: $OUT"
-echo "NOTE: Boot seed initramfs — not a Ryoku OS rootfs; T3 needs a pinned kernel + authorization."
-echo "NOTE: Guest console needs kernel cmdline console=ttyS0 (+ typically CONFIG_DEVTMPFS)."
+echo "NOTE: Boot seed initramfs — not a Ryoku OS rootfs; T3 needs pinned kernel + authorization."
+echo "NOTE: READY marker is emitted by ryoku-init only when guest pid==1."

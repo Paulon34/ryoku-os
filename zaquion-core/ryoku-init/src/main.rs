@@ -3,16 +3,9 @@
 //! # Behavior
 //!
 //! 1. Announce identity on stdout/stderr and `/dev/console` when present.
-//! 2. Print [`ryoku_init::BOOT_SEED_READY_MARKER`].
-//! 3. Remain as PID 1 (idle loop) so the kernel does not panic on init exit.
-//!
-//! # PID 1 notes
-//!
-//! - This seed does **not** spawn children; no SIGCHLD reaper is installed yet.
-//! - On Linux, fatal signals without a handler are ignored for PID 1; we still
-//!   avoid intentional `process::exit` after the banner.
-//! - Panic path uses workspace `panic = "abort"` (release) so we do not unwind
-//!   out of `main` and leave the guest without an init.
+//! 2. Emit [`ryoku_init::BOOT_SEED_READY_MARKER`] **only** when `pid == 1`.
+//! 3. If not PID 1: print a diagnostic (no READY), exit non-zero.
+//! 4. If PID 1: remain running (idle loop) so the kernel does not panic on init exit.
 //!
 //! # Not in scope
 //!
@@ -23,33 +16,37 @@
 
 use std::fs::OpenOptions;
 use std::io::{self, Write};
+use std::process::ExitCode;
 use std::thread;
 use std::time::Duration;
 
-use ryoku_init::boot_banner;
+use ryoku_init::{boot_output, is_pid1};
 
 fn write_all_best_effort(mut w: impl Write, bytes: &[u8]) {
     let _ = w.write_all(bytes);
     let _ = w.flush();
 }
 
-fn announce(banner: &str) {
-    let bytes = banner.as_bytes();
-    // Kernel typically wires init stdio to the console when `console=` is set.
+fn announce(text: &str) {
+    let bytes = text.as_bytes();
     write_all_best_effort(io::stdout(), bytes);
     write_all_best_effort(io::stderr(), bytes);
-    // Explicit console device when present (devtmpfs / pre-created node).
     if let Ok(console) = OpenOptions::new().write(true).open("/dev/console") {
         write_all_best_effort(console, bytes);
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
     let pid = std::process::id();
-    let banner = boot_banner(pid);
-    announce(&banner);
+    let text = boot_output(pid);
+    announce(&text);
 
-    // PID 1 must not return. Future missions may pivot_root / exec a real userland.
+    if !is_pid1(pid) {
+        // Never claim READY from a non-init process (host/unit-test invocations).
+        return ExitCode::from(1);
+    }
+
+    // PID 1 must not return.
     loop {
         thread::sleep(Duration::from_secs(3600));
     }

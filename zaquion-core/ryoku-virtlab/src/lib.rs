@@ -15,6 +15,7 @@ pub mod argv;
 pub mod boot;
 pub mod boot_seed;
 pub mod config;
+pub mod elf_static;
 pub mod exec;
 pub mod initramfs;
 pub mod lab;
