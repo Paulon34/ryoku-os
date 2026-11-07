@@ -1,6 +1,6 @@
 //! Ryoku console — limited interactive builtins (Mission 011).
 //!
-//! Separate from [`ryoku_init`] PID 1. Emitting READY / pid=1 remains sole
+//! Separate from `ryoku-init` PID 1. Emitting boot-seed markers remains sole
 //! responsibility of `ryoku-init`. This crate must not print
 //! `RYOKU_BOOT_SEED_READY` or claim a product OS shell.
 
@@ -65,7 +65,14 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+/// Horizontal whitespace treated as token separators (not forbidden).
+#[must_use]
+pub fn is_horizontal_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\r')
+}
+
 /// Characters that must never appear (shell / expansion surface).
+/// Tabs/CR are whitespace (see [`is_horizontal_whitespace`]), not forbidden.
 #[must_use]
 pub fn is_forbidden_char(ch: char) -> bool {
     matches!(
@@ -90,17 +97,19 @@ pub fn is_forbidden_char(ch: char) -> bool {
             | '"'
             | '\0'
             | '\n'
-            | '\r'
-            | '\t'
     )
 }
 
-/// Split a line into tokens on ASCII spaces only (no quote state machine).
+fn trim_horizontal(s: &str) -> &str {
+    s.trim_matches(|c: char| is_horizontal_whitespace(c))
+}
+
+/// Split a line into tokens on horizontal whitespace (no quote state machine).
 fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
     let mut tokens = Vec::new();
     let mut cur = String::new();
     for ch in line.chars() {
-        if ch == ' ' {
+        if is_horizontal_whitespace(ch) {
             if !cur.is_empty() {
                 if cur.len() > MAX_ARG_BYTES {
                     return Err(ParseError::ArgTooLong {
@@ -147,19 +156,24 @@ fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
     Ok(tokens)
 }
 
-/// Parse one console line into a [`Command`]. Leading/trailing spaces ignored.
+/// Parse one console line into a [`Command`].
+/// Leading/trailing spaces, tabs, and CR are ignored; internal ones separate tokens.
 pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
-    let line = raw.trim();
+    // Enforce length on the raw input (before trim) so padded junk cannot bypass caps.
+    if raw.len() > MAX_LINE_BYTES {
+        return Err(ParseError::TooLong { len: raw.len() });
+    }
+    let line = trim_horizontal(raw);
     if line.is_empty() {
         return Err(ParseError::Empty);
-    }
-    if line.len() > MAX_LINE_BYTES {
-        return Err(ParseError::TooLong { len: line.len() });
     }
     if !line.is_ascii() {
         return Err(ParseError::NonAscii);
     }
     for ch in line.chars() {
+        if is_horizontal_whitespace(ch) {
+            continue;
+        }
         if is_forbidden_char(ch) {
             return Err(ParseError::ForbiddenChar { ch });
         }
@@ -210,6 +224,15 @@ pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
     }
 }
 
+/// Startup banner for the host REPL — must never contain boot-seed marker text.
+#[must_use]
+pub fn startup_banner(version: &str) -> String {
+    format!(
+        "{CONSOLE_IDENTITY} {version} — limited builtins; not a product OS shell\n\
+         Separate from ryoku-init PID 1. Type `help`.\n"
+    )
+}
+
 /// Render command output (no side effects beyond the returned string).
 #[must_use]
 pub fn render(cmd: &Command) -> String {
@@ -224,7 +247,7 @@ pub fn render(cmd: &Command) -> String {
         Command::Status => {
             format!(
                 "{CONSOLE_IDENTITY}: interactive prototype (Mission 011)\n\
-                 pid1_core: separate (ryoku-init owns READY/pid=1)\n\
+                 pid1_core: separate (ryoku-init owns guest pid=1 markers)\n\
                  product_os_boot: NOT claimed\n\
                  parser: limited builtins only\n\
                  network: none (lab default)\n"
@@ -250,7 +273,7 @@ pub fn eval_line(raw: &str) -> Result<String, ParseError> {
     }
 }
 
-/// True when text contains the Boot Seed READY marker (must stay false for console output).
+/// True when text contains the Boot Seed marker (must stay false for console-owned output).
 #[must_use]
 pub fn output_claims_boot_seed_ready(text: &str) -> bool {
     text.contains("RYOKU_BOOT_SEED_READY")
@@ -276,6 +299,23 @@ mod tests {
         );
         assert!(render(&Command::Clear).contains("\u{001b}[2J"));
         assert!(render(&Command::Version).starts_with("ryoku-console "));
+    }
+
+    #[test]
+    fn accepts_tabs_and_cr_as_whitespace() {
+        assert!(matches!(parse_line("\thelp\t").unwrap(), Command::Help));
+        assert!(matches!(
+            parse_line("\rversion\r").unwrap(),
+            Command::Version
+        ));
+        assert_eq!(
+            parse_line("echo\thello\tworld").unwrap(),
+            Command::Echo(vec!["hello".into(), "world".into()])
+        );
+        assert_eq!(
+            parse_line("echo\rhello\rworld").unwrap(),
+            Command::Echo(vec!["hello".into(), "world".into()])
+        );
     }
 
     #[test]
@@ -316,6 +356,13 @@ mod tests {
             parse_line(&long).unwrap_err(),
             ParseError::TooLong { .. }
         ));
+        // Whitespace padding must not hide oversize raw input.
+        let padded = format!("  {}  ", "a".repeat(MAX_LINE_BYTES));
+        assert!(padded.len() > MAX_LINE_BYTES);
+        assert!(matches!(
+            parse_line(&padded).unwrap_err(),
+            ParseError::TooLong { .. }
+        ));
         let many = format!("echo {}", vec!["x"; MAX_ARGS].join(" "));
         assert!(matches!(
             parse_line(&many).unwrap_err(),
@@ -324,27 +371,31 @@ mod tests {
     }
 
     #[test]
-    fn console_never_emits_boot_seed_ready() {
+    fn console_owned_output_never_emits_boot_seed_ready() {
+        let banner = startup_banner(env!("CARGO_PKG_VERSION"));
+        assert!(!output_claims_boot_seed_ready(&banner));
+        assert!(!banner.contains("READY"));
         for cmd in [
             Command::Help,
             Command::Version,
             Command::Status,
-            Command::Echo(vec!["RYOKU_BOOT_SEED_READY".into()]),
             Command::Clear,
         ] {
-            // Echo may print the literal token if the user typed it as an arg —
-            // that is echo text, not a READY claim from init. Status/help/version/clear
-            // must never introduce the marker themselves.
-            if !matches!(cmd, Command::Echo(_)) {
-                assert!(!output_claims_boot_seed_ready(&render(&cmd)));
-            }
+            let out = render(&cmd);
+            assert!(!output_claims_boot_seed_ready(&out));
+            assert!(
+                !out.contains("READY"),
+                "console-owned output must not contain READY: {out:?}"
+            );
         }
-        assert!(!output_claims_boot_seed_ready(&render(&Command::Status)));
+        // Echo may print a literal user token — that is not a console claim.
         assert!(!output_claims_boot_seed_ready(&render(&Command::Help)));
     }
 
     #[test]
     fn eval_empty_ok() {
         assert_eq!(eval_line("   ").unwrap(), "");
+        assert_eq!(eval_line("\t\t").unwrap(), "");
+        assert_eq!(eval_line("\r").unwrap(), "");
     }
 }

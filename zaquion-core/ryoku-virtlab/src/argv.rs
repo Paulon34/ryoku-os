@@ -60,7 +60,11 @@ pub fn build_qemu_argv(
 
     args.push("-display".into());
     args.push("none".into());
-    args.push("-nographic".into());
+    // Interactive stdio serial: avoid `-nographic` (it also claims serial/monitor).
+    // T0–T3 keep `-nographic` for headless file-serial / monitor-quit flows.
+    if !cfg.serial_stdio {
+        args.push("-nographic".into());
+    }
     args.push("-nodefaults".into());
 
     match cfg.network {
@@ -105,7 +109,8 @@ pub fn build_qemu_argv(
     }
 
     if cfg.serial_stdio {
-        // Interactive prep (Mission 011) — does not replace T3 file-serial evidence.
+        // Interactive prep (Mission 011): -display none -serial stdio -monitor none.
+        // Does not replace T3 file-serial evidence profiles.
         args.push("-serial".into());
         args.push("stdio".into());
     } else if let Some(serial) = &cfg.serial_log {
@@ -122,11 +127,11 @@ pub fn build_qemu_argv(
         args.push("type=pc".into());
     }
 
-    // Monitor on stdio enables controlled shutdown via `quit` without a shell wrapper.
-    // Skip when guest serial already owns stdio (interactive console prep).
-    if !cfg.serial_stdio
-        && (matches!(cfg.shutdown, ShutdownMode::MonitorQuit) || cfg.is_emulator_only())
-    {
+    if cfg.serial_stdio {
+        args.push("-monitor".into());
+        args.push("none".into());
+    } else if matches!(cfg.shutdown, ShutdownMode::MonitorQuit) || cfg.is_emulator_only() {
+        // Monitor on stdio enables controlled shutdown via `quit` without a shell wrapper.
         args.push("-monitor".into());
         args.push("stdio".into());
     }
@@ -178,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn interactive_stdio_serial_no_file_and_no_monitor() {
+    fn interactive_stdio_serial_display_none_monitor_none() {
         let mut cfg = base_cfg();
         cfg.kernel = Some(PathBuf::from("/lab/run/vmlinuz"));
         cfg.initrd = Some(PathBuf::from("/lab/run/seed.cpio.gz"));
@@ -189,11 +194,40 @@ mod tests {
         let parts = argv.as_command_line_parts();
         assert!(parts
             .windows(2)
+            .any(|w| w[0] == "-display" && w[1] == "none"));
+        assert!(parts
+            .windows(2)
             .any(|w| w[0] == "-serial" && w[1] == "stdio"));
+        assert!(parts
+            .windows(2)
+            .any(|w| w[0] == "-monitor" && w[1] == "none"));
+        assert!(!parts.iter().any(|a| a == "-nographic"));
         assert!(!parts.iter().any(|a| a.starts_with("file:")));
         assert!(!parts
             .windows(2)
             .any(|w| w[0] == "-monitor" && w[1] == "stdio"));
+    }
+
+    #[test]
+    fn t3_style_file_serial_keeps_nographic_and_monitor_stdio() {
+        let mut cfg = base_cfg();
+        cfg.kernel = Some(PathBuf::from("/lab/run/vmlinuz"));
+        cfg.initrd = Some(PathBuf::from("/lab/run/seed.cpio.gz"));
+        cfg.serial_log = Some(PathBuf::from("/lab/results/serial-t3.log"));
+        cfg.serial_stdio = false;
+        cfg.shutdown = ShutdownMode::MonitorQuit;
+        let argv = build_qemu_argv("qemu-system-x86_64", &cfg, AccelChoice::Tcg).unwrap();
+        let parts = argv.as_command_line_parts();
+        assert!(parts.iter().any(|a| a == "-nographic"));
+        assert!(parts
+            .windows(2)
+            .any(|w| w[0] == "-serial" && w[1].starts_with("file:")));
+        assert!(parts
+            .windows(2)
+            .any(|w| w[0] == "-monitor" && w[1] == "stdio"));
+        assert!(!parts
+            .windows(2)
+            .any(|w| w[0] == "-monitor" && w[1] == "none"));
     }
 
     #[test]
