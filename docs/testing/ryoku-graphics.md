@@ -1,53 +1,32 @@
-# Ryoku First Pixels (Mission 014 / 014.1 / 014.2)
+# Ryoku First Pixels (Mission 014 / 014.1 / 014.2) — CLOSED
+
+**Closeout:** 2026-11-07 · tip **`ca26ac585f73a93ac7578c1f77f1f5f730ebbdba`** · PR #8  
+**Official claim:** **`FIRST_PIXELS=PASS_MANUAL`** (Paulo NixOS QEMU visual confirm; **≠ CI**)
 
 ## Status matrix
 
 | Item | Status | Evidence class |
 |------|--------|----------------|
-| Host unit tests | **PASS** (expect CI) | Host / CI |
-| Graphics package build | **PASS** (CI) | CI |
+| Host unit tests / graphics package CI | **PASS** | CI |
 | **`graphics_guest_inspection`** (tip `8355f68`) | **`PASS_MANUAL`** | Paulo |
 | **`gpu_pci_discovery`** (tip `8355f68`) | **`PASS_MANUAL`** | `0000:00:02.0 driver=virtio-pci` |
-| **`graphics_driver`** (tip `08baa45`) | **`PASS_MANUAL`** | 12/12 DRM mods; `virtio_gpu` |
-| **`framebuffer_available`** (tip `08baa45`) | **`PASS_MANUAL`** | dri + fb0 + drm class; FB 941×474 32bpp stride 3764 |
-| **`graphics_demo_started`** (tip `08baa45`) | **`PASS_MANUAL`** | demo ran |
-| **`FIRST_PIXELS`** (tip `08baa45` / 014.1 attempt) | **`FAIL_MANUAL`** | blit: `mmap shorter than stride*height`; SeaBIOS/black window |
-| **`FIRST_PIXELS`** (post-014.2) | **`NOT_RUN`** until human visual confirm | — |
-| Product Desktop / 3D | **Not** claimed | — |
+| **`graphics_driver`** | **`PASS_MANUAL`** | 12/12 DRM mods; `virtio_gpu` |
+| **`framebuffer_available`** | **`PASS_MANUAL`** | dri + fb0; 941×474 32bpp stride 3764 |
+| **`FIRST_PIXELS`** (tip `08baa45` / 014.1) | **`FAIL_MANUAL`** | file-size mmap too short; SeaBIOS/black |
+| **`FIRST_PIXELS`** (tip `ca26ac5` / 014.2) | **`PASS_MANUAL`** | visual title on QEMU window |
+| Product Desktop / 3D / Wayland | **Not** claimed | — |
 
-### Manual observations — tip `8355f68` (pre-modules)
+### Manual PASS — tip `ca26ac5` (014.2)
 
-- Boot / init / console **PASS**; QEMU window opened; `hw graphics` ran.
-- PCI GPU `0000:00:02.0 driver=virtio-pci` — **not** proof `virtio_gpu` DRM.
-- Absent: `/sys/class/drm`, `/sys/class/graphics`, `/dev/fb0`, `/dev/dri/*`.
+- Alpine virt boot; PID1 READY; 12/12 DRM modules; `virtio_gpu`; dri + fb0.
+- FB **941×474** 32bpp; ioctl geometry; mmap requested/obtained **1784136**; presented successfully into `/dev/fb0` (exit 0); serial console continued.
+- Screenshot description (human): **RYOKU OS / MINIMAL DEVELOPER PREVIEW / RUST USERLAND** — no hosted screenshot URL invented here.
 
-### Manual observations — tip `08baa45` (014.1 modules; FAIL_MANUAL pixels)
+### Manual FAIL history — tip `08baa45` (014.1) — preserved
 
-- **Env:** NixOS host; graphics ZIP; QEMU window + serial. **CI did not run this boot.**
-- 12/12 DRM modules loaded; `virtio_gpu` active; dri + fb0 + drm sysfs present.
-- Demo started; FB **941×474** 32bpp stride **3764**.
-- **FAIL:** `blit failed: mmap shorter than stride*height` — root cause: file-size `mmap` of `/dev/fb0` (char device, size 0) instead of explicit validated length.
-- Window: SeaBIOS / black — **do not** mark FIRST_PIXELS=PASS.
-
-## Kernel / modules (014.1 — unchanged in 014.2)
-
-| Topic | Finding |
-|-------|---------|
-| Lab kernel | Alpine `6.12.114-0-virt` |
-| Matching modules | Alpine netboot-3.21.9 `modloop-virt` (12 allowlisted `.ko`) |
-| Host NixOS modules | **Forbidden** |
-| 014.2 | **No** Alpine kernel/module set change |
-
-## 014.2 framebuffer mmap fix (implemented)
-
-1. Prefer `FBIOGET_VSCREENINFO` / `FBIOGET_FSCREENINFO`; sysfs fallback for fixtures.
-2. Validate width/height/bpp/stride/overflows/capacity (`smem_len`, `MAX_FB_MAP_BYTES`).
-3. `MmapOptions::len(validated)` — **never** file-size mmap of fb0.
-4. Software title buffer sized to FB (safe for non-640×480); blit clipped; no write past visible capacity.
-5. Diagnostics: capacity, requested/obtained mmap len, format, errors.
-6. Software buffer alone ≠ present; `FIRST_PIXELS` never auto-PASS. PID1 still WARN+continues to serial console on demo fail.
+- Same driver/fb path, then `blit failed: mmap shorter than stride*height` (file-size mmap of char-device fb0). Window SeaBIOS/black. Fixed in 014.2 via explicit `MmapOptions::len` + ioctl.
 
 ## Related
 
 - Package: [`tests/qemu/README-GRAPHICS.md`](../../tests/qemu/README-GRAPHICS.md)
-- Module pin: `tests/qemu/fixtures/virt-drm-modules.manifest`
+- Shell preview (015): separate package — does not replace First Pixels evidence

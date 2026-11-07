@@ -199,7 +199,7 @@ fn run_graphics_demo_once_best_effort() {
     match child {
         Ok(mut child) => match child.wait() {
             Ok(status) if status.success() => {
-                announce("ryoku-init: graphics presented successfully: demo exit 0 (FIRST_PIXELS still needs human visual confirm; NOT auto-PASS)\n");
+                announce("ryoku-init: graphics presented successfully: demo exit 0 (FIRST_PIXELS=PASS_MANUAL only after human visual confirm; never auto-PASS)\n");
                 announce(&graphics_demo_done_line(&format!("exit {status}")));
             }
             Ok(status) => {

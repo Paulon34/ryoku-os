@@ -85,16 +85,21 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Crate `ryoku-hwprobe` + builtins `hw summary|cpu|pci|drivers`
 - [x] Anúncio READY single-channel; banner ASCII; docs splash Missão 014
 - [x] Guest 013 **`PASS_MANUAL`** (2026-11-07; tip `649b850`; ≠ CI)
-- [ ] First pixels / gráfico (Missão 014) — **NOT_RUN**
+- [x] First pixels / gráfico (Missão 014) — **`FIRST_PIXELS=PASS_MANUAL`** (tip `ca26ac5`; ≠ CI)
 
-## Fase 2.9 — First Pixels (Missão 014 / 014.1)
+## Fase 2.9 — First Pixels (Missão 014 / 014.1 / 014.2) — CLOSED
 
 - [x] Inspeção/documentação DRM/KMS/fb/virtio-gpu (sem claim de driver; sem modules host)
 - [x] `hw graphics` + PCI class/bound-driver honesty; perfil QEMU gráfico separado
-- [x] `ryoku-graphics-demo` + package workflow separado; FIRST_PIXELS=**NOT_RUN**
+- [x] `ryoku-graphics-demo` + package workflow separado
 - [x] 014.1: Alpine virt DRM modules pin + pack + PID1 controlled load/demo start
-- [x] 014.2: fb0 explicit-length mmap + ioctl geometry (014.1 attempt was **FAIL_MANUAL**; FIRST_PIXELS still **NOT_RUN** until visual confirm)
-- [ ] Boot gráfico guest + pixels visuais (evidência **PASS_MANUAL** futura)
+- [x] 014.2: fb0 explicit-length mmap + ioctl geometry (014.1 attempt **FAIL_MANUAL**; 014.2 visual **PASS_MANUAL**)
+- [x] Guest visual first pixels confirmed (Paulo NixOS QEMU; tip `ca26ac5`)
+
+## Fase 2.10 — Ryoku Shell Preview (Missão 015)
+
+- [ ] Layout desktop ilustrativo no framebuffer (panel/dock/status; sem input ainda)
+- [ ] Package gráfico shell separado; input (evdev) = Missão 015.1 **NOT_RUN**
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 
