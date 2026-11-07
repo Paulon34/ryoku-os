@@ -238,6 +238,56 @@ pub fn ascii_banner() -> &'static str {
 ========================================\n"
 }
 
+/// Mission 016.2 — allowlisted kernel cmdline keys → guest env for shell-preview.
+///
+/// Only these keys/values are forwarded. T3 / Minimal append paths that omit
+/// `ryoku.*` are unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RyokuCmdlineEnv {
+    pub profile: Option<&'static str>,
+    pub perf_overlay: Option<&'static str>,
+    pub controlled_benchmark: Option<&'static str>,
+}
+
+/// Parse allowlisted `ryoku.*` tokens from a kernel cmdline string.
+#[must_use]
+pub fn parse_ryoku_cmdline(cmdline: &str) -> RyokuCmdlineEnv {
+    let mut out = RyokuCmdlineEnv::default();
+    for tok in cmdline.split_whitespace() {
+        if let Some(v) = tok.strip_prefix("ryoku.profile=") {
+            out.profile = match v {
+                "lite" | "l" => Some("lite"),
+                "balanced" | "bal" | "b" => Some("balanced"),
+                "ultra" | "u" => Some("ultra"),
+                _ => out.profile,
+            };
+        } else if let Some(v) = tok.strip_prefix("ryoku.perf_overlay=") {
+            out.perf_overlay = match v {
+                "0" | "false" | "FALSE" => Some("0"),
+                "1" | "true" | "TRUE" => Some("1"),
+                _ => out.perf_overlay,
+            };
+        } else if let Some(v) = tok.strip_prefix("ryoku.controlled_benchmark=") {
+            out.controlled_benchmark = match v {
+                "0" | "false" | "FALSE" => Some("0"),
+                "1" | "true" | "TRUE" => Some("1"),
+                _ => out.controlled_benchmark,
+            };
+        }
+        // Any other token (including unknown ryoku.*) is ignored — no open env injection.
+    }
+    out
+}
+
+/// Read `/proc/cmdline` and parse allowlisted Ryoku params (empty on failure).
+#[must_use]
+pub fn ryoku_cmdline_from_proc() -> RyokuCmdlineEnv {
+    match std::fs::read_to_string("/proc/cmdline") {
+        Ok(s) => parse_ryoku_cmdline(&s),
+        Err(_) => RyokuCmdlineEnv::default(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,5 +415,30 @@ mod tests {
         assert!(VIRT_DRM_ALLOWLIST[11].ends_with("virtio-gpu.ko"));
         assert!(VIRT_DRM_ALLOWLIST[12].ends_with("evdev.ko"));
         assert!(VIRT_DRM_ALLOWLIST[13].ends_with("virtio_input.ko"));
+    }
+
+    #[test]
+    fn ryoku_cmdline_allowlist_parses_known_only() {
+        let e = parse_ryoku_cmdline(
+            "console=ttyS0 ryoku.profile=ultra ryoku.perf_overlay=1 \
+             ryoku.controlled_benchmark=1 ryoku.evil=1 PATH=/evil",
+        );
+        assert_eq!(e.profile, Some("ultra"));
+        assert_eq!(e.perf_overlay, Some("1"));
+        assert_eq!(e.controlled_benchmark, Some("1"));
+        // Unknown keys ignored (no open injection).
+        let empty = parse_ryoku_cmdline("console=ttyS0 ryoku.unknown=1");
+        assert_eq!(empty, RyokuCmdlineEnv::default());
+        let bad = parse_ryoku_cmdline("ryoku.profile=gaming ryoku.perf_overlay=maybe");
+        assert_eq!(bad.profile, None);
+        assert_eq!(bad.perf_overlay, None);
+    }
+
+    #[test]
+    fn t3_style_cmdline_unchanged_empty_ryoku_env() {
+        assert_eq!(
+            parse_ryoku_cmdline("console=ttyS0 earlyprintk=serial"),
+            RyokuCmdlineEnv::default()
+        );
     }
 }

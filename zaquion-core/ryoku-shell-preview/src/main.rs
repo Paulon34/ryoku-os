@@ -1,12 +1,15 @@
-//! Guest entry for `ryoku-shell-preview` (Mission 015 / 015.2 / **016** / **016.1**).
+//! Guest entry for `ryoku-shell-preview` (Mission 015–**016.2**).
 //!
 //! 015.2.1: no visible fb clear; scanline/dirty blit; coalesce motion; keep all
 //! keyboards; configurable FPS. `EVENTS RECEIVED` is a fact indicator only.
 //!
 //! 016.1: compose/present instrumentation; selected vs effective profile;
 //! band compose for cursor dirty; skip flush on partial blit; optional perf
-//! overlay (`RYOKU_SHELL_PERF_OVERLAY=1`, off by default). QEMU TCG ≠ hardware.
-//! Never invent guest timings or `PASS_MANUAL`.
+//! overlay (`RYOKU_SHELL_PERF_OVERLAY=1`, off by default).
+//!
+//! 016.2: opt-in controlled benchmark (`RYOKU_CONTROLLED_BENCHMARK=1`) — identical
+//! full/band workload per profile; mean/p95; serial summary; off in normal use.
+//! QEMU TCG ≠ hardware. Never invent guest timings or `PASS_MANUAL`.
 
 #![allow(unsafe_code)]
 
@@ -23,10 +26,11 @@ use ryoku_graphics_demo::{
     classify_no_fb_reason, format_outcome, graphics_root_from_env, open_fb_rw, probe_fb0,
 };
 use ryoku_shell_preview::{
-    compose_shell_band, compose_shell_interactive, dirty_band_for_cursor, draw_perf_overlay,
+    compose_shell_band, compose_shell_interactive, controlled_band, controlled_benchmark_enabled,
+    controlled_profile_order, dirty_band_for_cursor, draw_perf_overlay, instrumentation_cost_note,
     merge_dirty, present_shell, present_shell_rows, ultra_slowdown_investigation, AdaptiveProfile,
-    FrameAccumulator, FrameSample, InputFact, InteractiveState, PerfOverlayPolicy, ShellLayout,
-    SHELL_IDENTITY,
+    ControlledProfileRun, FrameAccumulator, FrameSample, InputFact, InteractiveState,
+    PerfOverlayPolicy, ShellLayout, CONTROLLED_BAND_FRAMES, CONTROLLED_FULL_FRAMES, SHELL_IDENTITY,
 };
 
 use crate::input::{
@@ -65,6 +69,12 @@ impl PerfReporter {
             self.last_report = Some(now);
             self.window.reset_window();
         }
+    }
+
+    /// Mission 016.2: reset metric windows on profile switch (no mixed-profile windows).
+    fn reset_on_profile_switch(&mut self) {
+        self.window.reset_window();
+        self.last_report = None;
     }
 }
 
@@ -210,32 +220,27 @@ fn apply_discrete(
     }
 }
 
-fn present_dirty(
+/// Timed compose→present (shared by interactive path + controlled benchmark).
+fn timed_present(
     mmap: &mut memmap2::MmapMut,
     geom: &ryoku_graphics_demo::FbGeometry,
     layout: &ShellLayout,
     ui: &InteractiveState,
     scratch: &mut RgbBuffer,
     dirty: Option<(u32, u32)>,
-    reporter: &mut PerfReporter,
-) -> Result<(), String> {
-    // Overlay lives on the panel — force full compose when enabled.
+    overlay_line: Option<&str>,
+) -> Result<FrameSample, String> {
+    let force_full = overlay_line.is_some();
     let band = dirty
         .filter(|&(y0, y1)| y1 > y0 && (y1 - y0) < layout.height)
-        .filter(|_| !reporter.overlay.enabled);
+        .filter(|_| !force_full);
     let full_frame = band.is_none();
     let t0 = Instant::now();
     if let Some((y0, y1)) = band {
-        // Cursor / local dirty: avoid full-frame gradient compose (016.1).
         compose_shell_band(scratch, layout, ui, y0, y1);
     } else {
         compose_shell_interactive(scratch, layout, Some(ui));
-        if reporter.overlay.enabled {
-            let line = if reporter.last_line.is_empty() {
-                "PERF OVERLAY ON"
-            } else {
-                reporter.last_line.as_str()
-            };
+        if let Some(line) = overlay_line {
             draw_perf_overlay(scratch, layout, line);
         }
     }
@@ -251,13 +256,12 @@ fn present_dirty(
         }
         None => {
             present_shell(mmap, geom, scratch)?;
-            // flush is best-effort mmap sync — **not** vblank / pageflip (fbdev).
             let _ = mmap.flush();
             (layout.height, true)
         }
     };
     let t2 = Instant::now();
-    reporter.note(FrameSample::from_parts(
+    Ok(FrameSample::from_parts(
         ui.profile,
         t1 - t0,
         t2 - t1,
@@ -265,8 +269,73 @@ fn present_dirty(
         full_frame,
         flushed,
         scratch.pixels.len(),
-    ));
+    ))
+}
+
+fn present_dirty(
+    mmap: &mut memmap2::MmapMut,
+    geom: &ryoku_graphics_demo::FbGeometry,
+    layout: &ShellLayout,
+    ui: &InteractiveState,
+    scratch: &mut RgbBuffer,
+    dirty: Option<(u32, u32)>,
+    reporter: &mut PerfReporter,
+) -> Result<(), String> {
+    let overlay = if reporter.overlay.enabled {
+        Some(if reporter.last_line.is_empty() {
+            "PERF OVERLAY ON"
+        } else {
+            reporter.last_line.as_str()
+        })
+    } else {
+        None
+    };
+    let sample = timed_present(mmap, geom, layout, ui, scratch, dirty, overlay)?;
+    reporter.note(sample);
     Ok(())
+}
+
+/// Mission 016.2 — deterministic identical workload per profile (opt-in; no Bash).
+fn run_controlled_benchmark(
+    mmap: &mut memmap2::MmapMut,
+    geom: &ryoku_graphics_demo::FbGeometry,
+    layout: &ShellLayout,
+    ui: &mut InteractiveState,
+    scratch: &mut RgbBuffer,
+) {
+    eprintln!("{SHELL_IDENTITY}: CONTROLLED_BENCHMARK start (identical full/band per profile)");
+    eprintln!("{SHELL_IDENTITY}: {}", instrumentation_cost_note());
+    let band = controlled_band(layout.height);
+    let saved = ui.profile;
+    for profile in controlled_profile_order() {
+        ui.set_profile(profile);
+        let mut run = ControlledProfileRun::new(profile);
+        for _ in 0..CONTROLLED_FULL_FRAMES {
+            match timed_present(mmap, geom, layout, ui, scratch, None, None) {
+                Ok(s) => run.push_full(s),
+                Err(err) => {
+                    eprintln!("{SHELL_IDENTITY}: CONTROLLED WARN full present: {err}");
+                    break;
+                }
+            }
+        }
+        for _ in 0..CONTROLLED_BAND_FRAMES {
+            match timed_present(mmap, geom, layout, ui, scratch, Some(band), None) {
+                Ok(s) => run.push_band(s),
+                Err(err) => {
+                    eprintln!("{SHELL_IDENTITY}: CONTROLLED WARN band present: {err}");
+                    break;
+                }
+            }
+        }
+        let summary = run.summary();
+        eprintln!("{SHELL_IDENTITY}: {}", summary.serial_line());
+    }
+    ui.set_profile(saved);
+    eprintln!(
+        "{SHELL_IDENTITY}: CONTROLLED_BENCHMARK done — CONTROLLED_BENCHMARK guest still \
+         requires human review (TCG ≠ HW; COST_INSTRUMENTED)"
+    );
 }
 
 fn event_loop(
@@ -296,8 +365,8 @@ fn event_loop(
     let mut raw = Vec::with_capacity(64);
 
     eprintln!(
-        "{SHELL_IDENTITY}: event loop 016.1 adaptive-perf fps={fps} profile={} effective={} \
-         overlay={} diag={diag}; no continuous redraw; EVENTS RECEIVED ≠ click; GUEST_NOT_RUN — fact={:?}",
+        "{SHELL_IDENTITY}: event loop 016.2 fps={fps} profile={} effective={} \
+         overlay={} diag={diag}; no continuous redraw; EVENTS RECEIVED ≠ click; fact={:?}",
         ui.profile.name(),
         ui.profile.effective().name(),
         reporter.overlay.enabled,
@@ -360,6 +429,8 @@ fn event_loop(
         if ui.profile != prev_profile {
             fps = target_fps(ui.profile);
             gate = RedrawGate::from_fps(fps);
+            // 016.2: reset metric windows so windows never mix profiles.
+            reporter.reset_on_profile_switch();
             prev_profile = ui.profile;
         }
         if (ui.cursor_x, ui.cursor_y) != prev_cursor {
@@ -401,7 +472,7 @@ fn main() -> ExitCode {
     };
 
     eprintln!(
-        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 016.1)",
+        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 016.2)",
         root.display()
     );
 
@@ -493,9 +564,19 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
     println!(
-        "{SHELL_IDENTITY}: presented shell+launcher into /dev/fb0 ({}x{} bpp={}); fact={:?}; staying alive (016.1 adaptive-perf)",
+        "{SHELL_IDENTITY}: presented shell+launcher into /dev/fb0 ({}x{} bpp={}); fact={:?}; staying alive (016.2)",
         plan.geom.width, plan.geom.height, plan.geom.bpp, ui.input_fact
     );
+
+    // Opt-in controlled benchmark (off in normal use). Runs in-guest without Bash.
+    if controlled_benchmark_enabled(env::var("RYOKU_CONTROLLED_BENCHMARK").ok().as_deref()) {
+        run_controlled_benchmark(&mut mmap, &plan.geom, &layout, &mut ui, &mut scratch);
+        reporter.reset_on_profile_switch();
+    } else {
+        eprintln!(
+            "{SHELL_IDENTITY}: CONTROLLED_BENCHMARK=off (set RYOKU_CONTROLLED_BENCHMARK=1 to run)"
+        );
+    }
 
     event_loop(
         &mut mmap,

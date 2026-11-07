@@ -67,16 +67,19 @@ Documented in more detail when the QEMU harness exists; outline:
 - No ISO size claims based on empty packaging placeholders.
 - No tuning of host sysctl or guest kernels in this mission.
 
-## Mission 016.1 note (Adaptive Performance)
+## Mission 016.1 / 016.2 note (Adaptive + Controlled Performance)
 
 Shell-preview emits **compose/present** samples on the guest serial console.
-Those numbers (especially under QEMU **TCG**) are **not** hardware measurements
+Mission **016.2** adds an opt-in **controlled** harness (identical full/band
+workload per profile; mean/p95). Those numbers (especially under QEMU **TCG**)
+are **not** hardware measurements, are **instrumented** (`COST_INSTRUMENTED`),
 and must not be published as product benchmarks. See
-[`../testing/ryoku-adaptive-0161.md`](../testing/ryoku-adaptive-0161.md).
+[`../testing/ryoku-adaptive-0162.md`](../testing/ryoku-adaptive-0162.md).
 
 ## Related docs
 
 - [../testing/qemu-strategy.md](../testing/qemu-strategy.md)
 - [../testing/ryoku-adaptive-0161.md](../testing/ryoku-adaptive-0161.md)
+- [../testing/ryoku-adaptive-0162.md](../testing/ryoku-adaptive-0162.md)
 - [../../packaging/profiles/](../../packaging/profiles/)
 - [../../ROADMAP.md](../../ROADMAP.md)

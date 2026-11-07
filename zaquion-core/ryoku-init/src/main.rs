@@ -34,8 +34,9 @@ use ryoku_init::{
     allowlisted_module_guest_path, ascii_banner, boot_output, graphics_demo_done_line,
     graphics_demo_start_line, graphics_modules_start_line, guest_any_graphics_profile,
     guest_graphics_profile, guest_interactive_mode, guest_shell_profile, interactive_done_line,
-    interactive_start_line, is_pid1, shell_preview_done_line, shell_preview_start_line,
-    CONSOLE_BIN_PATH, GRAPHICS_DEMO_BIN_PATH, SHELL_PREVIEW_BIN_PATH, VIRT_DRM_ALLOWLIST,
+    interactive_start_line, is_pid1, ryoku_cmdline_from_proc, shell_preview_done_line,
+    shell_preview_start_line, CONSOLE_BIN_PATH, GRAPHICS_DEMO_BIN_PATH, SHELL_PREVIEW_BIN_PATH,
+    VIRT_DRM_ALLOWLIST,
 };
 
 fn write_all_best_effort(mut w: impl Write, bytes: &[u8]) {
@@ -182,14 +183,34 @@ fn spawn_shell_preview_background_best_effort() -> Option<std::process::Child> {
         }
     };
 
-    match Command::new(SHELL_PREVIEW_BIN_PATH)
-        .env("RYOKU_GRAPHICS_ROOT", "/")
+    // Mission 016.2: allowlisted ryoku.* cmdline → env (no open injection; T3 unchanged).
+    let ryoku = ryoku_cmdline_from_proc();
+    let mut cmd = Command::new(SHELL_PREVIEW_BIN_PATH);
+    cmd.env("RYOKU_GRAPHICS_ROOT", "/")
         .env("RYOKU_CONSOLE_ROOT", "/")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr))
-        .spawn()
-    {
+        .stderr(Stdio::from(stderr));
+    if let Some(p) = ryoku.profile {
+        cmd.env("RYOKU_DESKTOP_PROFILE", p);
+        announce(&format!(
+            "ryoku-init: cmdline ryoku.profile={p} → RYOKU_DESKTOP_PROFILE\n"
+        ));
+    }
+    if let Some(v) = ryoku.perf_overlay {
+        cmd.env("RYOKU_SHELL_PERF_OVERLAY", v);
+        announce(&format!(
+            "ryoku-init: cmdline ryoku.perf_overlay={v} → RYOKU_SHELL_PERF_OVERLAY\n"
+        ));
+    }
+    if let Some(v) = ryoku.controlled_benchmark {
+        cmd.env("RYOKU_CONTROLLED_BENCHMARK", v);
+        announce(&format!(
+            "ryoku-init: cmdline ryoku.controlled_benchmark={v} → RYOKU_CONTROLLED_BENCHMARK\n"
+        ));
+    }
+
+    match cmd.spawn() {
         Ok(child) => {
             announce(
                 "ryoku-init: shell preview spawned in background (stays alive with serial); \
