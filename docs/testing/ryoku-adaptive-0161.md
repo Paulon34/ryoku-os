@@ -1,45 +1,38 @@
-# Ryoku Adaptive Performance (Mission 016.1)
+# Ryoku Adaptive Performance (Mission 016.1) — CLOSEOUT
 
-**Guest results:** **`GUEST_NOT_RUN`** until human confirm (never auto `PASS_MANUAL`).
+**Merge:** não. Tip validado (manual NixOS): **`d2785f4335264159b582ec7d3d129a86509ccf4e`**.
 
-Stacked on Mission **016** closeout (tip `572f77d` validated; docs tip `6a7e38b`).
+CI ≠ guest. Never invent `PASS_MANUAL` from host unit tests or package CI.
 
-## Goals
+## Evidência manual (NixOS)
 
-- Instrument **compose** vs **present** (blit±flush)
-- Metrics: redraw count, approx latency, scratch mem; **selected vs effective** profile
-- Host comparison helpers Lite vs Balanced (caller-supplied samples only — **no invented numbers**)
-- Investigate Ultra perceived slowdown: paint falls back to **Balanced**; TCG ≠ hardware
-- Cut unnecessary alloc / full-frame compose on cursor dirty (band compose)
-- Optional perf overlay: `RYOKU_SHELL_PERF_OVERLAY=1` (**off by default**)
+- Boot / PID1 / console OK; 14/14 modules; DRM/fbdev; teclados + tablet
+- Perfis Balanced / Lite / Ultra; amostras reais de métricas (serial)
+- Exemplos observados (TCG; **não** benchmark controlado):
+  - BALANCED n=78 c≈6253µs p≈4594µs
+  - LITE n=49 / 44 (janelas mistas)
+  - ULTRA→BALANCED n=49; scratch ≈2737 KiB
 
-## Honesty
+## Claims oficiais (≠ CI)
 
-| Claim | Status |
-|-------|--------|
-| Blur / transparency / 3D / compositor / full Wayland | **Not** claimed |
-| Guest adaptive / perf timings | **`GUEST_NOT_RUN`** |
-| QEMU TCG timings as hardware | **Never** |
-| Invented benchmark numbers | **Never** |
+| Item | Status |
+|------|--------|
+| **`ADAPTIVE_PERF_GUEST`** | **`PASS_MANUAL`** |
+| **`PROFILE_SWITCH`** | **`PASS_MANUAL`** |
+| **`PERF_METRICS`** | **`PASS_MANUAL`** |
+| **`CONTROLLED_BENCHMARK`** | **`NOT_RUN`** |
 
-## Ultra investigation (code honesty)
+### Honesty explícita
 
-Ultra **selected** → **effective Balanced** for paint/render. Perceived weight vs Lite is the Balanced gradient/card path under QEMU TCG; vs Balanced paint path should match. See `ultra_slowdown_investigation()` in `ryoku-shell-preview`.
+- **Não** concluir que Lite é mais lento: janelas misturam full vs band frames
+- **Não** declarar blur / efeitos Ultra (Ultra → Balanced paint fallback)
+- QEMU TCG ≠ hardware; amostras ad-hoc ≠ harness controlado
 
-## Manual (after ZIP)
+## Next
 
-```bash
-chmod +x run-ryoku-shell-qemu.sh
-./run-ryoku-shell-qemu.sh
-RYOKU_DESKTOP_PROFILE=balanced \
-  RYOKU_SHELL_QEMU_EXECUTE=1 RYOKU_SHELL_QEMU_CONFIRM=RUN \
-  ./run-ryoku-shell-qemu.sh
-# Optional overlay: RYOKU_SHELL_PERF_OVERLAY=1
-# Serial metrics every ~5s: PERF LITE->LITE n=… c=…us p=…us mem=…KiB
-```
+Mission **016.2** — Controlled Performance (benchmark determinístico; guest até manual).
 
 ## Related
 
 - Closeout 016: [`ryoku-adaptive-016.md`](ryoku-adaptive-016.md)
 - Package: [`tests/qemu/README-ADAPTIVE-PERF.md`](../../tests/qemu/README-ADAPTIVE-PERF.md)
-- Perf goals doc: [`docs/performance/targets.md`](../performance/targets.md)

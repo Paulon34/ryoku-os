@@ -126,12 +126,17 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Sem fingir blur/transparência/3D/compositor/Wayland completo; sem redraw contínuo; sem clear visível
 - [x] Manual tip `572f77d` (≠ CI): **`ADAPTIVE_PROFILE_SWITCH=PASS_MANUAL`**, **`KEYBOARD_ARROWS_TAB=PASS_MANUAL`**, **`LITE_USABILITY=POSITIVE_MANUAL_FEEDBACK`**, **`BALANCED_USABILITY=POSITIVE_MANUAL_FEEDBACK`**, **`ULTRA_PERCEIVED_SLOWDOWN=REPORTED_UNMEASURED`**, **`PERFORMANCE_BENCHMARK=NOT_RUN`**
 
-## Fase 2.14 — Adaptive Performance (Missão 016.1)
+## Fase 2.14 — Adaptive Performance (Missão 016.1) — CLOSEOUT
 
 - [x] Instrumentação compose/present; selected vs effective; band compose; overlay off-by-default — code
 - [x] Lite vs Balanced compare helpers (samples only); Ultra=Balanced paint investigation; TCG ≠ hardware docs
-- [ ] Guest results **`GUEST_NOT_RUN`** until manual
-- [ ] **`PERFORMANCE_BENCHMARK`** remains **`NOT_RUN`** until measured harness
+- [x] Manual tip `d2785f4` (≠ CI): **`ADAPTIVE_PERF_GUEST=PASS_MANUAL`**, **`PROFILE_SWITCH=PASS_MANUAL`**, **`PERF_METRICS=PASS_MANUAL`**, **`CONTROLLED_BENCHMARK=NOT_RUN`**
+- [x] Honesty: do **not** conclude Lite slower from mixed full/band windows; no Ultra blur claim
+
+## Fase 2.15 — Controlled Performance (Missão 016.2)
+
+- [ ] Benchmark determinístico idêntico por perfil (full vs partial; mean/p95); off no uso normal
+- [ ] Guest **`CONTROLLED_BENCHMARK=NOT_RUN`** until manual; TCG ≠ físico
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 
