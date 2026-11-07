@@ -81,20 +81,14 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
         }
     };
 
+    eprintln!(
+        "first-boot iso_abs={} exists={}",
+        iso_path.display(),
+        iso_path.is_file()
+    );
+
     if !iso_path.is_file() {
-        results.push(
-            CaseResult::new(
-                "t2.reference_linux_boot",
-                Outcome::NotRun,
-                format!("reference ISO not present at {}", iso_path.display()),
-            )
-            .with_detail(
-                "Fetch only after authorization: \
-                 RYOKU_FETCH_EXECUTE=1 tests/qemu/scripts/fetch-reference-image.sh \
-                 (default is dry-run). This is Alpine — not Ryoku OS."
-                    .to_string(),
-            ),
-        );
+        results.push(missing_iso_result(lab_root, &iso_path));
         results.push(ryoku_not_claimed());
         return results;
     }
@@ -338,6 +332,52 @@ fn ryoku_not_claimed() -> CaseResult {
         Outcome::NotRun,
         "Ryoku OS boot NOT claimed — no Ryoku ISO / kernel under test",
     )
+}
+
+/// Classify a missing ISO: plain NOT_RUN vs path-inconsistency FAIL (sidecar without ISO).
+fn missing_iso_result(lab_root: &Path, iso_path: &Path) -> CaseResult {
+    let name = iso_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("reference.iso");
+    let run_dir = lab_root.join("run");
+    let sha = run_dir.join(format!("{name}.sha256"));
+    let asc = run_dir.join(format!("{name}.asc"));
+    let sidecar_present = sha.is_file() || asc.is_file();
+
+    if sidecar_present {
+        CaseResult::new(
+            "t2.reference_linux_boot",
+            Outcome::Fail,
+            format!(
+                "path inconsistency: fetch sidecars present under {} but ISO missing at {}",
+                run_dir.display(),
+                iso_path.display()
+            ),
+        )
+        .with_detail(format!(
+            "lab_root_abs={}\niso_abs={}\nsha256_sidecar={}\nasc_sidecar={}\n\
+             Refusing PASS/NOT_RUN ambiguity — ISO was fetched but harness cannot open it.",
+            lab_root.display(),
+            iso_path.display(),
+            sha.is_file(),
+            asc.is_file()
+        ))
+    } else {
+        CaseResult::new(
+            "t2.reference_linux_boot",
+            Outcome::NotRun,
+            format!("reference ISO not present at {}", iso_path.display()),
+        )
+        .with_detail(format!(
+            "lab_root_abs={}\niso_abs={}\n\
+             Fetch only after authorization: \
+             RYOKU_FETCH_EXECUTE=1 tests/qemu/scripts/fetch-reference-image.sh \
+             (default is dry-run). This is Alpine — not Ryoku OS.",
+            lab_root.display(),
+            iso_path.display()
+        ))
+    }
 }
 
 fn read_serial(cfg: &VmConfig) -> String {

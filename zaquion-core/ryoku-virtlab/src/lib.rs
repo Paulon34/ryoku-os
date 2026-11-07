@@ -14,6 +14,7 @@ pub mod argv;
 pub mod boot;
 pub mod config;
 pub mod exec;
+pub mod lab;
 pub mod report;
 pub mod security;
 pub mod status;
@@ -23,6 +24,7 @@ pub mod tools;
 
 pub use boot::run_first_boot;
 pub use config::{AccelMode, NetworkMode, VmConfig};
+pub use lab::{discover_lab_root_from, resolve_lab_asset};
 pub use report::format_lab_report;
 pub use status::{CaseResult, Outcome};
 pub use t0::run_t0;
