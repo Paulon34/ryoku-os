@@ -139,9 +139,11 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
     let exec = run_boot_until_sentinel_or_timeout(&argv, &cfg);
 
     let serial_text = read_serial(&cfg);
-    let combined = format!("{}\n{}\n{}", exec.stdout, exec.stderr, serial_text);
     let markers = cfg.required_boot_markers();
-    let missing = missing_markers(&combined, &markers);
+    // PASS eligibility depends ONLY on the guest serial log — never stdout/stderr.
+    // QEMU process streams are kept for diagnostics only (see detail / evidence).
+    let missing = missing_markers(&serial_text, &markers);
+    let serial_eligible = serial_markers_pass(&serial_text, &markers);
 
     if let Some(err) = &exec.spawn_error {
         results.push(
@@ -180,23 +182,27 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
             "FAIL",
             "no_markers_configured",
         );
-    } else if missing.is_empty() {
+    } else if serial_eligible {
         results.push(
             CaseResult::new(
                 "t2.reference_linux_boot",
                 Outcome::Pass,
                 format!(
-                    "reference Linux serial matched markers {:?} (NOT Ryoku OS)",
+                    "reference Linux *serial* matched markers {:?} (NOT Ryoku OS)",
                     markers
                 ),
             )
             .with_detail(format!(
-                "accel={} duration_ms={} timed_out={} exit={:?}\nserial_bytes={}",
+                "accel={} duration_ms={} timed_out={} exit={:?}\nserial_bytes={}\n\
+                 pass_source=serial_log_only (stdout/stderr ignored for PASS)\n\
+                 stdout_bytes={} stderr_bytes={}",
                 argv.accel_used.as_str(),
                 exec.duration_ms,
                 exec.timed_out,
                 exec.exit_code,
-                serial_text.len()
+                serial_text.len(),
+                exec.stdout.len(),
+                exec.stderr.len()
             )),
         );
         write_evidence(
@@ -208,7 +214,7 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
             &markers,
             &missing,
             "PASS",
-            "all_markers_matched",
+            "all_markers_matched_in_serial",
         );
     } else if exec.spawned() {
         results.push(
@@ -220,11 +226,15 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
                 ),
             )
             .with_detail(format!(
-                "accel={} duration_ms={} timed_out={} — refusing to claim boot without evidence\nserial_tail={}",
+                "accel={} duration_ms={} timed_out={} — refusing to claim boot without serial evidence\n\
+                 pass_source=serial_log_only (stdout/stderr ignored for PASS)\n\
+                 serial_tail={}\nstdout_tail={}\nstderr_tail={}",
                 argv.accel_used.as_str(),
                 exec.duration_ms,
                 exec.timed_out,
-                trim_tail(&serial_text, 500)
+                trim_tail(&serial_text, 500),
+                trim_tail(&exec.stdout, 200),
+                trim_tail(&exec.stderr, 200)
             )),
         );
         write_evidence(
@@ -236,7 +246,11 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
             &markers,
             &missing,
             "FAIL",
-            "markers_incomplete",
+            if serial_text.is_empty() {
+                "empty_serial"
+            } else {
+                "markers_incomplete_in_serial"
+            },
         );
     } else {
         results.push(CaseResult::new(
@@ -475,6 +489,30 @@ pub fn missing_markers(haystack: &str, markers: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// True only when every required marker appears in the **guest serial log**.
+///
+/// Empty serial, empty marker list, or any missing marker → not eligible for PASS.
+/// Callers must not concatenate QEMU stdout/stderr into `serial`.
+#[must_use]
+pub fn serial_markers_pass(serial: &str, markers: &[String]) -> bool {
+    !markers.is_empty() && !serial.is_empty() && missing_markers(serial, markers).is_empty()
+}
+
+/// Evaluate PASS eligibility using **only** `serial`.
+///
+/// `stdout` / `stderr` are accepted so callers (and tests) can prove that markers
+/// present solely in process streams cannot produce a PASS.
+#[must_use]
+pub fn reference_boot_pass_eligible(
+    serial: &str,
+    stdout: &str,
+    stderr: &str,
+    markers: &[String],
+) -> bool {
+    let _ = (stdout, stderr); // intentionally unused for PASS — diagnostics only
+    serial_markers_pass(serial, markers)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn write_evidence(
     lab_root: &Path,
@@ -588,6 +626,76 @@ mod tests {
         );
     }
 
+    fn alpine_markers() -> Vec<String> {
+        vec!["Alpine".to_string(), "login:".to_string()]
+    }
+
+    #[test]
+    fn markers_only_in_stdout_not_pass() {
+        let markers = alpine_markers();
+        let stdout = "Welcome to Alpine\n\nlocalhost login:";
+        assert!(
+            !reference_boot_pass_eligible("", stdout, "", &markers),
+            "stdout-only markers must not PASS"
+        );
+    }
+
+    #[test]
+    fn markers_only_in_stderr_not_pass() {
+        let markers = alpine_markers();
+        let stderr = "Alpine Linux\nlogin:";
+        assert!(
+            !reference_boot_pass_eligible("", "", stderr, &markers),
+            "stderr-only markers must not PASS"
+        );
+    }
+
+    #[test]
+    fn markers_split_across_stdout_and_serial_not_pass() {
+        let markers = alpine_markers();
+        // "Alpine" only on stdout; "login:" only on serial — must not PASS.
+        assert!(!reference_boot_pass_eligible(
+            "localhost login:",
+            "Welcome to Alpine",
+            "",
+            &markers
+        ));
+        // Reverse split.
+        assert!(!reference_boot_pass_eligible(
+            "Welcome to Alpine",
+            "login:",
+            "",
+            &markers
+        ));
+    }
+
+    #[test]
+    fn all_markers_in_serial_eligible_for_pass() {
+        let markers = alpine_markers();
+        assert!(reference_boot_pass_eligible(
+            "Welcome to Alpine Linux\n\nlocalhost login:",
+            "qemu monitor noise Alpine login:", // decoy — must be ignored
+            "stderr Alpine login:",
+            &markers
+        ));
+        assert!(serial_markers_pass(
+            "Welcome to Alpine Linux\n\nlocalhost login:",
+            &markers
+        ));
+    }
+
+    #[test]
+    fn empty_serial_not_pass() {
+        let markers = alpine_markers();
+        assert!(!serial_markers_pass("", &markers));
+        assert!(!reference_boot_pass_eligible(
+            "",
+            "Alpine\nlogin:",
+            "Alpine\nlogin:",
+            &markers
+        ));
+    }
+
     #[test]
     fn first_boot_skips_without_qemu() {
         let lab = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/qemu");
@@ -597,11 +705,17 @@ mod tests {
             .any(|r| r.id == "t2.qemu_required" && r.outcome == Outcome::Skipped));
         assert!(results
             .iter()
+            .any(|r| r.id == "t2.reference_linux_boot" && r.outcome == Outcome::NotRun));
+        assert!(results
+            .iter()
             .any(|r| r.id == "t2.ryoku_os_boot" && r.outcome == Outcome::NotRun));
         assert!(results
             .iter()
             .any(|r| r.id == "t2.policy_reference_not_ryoku" && r.outcome == Outcome::Pass));
         assert!(!results.iter().any(|r| r.outcome == Outcome::Fail));
+        assert!(!results
+            .iter()
+            .any(|r| r.id == "t2.reference_linux_boot" && r.outcome == Outcome::Pass));
     }
 
     #[test]
