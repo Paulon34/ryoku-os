@@ -83,6 +83,16 @@ pub fn build_qemu_argv(
         args.push(kernel.display().to_string());
     }
 
+    if let Some(initrd) = &cfg.initrd {
+        args.push("-initrd".into());
+        args.push(initrd.display().to_string());
+    }
+
+    if let Some(append) = &cfg.append {
+        args.push("-append".into());
+        args.push(append.clone());
+    }
+
     if let Some(iso) = &cfg.iso {
         // IDE CD for broad QEMU compatibility with ISO boot.
         args.push("-drive".into());
@@ -149,12 +159,31 @@ mod tests {
             network: NetworkMode::None,
             disk: None,
             kernel: None,
+            initrd: None,
+            append: None,
             iso: None,
             serial_log: None,
             boot_sentinel: None,
             boot_markers: Vec::new(),
             shutdown: ShutdownMode::MonitorQuit,
         }
+    }
+
+    #[test]
+    fn kernel_initrd_append_in_argv() {
+        let mut cfg = base_cfg();
+        cfg.kernel = Some(PathBuf::from("/lab/run/vmlinuz"));
+        cfg.initrd = Some(PathBuf::from("/lab/run/seed.cpio.gz"));
+        cfg.append = Some("console=ttyS0".into());
+        let argv = build_qemu_argv("qemu-system-x86_64", &cfg, AccelChoice::Tcg).unwrap();
+        let joined = argv.as_command_line_parts().join(" ");
+        assert!(joined.contains("-kernel"));
+        assert!(joined.contains("/lab/run/vmlinuz"));
+        assert!(joined.contains("-initrd"));
+        assert!(joined.contains("/lab/run/seed.cpio.gz"));
+        assert!(joined.contains("-append"));
+        assert!(joined.contains("console=ttyS0"));
+        assert!(!joined.contains("/dev/sda"));
     }
 
     #[test]

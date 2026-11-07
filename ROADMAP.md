@@ -42,11 +42,22 @@ Documento vivo. Atualizar a cada missão concluída. Idiomas: seções principai
 - [x] Workflow `first-boot.yml` — `workflow_dispatch` + `confirm=RUN` (Missão 006; sem `if: false`)
 - [x] Fetch script: allowlist CDN + SHA-256 pin + GPG ncopa (Missão 006)
 - [x] Marcadores seriais Alpine (`Alpine|login:`) + evidence JSON (Missão 006)
-- [ ] Push/PR + run Actions real → artefatos seriais (ainda **NOT_RUN** até publish)
+- [x] First-boot Actions real **PASS** (Missão 007.1 — Alpine TCG serial; ≠ Ryoku OS)
 - [ ] Smoke: boot → login/ssh → shutdown em imagem autorizada
 - [ ] Artefatos de expectativa extras (texto pequeno no git)
 
 Ver [docs/testing/reference-linux.md](docs/testing/reference-linux.md), [virtual-lab.md](docs/testing/virtual-lab.md).
+
+## Fase 2.5 — Boot Seed / T3 (Missão 008) ✅ scaffold; guest T3 **não** executado
+
+- [x] ADR-0002: kernel lab temporário + initramfs próprio (sem base definitiva)
+- [x] Crate `ryoku-init` (PID 1 prototype, marker `RYOKU_BOOT_SEED_READY`)
+- [x] Script initramfs dry-run + config `t3-boot-seed.rvl.conf` (separado do Alpine T2)
+- [x] Harness `boot-seed` / T3 (NOT_RUN sem kernel/initrd; fora de `all`)
+- [ ] Autorização separada + execução real T3 com evidência serial do guest
+- [ ] Boot de produto Ryoku OS (ainda **não** — seed ≠ produto)
+
+Ver [docs/testing/boot-seed.md](docs/testing/boot-seed.md).
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

@@ -1,13 +1,16 @@
-//! `ryoku-virtlab` CLI — T0 / T1 / first-boot.
+//! `ryoku-virtlab` CLI — T0 / T1 / first-boot / boot-seed / ELF+initramfs helpers.
 
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use ryoku_virtlab::elf_static::prove_static_x86_64_elf;
+use ryoku_virtlab::initramfs::{pack_boot_seed_from_init_path, validate_boot_seed_cpio};
 use ryoku_virtlab::lab::discover_lab_root_from;
 use ryoku_virtlab::report::{exit_code, format_lab_report};
-use ryoku_virtlab::{run_first_boot, run_t0, run_t1, HostToolProbe};
+use ryoku_virtlab::{run_boot_seed, run_first_boot, run_t0, run_t1, HostToolProbe};
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
@@ -24,8 +27,95 @@ fn main() -> ExitCode {
             println!("ryoku-virtlab {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        "t0" | "t1" | "first-boot" | "t2" | "all" => run_suite(args[0].as_str()),
+        "t0" | "t1" | "first-boot" | "t2" | "boot-seed" | "t3" | "all" => {
+            run_suite(args[0].as_str())
+        }
         "print-lab-paths" => print_lab_paths(),
+        "check-static-elf" => {
+            if args.len() != 2 {
+                eprintln!("usage: ryoku-virtlab check-static-elf <path>");
+                return ExitCode::from(2);
+            }
+            match prove_static_x86_64_elf(Path::new(&args[1])) {
+                Ok(()) => {
+                    println!(
+                        "OK: proven static x86_64 ELF (no PT_INTERP, no DT_NEEDED): {}",
+                        args[1]
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("REFUSE: {}", err);
+                    ExitCode::from(1)
+                }
+            }
+        }
+        "pack-boot-seed-cpio" => {
+            // Writes uncompressed newc to stdout or --out path. Caller may gzip.
+            // usage: pack-boot-seed-cpio --init <bin> --out <file.cpio>
+            let mut init: Option<PathBuf> = None;
+            let mut out: Option<PathBuf> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--init" => {
+                        i += 1;
+                        init = args.get(i).map(PathBuf::from);
+                    }
+                    "--out" => {
+                        i += 1;
+                        out = args.get(i).map(PathBuf::from);
+                    }
+                    other => {
+                        eprintln!("error: unknown arg `{other}`");
+                        return ExitCode::from(2);
+                    }
+                }
+                i += 1;
+            }
+            let Some(init) = init else {
+                eprintln!(
+                    "usage: ryoku-virtlab pack-boot-seed-cpio --init <bin> --out <file.cpio>"
+                );
+                return ExitCode::from(2);
+            };
+            let Some(out) = out else {
+                eprintln!(
+                    "usage: ryoku-virtlab pack-boot-seed-cpio --init <bin> --out <file.cpio>"
+                );
+                return ExitCode::from(2);
+            };
+            // Static proof required before packing for guest prep.
+            if let Err(err) = prove_static_x86_64_elf(&init) {
+                eprintln!("REFUSE pack: init not proven static x86_64: {err}");
+                return ExitCode::from(1);
+            }
+            match pack_boot_seed_from_init_path(&init) {
+                Ok(bytes) => {
+                    if let Err(err) = validate_boot_seed_cpio(&bytes) {
+                        eprintln!("REFUSE pack: validation failed: {err}");
+                        return ExitCode::from(1);
+                    }
+                    if let Some(parent) = out.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    match fs::File::create(&out).and_then(|mut f| f.write_all(&bytes)) {
+                        Ok(()) => {
+                            println!("OK: wrote {} ({} bytes newc)", out.display(), bytes.len());
+                            ExitCode::SUCCESS
+                        }
+                        Err(err) => {
+                            eprintln!("error writing {}: {err}", out.display());
+                            ExitCode::from(1)
+                        }
+                    }
+                }
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    ExitCode::from(1)
+                }
+            }
+        }
         other => {
             eprintln!("error: unknown command `{other}`");
             print_help();
@@ -46,6 +136,7 @@ fn run_suite(which: &str) -> ExitCode {
     let mut results = Vec::new();
     let label = match which {
         "t2" => "first-boot",
+        "t3" => "boot-seed",
         other => other,
     };
 
@@ -57,6 +148,9 @@ fn run_suite(which: &str) -> ExitCode {
     }
     if which == "first-boot" || which == "t2" || which == "all" {
         results.extend(run_first_boot(&lab_root, &probe));
+    }
+    if which == "boot-seed" || which == "t3" {
+        results.extend(run_boot_seed(&lab_root, &probe));
     }
 
     let title = format!("Ryoku Virtual Lab ({label})");
@@ -88,11 +182,17 @@ fn print_lab_paths() -> ExitCode {
     let iso = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso");
     let sha = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.sha256");
     let asc = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.asc");
+    let kernel = lab_root.join("run/ryoku-boot-seed-vmlinuz");
+    let initrd = lab_root.join("run/ryoku-boot-seed.cpio.gz");
     println!("lab_root_abs={}", lab_root.display());
     println!("iso_abs={}", iso.display());
     println!("iso_exists={}", iso.is_file());
     println!("sha256_sidecar_exists={}", sha.is_file());
     println!("asc_sidecar_exists={}", asc.is_file());
+    println!("boot_seed_kernel_abs={}", kernel.display());
+    println!("boot_seed_kernel_exists={}", kernel.is_file());
+    println!("boot_seed_initrd_abs={}", initrd.display());
+    println!("boot_seed_initrd_exists={}", initrd.is_file());
     if sha.is_file() && !iso.is_file() {
         eprintln!(
             "error: path inconsistency — checksum sidecar present but ISO missing at harness path"
@@ -120,20 +220,25 @@ fn ensure_lab_dirs(lab_root: &Path) -> Result<(), String> {
 fn print_help() {
     println!(
         "\
-ryoku-virtlab — Ryoku Virtual Lab harness (T0/T1/first-boot)
+ryoku-virtlab — Ryoku Virtual Lab harness (T0/T1/first-boot/boot-seed)
 
 USAGE:
     ryoku-virtlab all
     ryoku-virtlab t0
     ryoku-virtlab t1
     ryoku-virtlab first-boot
+    ryoku-virtlab boot-seed
     ryoku-virtlab print-lab-paths
+    ryoku-virtlab check-static-elf <path>
+    ryoku-virtlab pack-boot-seed-cpio --init <bin> --out <file.cpio>
     ryoku-virtlab --help
 
 NOTES:
     T0 always runs without QEMU.
     T1 / first-boot SKIPPED or NOT_RUN when QEMU or the reference ISO is absent.
+    `all` runs T0+T1+T2 only — boot-seed/T3 is opt-in (separate authorization).
     Reference Linux boot is NEVER reported as Ryoku OS boot.
+    Boot seed PASS requires guest serial `ryoku-init: pid=1` AND `RYOKU_BOOT_SEED_READY`.
     Never attaches host physical disks; never uses sudo or package installs.
 "
     );

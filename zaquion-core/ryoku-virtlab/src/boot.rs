@@ -380,14 +380,14 @@ fn missing_iso_result(lab_root: &Path, iso_path: &Path) -> CaseResult {
     }
 }
 
-fn read_serial(cfg: &VmConfig) -> String {
+pub(crate) fn read_serial(cfg: &VmConfig) -> String {
     cfg.serial_log
         .as_ref()
         .and_then(|p| fs::read_to_string(p).ok())
         .unwrap_or_default()
 }
 
-fn trim_tail(s: &str, max: usize) -> String {
+pub(crate) fn trim_tail(s: &str, max: usize) -> String {
     let t = s.trim();
     if t.len() <= max {
         t.to_string()
@@ -396,7 +396,7 @@ fn trim_tail(s: &str, max: usize) -> String {
     }
 }
 
-fn run_boot_until_sentinel_or_timeout(
+pub(crate) fn run_boot_until_sentinel_or_timeout(
     argv: &crate::argv::QemuArgv,
     cfg: &VmConfig,
 ) -> crate::exec::ExecResult {

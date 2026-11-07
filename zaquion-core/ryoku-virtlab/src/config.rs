@@ -71,13 +71,17 @@ pub struct VmConfig {
     pub disk: Option<PathBuf>,
     /// Guest kernel path, or `None`.
     pub kernel: Option<PathBuf>,
+    /// Guest initrd/initramfs path under `run/` or `fixtures/`, or `None`.
+    pub initrd: Option<PathBuf>,
+    /// Optional kernel command line (`-append`), e.g. `console=ttyS0`.
+    pub append: Option<String>,
     /// Optional ISO/CD image under `run/` or `fixtures/` (reference Linux).
     pub iso: Option<PathBuf>,
     /// Optional serial log file under `results/`.
     pub serial_log: Option<PathBuf>,
     /// Substring that must appear in serial output to claim reference guest console progress.
     pub boot_sentinel: Option<String>,
-    /// Additional required serial substrings (Alpine-specific markers). All must match for PASS.
+    /// Additional required serial substrings. All must match for PASS.
     /// Configured as a single `|`-separated line: `boot_markers = Alpine|login:`
     pub boot_markers: Vec<String>,
     pub shutdown: ShutdownMode,
@@ -179,6 +183,8 @@ impl VmConfig {
         let mut network = NetworkMode::None;
         let mut disk_raw: Option<String> = None;
         let mut kernel_raw: Option<String> = None;
+        let mut initrd_raw: Option<String> = None;
+        let mut append: Option<String> = None;
         let mut iso_raw: Option<String> = None;
         let mut serial_raw: Option<String> = None;
         let mut boot_sentinel: Option<String> = None;
@@ -217,6 +223,8 @@ impl VmConfig {
                 "network" => network = NetworkMode::parse(value)?,
                 "disk" => disk_raw = Some(value.to_string()),
                 "kernel" => kernel_raw = Some(value.to_string()),
+                "initrd" => initrd_raw = Some(value.to_string()),
+                "append" => append = Some(value.to_string()),
                 "iso" => iso_raw = Some(value.to_string()),
                 "serial_log" => serial_raw = Some(value.to_string()),
                 "boot_sentinel" => boot_sentinel = Some(value.to_string()),
@@ -247,6 +255,7 @@ impl VmConfig {
 
         let disk = parse_optional_asset(disk_raw.as_deref(), PathRole::Disk, lab_root)?;
         let kernel = parse_optional_asset(kernel_raw.as_deref(), PathRole::Kernel, lab_root)?;
+        let initrd = parse_optional_asset(initrd_raw.as_deref(), PathRole::Kernel, lab_root)?;
         let iso = parse_optional_asset(iso_raw.as_deref(), PathRole::Iso, lab_root)?;
         let serial_log =
             parse_optional_asset(serial_raw.as_deref(), PathRole::SerialLog, lab_root)?;
@@ -260,6 +269,8 @@ impl VmConfig {
             network,
             disk,
             kernel,
+            initrd,
+            append,
             iso,
             serial_log,
             boot_sentinel,
@@ -278,16 +289,16 @@ impl VmConfig {
         self.boot_sentinel.iter().cloned().collect()
     }
 
-    /// True when this config cannot claim a guest OS boot (no disk/kernel/iso).
+    /// True when this config cannot claim a guest OS boot (no disk/kernel/iso/initrd).
     #[must_use]
     pub fn is_emulator_only(&self) -> bool {
-        self.disk.is_none() && self.kernel.is_none() && self.iso.is_none()
+        self.disk.is_none() && self.kernel.is_none() && self.initrd.is_none() && self.iso.is_none()
     }
 
     /// True when a reference/guest boot medium is configured (file may still be missing).
     #[must_use]
     pub fn has_boot_medium(&self) -> bool {
-        self.disk.is_some() || self.kernel.is_some() || self.iso.is_some()
+        self.disk.is_some() || self.kernel.is_some() || self.initrd.is_some() || self.iso.is_some()
     }
 }
 
@@ -420,10 +431,79 @@ shutdown = monitor_quit
             cfg.boot_markers,
             vec!["Alpine".to_string(), "login:".to_string()]
         );
+        assert!(cfg.initrd.is_none());
+        assert!(cfg.append.is_none());
+    }
+
+    #[test]
+    fn parses_kernel_initrd_append_boot_seed() {
+        let text = "\
+name = t3-boot-seed
+memory_mb = 256
+cpus = 1
+timeout_secs = 120
+accel = tcg
+network = none
+disk = none
+kernel = run/ryoku-boot-seed-vmlinuz
+initrd = run/ryoku-boot-seed.cpio.gz
+append = console=ttyS0 earlyprintk=serial
+iso = none
+serial_log = results/serial-t3-boot-seed.log
+boot_markers = ryoku-init: pid=1|RYOKU_BOOT_SEED_READY
+shutdown = monitor_quit
+";
+        let cfg = VmConfig::parse(text, lab()).unwrap();
         assert_eq!(
-            cfg.required_boot_markers(),
-            vec!["Alpine".to_string(), "login:".to_string()]
+            cfg.boot_markers,
+            vec![
+                "ryoku-init: pid=1".to_string(),
+                "RYOKU_BOOT_SEED_READY".to_string()
+            ]
         );
-        assert_eq!(cfg.accel, AccelMode::Tcg);
+        assert!(cfg
+            .kernel
+            .as_ref()
+            .unwrap()
+            .ends_with("ryoku-boot-seed-vmlinuz"));
+        assert!(cfg
+            .initrd
+            .as_ref()
+            .unwrap()
+            .ends_with("ryoku-boot-seed.cpio.gz"));
+        assert_eq!(
+            cfg.append.as_deref(),
+            Some("console=ttyS0 earlyprintk=serial")
+        );
+        assert!(cfg.has_boot_medium());
+        assert!(!cfg.is_emulator_only());
+    }
+
+    #[test]
+    fn rejects_initrd_path_escape() {
+        let text = "\
+name = bad
+memory_mb = 256
+cpus = 1
+timeout_secs = 30
+accel = tcg
+network = none
+initrd = ../../etc/passwd
+";
+        assert!(VmConfig::parse(text, lab()).is_err());
+    }
+
+    #[test]
+    fn rejects_absolute_initrd() {
+        let text = "\
+name = bad
+memory_mb = 256
+cpus = 1
+timeout_secs = 30
+accel = tcg
+network = none
+initrd = /lib/modules/vmlinuz
+";
+        assert!(VmConfig::parse(text, lab()).is_err());
     }
 }

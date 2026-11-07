@@ -7,5 +7,9 @@ name = "ryoku-doctor"
 version = "0.1.0"
 
 [[package]]
+name = "ryoku-init"
+version = "0.1.0"
+
+[[package]]
 name = "ryoku-virtlab"
 version = "0.1.0"

@@ -86,27 +86,33 @@ jobs:
             SECURITY.md
             LICENSING.md
             docs/architecture/ADR-0001.md
+            docs/architecture/ADR-0002.md
             docs/architecture/layout.md
             docs/licensing/strategy.md
             docs/testing/qemu-strategy.md
             docs/testing/virtual-lab.md
             docs/testing/reference-linux.md
+            docs/testing/boot-seed.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
             tests/qemu/README.md
             tests/qemu/configs/t1-emulator-smoke.rvl.conf
             tests/qemu/configs/t2-reference-alpine.rvl.conf
+            tests/qemu/configs/t3-boot-seed.rvl.conf
             tests/qemu/fixtures/reference-image.manifest
+            tests/qemu/fixtures/boot-seed-kernel.manifest
             tests/qemu/scripts/fetch-reference-image.sh
             tests/qemu/scripts/fetch-reference-image-lib.sh
             tests/qemu/scripts/test-fetch-policy.sh
+            tests/qemu/scripts/build-boot-seed-initramfs.sh
             zaquion-core/README.md
 
             zaquion-core/LICENSE-MIT
             zaquion-core/LICENSE-APACHE
             zaquion-core/ryoku-doctor/README.md
             zaquion-core/ryoku-virtlab/README.md
+            zaquion-core/ryoku-init/README.md
           )
           for path in "${required[@]}"; do
             if [[ ! -f "$path" ]]; then
