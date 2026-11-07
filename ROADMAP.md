@@ -96,10 +96,16 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] 014.2: fb0 explicit-length mmap + ioctl geometry (014.1 attempt **FAIL_MANUAL**; 014.2 visual **PASS_MANUAL**)
 - [x] Guest visual first pixels confirmed (Paulo NixOS QEMU; tip `ca26ac5`)
 
-## Fase 2.10 — Ryoku Shell Preview (Missão 015)
+## Fase 2.10 — Ryoku Shell Preview (Missão 015) — CLOSED
 
-- [ ] Layout desktop ilustrativo no framebuffer (panel/dock/status; sem input ainda)
-- [ ] Package gráfico shell separado; input (evdev) = Missão 015.1 **NOT_RUN**
+- [x] Layout desktop ilustrativo no framebuffer (panel/dock/status)
+- [x] Package gráfico shell separado
+- [x] Guest visual **`SHELL_PREVIEW=PASS_MANUAL`** (tip `4b239a0`; ≠ CI)
+
+## Fase 2.11 — Interactive Shell Input (Missão 015.1)
+
+- [ ] Guest evdev mouse + keyboard; event loop; dock hit-test / launcher panel
+- [ ] INPUT_GUEST / MOUSE / KEYBOARD = **NOT_RUN** até confirmação manual
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

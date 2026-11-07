@@ -32,9 +32,10 @@ use rustix::system::finit_module;
 
 use ryoku_init::{
     allowlisted_module_guest_path, ascii_banner, boot_output, graphics_demo_done_line,
-    graphics_demo_start_line, graphics_modules_start_line, guest_graphics_profile,
-    guest_interactive_mode, interactive_done_line, interactive_start_line, is_pid1,
-    CONSOLE_BIN_PATH, GRAPHICS_DEMO_BIN_PATH, VIRT_DRM_ALLOWLIST,
+    graphics_demo_start_line, graphics_modules_start_line, guest_any_graphics_profile,
+    guest_graphics_profile, guest_interactive_mode, guest_shell_profile, interactive_done_line,
+    interactive_start_line, is_pid1, shell_preview_done_line, shell_preview_start_line,
+    CONSOLE_BIN_PATH, GRAPHICS_DEMO_BIN_PATH, SHELL_PREVIEW_BIN_PATH, VIRT_DRM_ALLOWLIST,
 };
 
 fn write_all_best_effort(mut w: impl Write, bytes: &[u8]) {
@@ -152,6 +153,78 @@ fn announce_graphics_inventory() {
         if card0 { "yes" } else { "no" },
         if drm_sys { "yes" } else { "no" },
     ));
+}
+
+/// Controlled start of `/bin/ryoku-shell-preview` once (Mission 015). Prefer over graphics-demo
+/// to avoid dual FB presenters in the same guest.
+fn run_shell_preview_once_best_effort() {
+    announce(&shell_preview_start_line());
+    announce_graphics_inventory();
+
+    let stdin = match open_console_rw() {
+        Ok(f) => f,
+        Err(err) => {
+            announce(&shell_preview_done_line(&format!(
+                "WARN open console for shell stdin failed: {err}"
+            )));
+            return;
+        }
+    };
+    let stdout = match open_console_rw() {
+        Ok(f) => f,
+        Err(err) => {
+            announce(&shell_preview_done_line(&format!(
+                "WARN open console for shell stdout failed: {err}"
+            )));
+            return;
+        }
+    };
+    let stderr = match open_console_rw() {
+        Ok(f) => f,
+        Err(err) => {
+            announce(&shell_preview_done_line(&format!(
+                "WARN open console for shell stderr failed: {err}"
+            )));
+            return;
+        }
+    };
+
+    let child = Command::new(SHELL_PREVIEW_BIN_PATH)
+        .env("RYOKU_GRAPHICS_ROOT", "/")
+        .env("RYOKU_CONSOLE_ROOT", "/")
+        .stdin(Stdio::from(stdin))
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn();
+
+    match child {
+        Ok(mut child) => match child.wait() {
+            Ok(status) if status.success() => {
+                announce(
+                    "ryoku-init: shell preview presented (exit 0); graphical guest confirm still NOT_RUN; input NOT_RUN (015.1)\n",
+                );
+                announce(&shell_preview_done_line(&format!("exit {status}")));
+            }
+            Ok(status) => {
+                announce(&format!(
+                    "ryoku-init: WARN shell preview failed (status {status}); serial console continues\n"
+                ));
+                announce(&shell_preview_done_line(&format!("exit {status}")));
+            }
+            Err(err) => {
+                announce(&format!(
+                    "ryoku-init: WARN shell preview wait failed: {err}; serial console continues\n"
+                ));
+                announce(&shell_preview_done_line(&format!("wait failed: {err}")));
+            }
+        },
+        Err(err) => {
+            announce(&format!(
+                "ryoku-init: WARN shell preview spawn failed: {err}; serial console continues\n"
+            ));
+            announce(&shell_preview_done_line(&format!("spawn failed: {err}")));
+        }
+    }
 }
 
 /// Controlled start of `/bin/ryoku-graphics-demo` once. WARN + continue; never blocks forever
@@ -302,11 +375,16 @@ fn main() -> ExitCode {
         // Mounts are Minimal-only; T3 (no console binary) skips this and stays idle.
         mount_proc_sys_best_effort();
         announce(ascii_banner());
-        // Graphics profile (demo binary present): load allowlisted modules + controlled demo.
-        // Serial Minimal package omits the demo → this block is skipped.
-        if guest_graphics_profile() {
+        // Graphics/shell profile: load allowlisted modules once, then start exactly one
+        // FB presenter (shell preferred) to avoid dual presenters fighting over fb0.
+        // Serial Minimal omits both binaries → skipped (T3/First-Pixels packages unchanged).
+        if guest_any_graphics_profile() {
             load_virt_drm_modules_best_effort();
-            run_graphics_demo_once_best_effort();
+            if guest_shell_profile() {
+                run_shell_preview_once_best_effort();
+            } else if guest_graphics_profile() {
+                run_graphics_demo_once_best_effort();
+            }
         }
         run_interactive_console_once();
         // No uncontrolled restart — fall through to idle.
