@@ -27,7 +27,7 @@ Fail-closed:
 - Reject shell metacharacters: `| & ; \` $ > < ( ) { } [ ] * ? ~ \ ' "`, NULs, tabs, CR, embedded newlines, and other C0/DEL controls
 - Leading/trailing padding is ASCII space (`' '`) only — never `str::trim()` (that would hide tabs/CR)
 - ASCII-only; max line 256 bytes; max 16 args; max 128 bytes/arg
-- Line I/O: capped `fill_buf`/`consume` reader (`MAX_LINE_BYTES` + small margin); overflow drains to LF; invalid UTF-8 rejected
+- Line I/O: capped `fill_buf`/`consume` reader (`MAX_LINE_BYTES` + small margin); overflow drains to LF without copying the long line; CRLF may span fills; invalid UTF-8 rejected
 - No pipes, redirects, substitution, globs, or nested quotes
 - Unknown commands rejected (no `/bin/sh` fallback)
 - `echo` may reproduce user-supplied text (including the READY marker string) — that is not boot evidence

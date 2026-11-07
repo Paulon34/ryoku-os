@@ -313,10 +313,11 @@ fn drain_until_lf<R: BufRead>(reader: &mut R) -> io::Result<()> {
 /// Read one line via [`BufRead::fill_buf`] / [`BufRead::consume`] with a hard cap.
 ///
 /// - Terminators: `\n` or `\r\n` only (CRLF stripped at the I/O boundary).
-/// - Mid-line `\t` / `\r` remain in the payload for [`parse_line`] to reject.
+/// - CRLF may span two `fill_buf` results (`…\r` then `\n…`); mid-line `\r` stays in the payload.
+/// - On overflow, discards through the LF **without** allocating a copy of the long line.
 /// - Never accumulates more than [`MAX_LINE_BYTES`] + [`LINE_READ_MARGIN`] without a terminator.
 pub fn read_limited_line<R: BufRead>(reader: &mut R) -> io::Result<LimitedLine> {
-    let mut line: Vec<u8> = Vec::new();
+    let mut line: Vec<u8> = Vec::with_capacity(MAX_LINE_BYTES + LINE_READ_MARGIN);
     let hard_cap = MAX_LINE_BYTES + LINE_READ_MARGIN;
 
     loop {
@@ -333,45 +334,58 @@ pub fn read_limited_line<R: BufRead>(reader: &mut R) -> io::Result<LimitedLine> 
         }
 
         if let Some(nl) = buf.iter().position(|&b| b == b'\n') {
-            // CRLF terminator only: drop a single CR immediately before LF.
-            let end = if nl > 0 && buf[nl - 1] == b'\r' {
-                nl - 1
+            // CRLF in-buffer, or CR held from a prior fill_buf then LF here.
+            let (payload_end, drop_pending_cr) = if nl > 0 && buf[nl - 1] == b'\r' {
+                (nl - 1, false)
+            } else if nl == 0 && line.last() == Some(&b'\r') {
+                (0, true)
             } else {
-                nl
+                (nl, false)
             };
-            let observed = line.len() + end;
-            let piece = buf[..end].to_vec();
-            reader.consume(nl + 1);
+
+            let mut observed = line.len() + payload_end;
+            if drop_pending_cr {
+                observed = observed.saturating_sub(1);
+            }
+
+            // Cap check before any allocate/copy of this chunk.
             if observed > MAX_LINE_BYTES {
+                reader.consume(nl + 1);
                 return Ok(LimitedLine::TooLong { observed });
             }
-            line.extend_from_slice(&piece);
+
+            if payload_end > 0 {
+                line.extend_from_slice(&buf[..payload_end]);
+            }
+            reader.consume(nl + 1);
+            if drop_pending_cr {
+                let _ = line.pop();
+            }
             return match String::from_utf8(line) {
                 Ok(s) => Ok(LimitedLine::Line(s)),
                 Err(_) => Ok(LimitedLine::InvalidBytes),
             };
         }
 
-        // No LF in this fill — append, but refuse to grow past hard_cap.
+        // No LF — append under hard_cap without a temporary proportional to input length.
         if line.len() + buf.len() > hard_cap {
             let observed = line.len() + buf.len();
-            // Consume this buf chunk then drain to LF so the next read starts clean.
             let n = buf.len();
             reader.consume(n);
             drain_until_lf(reader)?;
             return Ok(LimitedLine::TooLong { observed });
         }
 
-        let piece = buf.to_vec();
-        reader.consume(piece.len());
-        line.extend_from_slice(&piece);
+        let n = buf.len();
+        line.extend_from_slice(buf);
+        reader.consume(n);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::io::{BufReader, Cursor};
 
     #[test]
     fn help_version_status_clear_echo() {
@@ -613,5 +627,70 @@ mod tests {
     fn cursor_read_eof_without_payload() {
         let mut cur = Cursor::new(b"");
         assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_crlf_split_across_fill_buf_capacity_1() {
+        let mut reader = BufReader::with_capacity(1, Cursor::new(b"help\r\nversion\n"));
+        assert_eq!(
+            read_limited_line(&mut reader).unwrap(),
+            LimitedLine::Line("help".into())
+        );
+        assert_eq!(
+            read_limited_line(&mut reader).unwrap(),
+            LimitedLine::Line("version".into())
+        );
+        assert_eq!(read_limited_line(&mut reader).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_huge_line_lf_same_buffer_no_copy_before_cap() {
+        // Oversized payload + LF in one Cursor buffer: TooLong without keeping the junk,
+        // then the next command must still parse.
+        let mut payload = "x".repeat(MAX_LINE_BYTES * 8);
+        payload.push_str("\nstatus\n");
+        let mut cur = Cursor::new(payload.into_bytes());
+        match read_limited_line(&mut cur).unwrap() {
+            LimitedLine::TooLong { observed } => {
+                assert!(observed > MAX_LINE_BYTES);
+                assert!(observed >= MAX_LINE_BYTES * 8);
+            }
+            other => panic!("expected TooLong, got {other:?}"),
+        }
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("status".into())
+        );
+        assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_exact_256_byte_limit() {
+        let mut exact = "e".repeat(MAX_LINE_BYTES);
+        exact.push('\n');
+        let mut cur = Cursor::new(exact.into_bytes());
+        match read_limited_line(&mut cur).unwrap() {
+            LimitedLine::Line(s) => {
+                assert_eq!(s.len(), 256);
+                assert_eq!(s.len(), MAX_LINE_BYTES);
+            }
+            other => panic!("expected Line at exact cap, got {other:?}"),
+        }
+        assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_isolated_cr_mid_command_stays_forbidden() {
+        let mut reader = BufReader::with_capacity(1, Cursor::new(b"echo\rhello\n"));
+        match read_limited_line(&mut reader).unwrap() {
+            LimitedLine::Line(s) => {
+                assert_eq!(s, "echo\rhello");
+                assert!(matches!(
+                    parse_line(&s).unwrap_err(),
+                    ParseError::ForbiddenChar { ch: '\r' }
+                ));
+            }
+            other => panic!("expected Line with mid-command CR, got {other:?}"),
+        }
     }
 }
