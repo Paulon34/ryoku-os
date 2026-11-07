@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
-# Policy mocks for Mission 009 Boot Seed prep (no ISO download, no T3).
+# Policy mocks for Mission 009 / 009.5 Boot Seed prep (no ISO download, no T3).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+LAB="$ROOT/tests/qemu"
+RUN="$LAB/run"
+EXTRACT="$ROOT/tests/qemu/scripts/extract-boot-seed-kernel.sh"
 PASS=0
 FAIL=0
 
 pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1" >&2; FAIL=$((FAIL + 1)); }
 
-echo "== extract-boot-seed-kernel dry-run =="
-if RYOKU_KERNEL_EXTRACT_EXECUTE=0 "$ROOT/tests/qemu/scripts/extract-boot-seed-kernel.sh" \
-  | grep -q 'DRY-RUN'; then
-  pass "kernel_extract_dry_run"
+TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/ryoku-prep-policy.XXXXXX")"
+cleanup() { rm -rf "$TMPROOT"; }
+trap cleanup EXIT
+
+echo "== extract-boot-seed-kernel dry-run (no download) =="
+dry_out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=0 "$EXTRACT" 2>&1)"
+if echo "$dry_out" | grep -q 'DRY-RUN' \
+  && ! echo "$dry_out" | grep -Eqi 'curl |wget |https://'; then
+  pass "kernel_extract_dry_run_no_download"
 else
-  fail "kernel_extract_dry_run"
+  fail "kernel_extract_dry_run_no_download"
 fi
 
 echo "== prep-boot-seed-artifacts dry-run =="
@@ -65,29 +73,76 @@ else
   pass "kernel_blob_not_in_git"
 fi
 
-echo "== extract refuses without SHA/GPG sidecars =="
-# Create a tiny fake ISO under lab/run without sidecars; execute must refuse before mount/tools.
-FAKE_ISO="$ROOT/tests/qemu/run/alpine-virt-3.21.9-x86_64.iso"
-CLEANUP_FAKE=0
+echo "== extract refuses RYOKU_VERIFY_GPG=0 =="
+FAKE_ISO="$RUN/alpine-virt-3.21.9-x86_64.iso"
+CREATED_ISO=0
 if [[ ! -f "$FAKE_ISO" ]]; then
   echo 'not-a-real-iso' >"$FAKE_ISO"
-  CLEANUP_FAKE=1
+  CREATED_ISO=1
 fi
 set +e
-out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=1 RYOKU_VERIFY_GPG=0 \
-  "$ROOT/tests/qemu/scripts/extract-boot-seed-kernel.sh" 2>&1)"
+out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=1 RYOKU_VERIFY_GPG=0 "$EXTRACT" 2>&1)"
 rc=$?
 set -e
-if [[ "$CLEANUP_FAKE" == "1" ]]; then rm -f "$FAKE_ISO"; fi
-if [[ "$rc" -ne 0 ]] && echo "$out" | grep -Eqi 'sidecar|GPG|SHA|sha256'; then
+if [[ "$rc" -ne 0 ]] && echo "$out" | grep -Eqi 'VERIFY_GPG|refusing real extract'; then
+  pass "extract_rejects_gpg_off"
+else
+  fail "extract_rejects_gpg_off (rc=$rc)"
+  echo "$out" | tail -15
+fi
+
+echo "== extract refuses without SHA/GPG sidecars (even with VERIFY_GPG=1) =="
+set +e
+out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=1 RYOKU_VERIFY_GPG=1 "$EXTRACT" 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -ne 0 ]] && echo "$out" | grep -Eqi 'sidecar|missing|GPG|SHA|ncopa'; then
   pass "extract_requires_integrity_sidecars"
 else
   fail "extract_requires_integrity_sidecars (rc=$rc)"
+  echo "$out" | tail -15
+fi
+if [[ "$CREATED_ISO" == "1" ]]; then rm -f "$FAKE_ISO"; fi
+
+echo "== extract refuses destination symlink (temp file outside lab) =="
+OUT_LINK="$RUN/ryoku-boot-seed-vmlinuz"
+OUTSIDE="$TMPROOT/outside-vmlinuz"
+echo x >"$OUTSIDE"
+rm -f "$OUT_LINK"
+ln -s "$OUTSIDE" "$OUT_LINK"
+# Dest symlink is checked after ISO existence and before SHA/GPG — only need a regular ISO file.
+echo 'fake' >"$FAKE_ISO"
+set +e
+out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=1 RYOKU_VERIFY_GPG=1 "$EXTRACT" 2>&1)"
+rc=$?
+set -e
+rm -f "$OUT_LINK" "$FAKE_ISO"
+if [[ "$rc" -ne 0 ]] \
+  && echo "$out" | grep -Eqi 'refusing destination symlink|destination symlink' \
+  && [[ "$(cat "$OUTSIDE")" == "x" ]]; then
+  pass "extract_rejects_dest_symlink"
+else
+  fail "extract_rejects_dest_symlink (rc=$rc)"
   echo "$out" | tail -20
 fi
 
+echo "== extract refuses ISO symlink escaping lab run =="
+echo 'outside-iso' >"$TMPROOT/escape.iso"
+rm -f "$FAKE_ISO"
+ln -s "$TMPROOT/escape.iso" "$FAKE_ISO"
+set +e
+out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=1 RYOKU_VERIFY_GPG=1 "$EXTRACT" 2>&1)"
+rc=$?
+set -e
+rm -f "$FAKE_ISO"
+if [[ "$rc" -ne 0 ]] && echo "$out" | grep -Eqi 'symlink|outside|canonical|lab'; then
+  pass "extract_rejects_iso_symlink_escape"
+else
+  fail "extract_rejects_iso_symlink_escape (rc=$rc)"
+  echo "$out" | tail -15
+fi
+
 echo "== harness all excludes T3 =="
-# boot-seed must be gated on boot-seed|t3 only — the "all" disjunct must not appear on that if.
 if grep -E 'if which == "boot-seed" \|\| which == "t3"' \
   "$ROOT/zaquion-core/ryoku-virtlab/src/main.rs" | grep -q 'all'; then
   fail "all_excludes_t3 (all leaked into boot-seed if)"
@@ -98,6 +153,19 @@ elif grep -E 'if which == "boot-seed" \|\| which == "t3"' \
   pass "all_excludes_t3"
 else
   fail "all_excludes_t3"
+fi
+
+echo "== unauthorized T3 gate (RYOKU_T3_EXECUTE unset / not 1) =="
+# Source-level helper + unit test: env must be exactly 1; all≠T3 already checked above.
+if grep -q 'RYOKU_T3_EXECUTE' "$ROOT/zaquion-core/ryoku-virtlab/src/boot_seed.rs" \
+  && grep -q 't3_guest_execute_authorized' "$ROOT/zaquion-core/ryoku-virtlab/src/boot_seed.rs"; then
+  (
+    cd "$ROOT/zaquion-core"
+    unset RYOKU_T3_EXECUTE || true
+    cargo test -q -p ryoku-virtlab t3_execute_gate_defaults_closed -- --nocapture
+  ) && pass "unauthorized_t3_gate" || fail "unauthorized_t3_gate"
+else
+  fail "unauthorized_t3_gate (helper missing)"
 fi
 
 echo

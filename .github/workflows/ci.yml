@@ -68,6 +68,11 @@ jobs:
         working-directory: .
         run: tests/qemu/scripts/test-fetch-policy.sh
 
+      - name: Boot Seed prep policy mocks (no ISO/T3)
+        # Dry-runs, GPG-off refuse, lab path/symlink refuses, all≠T3 — no downloads.
+        working-directory: .
+        run: tests/qemu/scripts/test-boot-seed-prep-policy.sh
+
   docs:
     name: docs-paths
     runs-on: ubuntu-24.04
