@@ -101,6 +101,8 @@ jobs:
             docs/testing/boot-seed-t3.md
             docs/testing/console.md
             docs/testing/ryoku-minimal.md
+            docs/testing/ryoku-hardware.md
+            docs/testing/splash-prep-014.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md

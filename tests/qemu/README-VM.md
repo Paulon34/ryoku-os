@@ -7,9 +7,11 @@
 | Static musl `ryoku-init` + `ryoku-console` | Built on disposable CI |
 | `ryoku-minimal.cpio.gz` experimental initramfs | Packed on disposable CI |
 | Lab kernel `ryoku-boot-seed-vmlinuz` | Verified Alpine virt channel (ADR-0002) |
-| Interactive QEMU guest boot | **`PASS_MANUAL`** once (2026-11-07, Paulo + 012.1 ZIP tip `fecc0b5`); **not** CI |
-| Product OS / Desktop | **Not** claimed |
+| Interactive QEMU guest boot (012.1) | **`PASS_MANUAL`** (tip `fecc0b5`); **not** CI |
+| Hardware probe guest (013) | **`PASS_MANUAL`** (tip `649b850`); **not** CI — see `docs/testing/ryoku-hardware.md` |
+| Product OS / Desktop / first pixels | **Not** claimed / **NOT_RUN** |
 | T3 Boot Seed evidence path | **Preserved** / separate (not required to use this ZIP) |
+| Launcher banner text | Still says “Mission 012.1” for ZIP compat — behavior is dual-mode + hash gate |
 
 ## Download → extract → validate
 

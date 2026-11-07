@@ -6,6 +6,7 @@
 //!
 //! Mission 012 adds experimental FS builtins (`pwd` / `ls` / `cat`) confined to
 //! a staged root — still not an external shell.
+//! Mission 013 adds `hw summary|cpu|pci|drivers` via `ryoku-hwprobe`.
 
 #![forbid(unsafe_code)]
 
@@ -14,6 +15,8 @@ pub mod fs;
 use std::fmt;
 use std::io::{self, BufRead};
 use std::path::PathBuf;
+
+use ryoku_hwprobe::HwRoot;
 
 pub use fs::{FsError, GuestFs, MAX_CAT_BYTES};
 
@@ -32,7 +35,16 @@ pub const MAX_ARGS: usize = 16;
 /// for a CRLF/LF terminator before declaring the line too long.
 pub const LINE_READ_MARGIN: usize = 2;
 
-/// Builtins supported in Mission 011 + experimental FS (Mission 012).
+/// Hardware subcommands (Mission 013).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HwSubcommand {
+    Summary,
+    Cpu,
+    Pci,
+    Drivers,
+}
+
+/// Builtins supported in Mission 011–013.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Help,
@@ -43,6 +55,7 @@ pub enum Command {
     Pwd,
     Ls(Option<String>),
     Cat(String),
+    Hw(HwSubcommand),
 }
 
 /// REPL session holding an optional confined FS cursor.
@@ -305,6 +318,25 @@ pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
             }
             Ok(Command::Cat(tokens[1].clone()))
         }
+        "hw" => {
+            if tokens.len() != 2 {
+                return Err(ParseError::TooManyArgs {
+                    count: tokens.len(),
+                });
+            }
+            let sub = match tokens[1].as_str() {
+                "summary" => HwSubcommand::Summary,
+                "cpu" => HwSubcommand::Cpu,
+                "pci" => HwSubcommand::Pci,
+                "drivers" => HwSubcommand::Drivers,
+                other => {
+                    return Err(ParseError::UnknownCommand {
+                        name: format!("hw {other}"),
+                    })
+                }
+            };
+            Ok(Command::Hw(sub))
+        }
         "echo" => Ok(Command::Echo(tokens[1..].to_vec())),
         other => Err(ParseError::UnknownCommand {
             name: other.to_string(),
@@ -326,7 +358,7 @@ pub fn startup_banner(version: &str) -> String {
 pub fn render(cmd: &Command) -> String {
     match cmd {
         Command::Help => {
-            "ryoku-console builtins:\n  help     — this list\n  version  — console version\n  status   — short honesty / readiness status\n  echo …   — print arguments (no expansion)\n  clear    — clear screen (ANSI)\n  pwd      — print experimental cwd\n  ls [path]— list directory (experimental FS)\n  cat path — read file (experimental FS, capped)\n\nLimited parser: no shell metacharacters, no pipes/redirects/substitution.\nNot a product OS login shell. Separate from ryoku-init PID 1.\n"
+            "ryoku-console builtins:\n  help     — this list\n  version  — console version\n  status   — short honesty / readiness status\n  echo …   — print arguments (no expansion)\n  clear    — clear screen (ANSI)\n  pwd      — print experimental cwd\n  ls [path]— list directory (experimental FS)\n  cat path — read file (experimental FS, capped)\n  hw summary|cpu|pci|drivers — read-only proc/sys probe\n\nLimited parser: no shell metacharacters, no pipes/redirects/substitution.\nNot a product OS login shell. Separate from ryoku-init PID 1.\n"
                 .to_string()
         }
         Command::Version => {
@@ -334,11 +366,12 @@ pub fn render(cmd: &Command) -> String {
         }
         Command::Status => {
             format!(
-                "{CONSOLE_IDENTITY}: Ryoku Minimal interactive (Mission 012)\n\
+                "{CONSOLE_IDENTITY}: Ryoku Minimal interactive (Mission 013)\n\
                  pid1_core: separate (ryoku-init owns guest pid=1 markers)\n\
                  product_os_boot: NOT claimed\n\
                  parser: limited builtins only\n\
                  fs: experimental initramfs view (pwd/ls/cat)\n\
+                 hw: ryoku-hwprobe (proc/sys; honest ERR if missing)\n\
                  network: none (lab default)\n"
             )
         }
@@ -350,14 +383,14 @@ pub fn render(cmd: &Command) -> String {
             }
         }
         Command::Clear => "\u{001b}[2J\u{001b}[H".to_string(),
-        // FS commands need a session — callers should use `eval_line_in`.
-        Command::Pwd | Command::Ls(_) | Command::Cat(_) => {
-            format!("{CONSOLE_IDENTITY}: internal: FS command requires session\n")
+        // FS / hw commands need a session — callers should use `eval_line_in`.
+        Command::Pwd | Command::Ls(_) | Command::Cat(_) | Command::Hw(_) => {
+            format!("{CONSOLE_IDENTITY}: internal: FS/hw command requires session\n")
         }
     }
 }
 
-/// Eval FS-aware command against a [`Session`].
+/// Eval FS/hw-aware command against a [`Session`].
 pub fn render_in(session: &Session, cmd: &Command) -> Result<String, FsError> {
     match cmd {
         Command::Pwd | Command::Ls(_) | Command::Cat(_) => {
@@ -370,6 +403,21 @@ pub fn render_in(session: &Session, cmd: &Command) -> Result<String, FsError> {
                 Command::Cat(path) => fs.cat(path),
                 _ => unreachable!(),
             }
+        }
+        Command::Hw(sub) => {
+            let Some(fs) = session.fs.as_ref() else {
+                return Err(FsError::RootRequired);
+            };
+            let hw = HwRoot::validated(fs.root().to_path_buf())
+                .map_err(|e| FsError::Io(e.to_string()))?;
+            // Honest errors stay in the output string (no fake PASS).
+            let text = match sub {
+                HwSubcommand::Summary => hw.summary(),
+                HwSubcommand::Cpu => hw.cpu_report().unwrap_or_else(|e| format!("{e}\n")),
+                HwSubcommand::Pci => hw.pci_report().unwrap_or_else(|e| format!("{e}\n")),
+                HwSubcommand::Drivers => hw.drivers_report().unwrap_or_else(|e| format!("{e}\n")),
+            };
+            Ok(text)
         }
         other => Ok(render(other)),
     }
@@ -581,7 +629,7 @@ mod tests {
         assert!(eval_line_in(&session, "clear")
             .unwrap()
             .contains("\u{001b}[2J"));
-        for cmd in ["pwd", "ls", "ls /", "cat /etc/passwd"] {
+        for cmd in ["pwd", "ls", "ls /", "cat /etc/passwd", "hw summary"] {
             let err = eval_line_in(&session, cmd).unwrap_err();
             assert!(
                 err.contains("RYOKU_CONSOLE_ROOT"),
@@ -589,6 +637,65 @@ mod tests {
             );
             assert!(!err.contains("EXTERNAL"));
         }
+    }
+
+    #[test]
+    fn hw_parse_and_fixture_eval() {
+        assert_eq!(
+            parse_line("hw summary").unwrap(),
+            Command::Hw(HwSubcommand::Summary)
+        );
+        assert_eq!(
+            parse_line("hw cpu").unwrap(),
+            Command::Hw(HwSubcommand::Cpu)
+        );
+        assert!(matches!(
+            parse_line("hw").unwrap_err(),
+            ParseError::TooManyArgs { count: 1 }
+        ));
+        assert!(matches!(
+            parse_line("hw disk").unwrap_err(),
+            ParseError::UnknownCommand { .. }
+        ));
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("ryoku-console-hw-{nanos}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("home/ryoku")).unwrap();
+        std::fs::create_dir_all(root.join("proc")).unwrap();
+        std::fs::write(
+            root.join("proc/cpuinfo"),
+            b"processor\t: 0\nmodel name\t: ConsoleTestCPU\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("sys/bus/pci/devices/0000:00:01.0")).unwrap();
+        std::fs::write(
+            root.join("sys/bus/pci/devices/0000:00:01.0/vendor"),
+            b"0x1234\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("sys/bus/pci/devices/0000:00:01.0/device"),
+            b"0x5678\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("sys/bus/pci/drivers/demo")).unwrap();
+        std::fs::create_dir_all(root.join("sys/class/tty")).unwrap();
+        let session = Session::with_root(root.clone()).unwrap();
+        let summary = eval_line_in(&session, "hw summary").unwrap();
+        assert!(summary.contains("ConsoleTestCPU"), "{summary}");
+        assert!(summary.contains("pci_devices: 1"), "{summary}");
+        assert!(eval_line_in(&session, "hw cpu")
+            .unwrap()
+            .contains("processors: 1"));
+        assert!(eval_line_in(&session, "hw pci").unwrap().contains("0x1234"));
+        assert!(eval_line_in(&session, "hw drivers")
+            .unwrap()
+            .contains("demo"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -712,6 +819,7 @@ mod tests {
             Command::Pwd,
             Command::Ls(None),
             Command::Cat("x".into()),
+            Command::Hw(HwSubcommand::Summary),
         ] {
             let out = render(&cmd);
             assert!(!output_claims_boot_seed_ready(&out));

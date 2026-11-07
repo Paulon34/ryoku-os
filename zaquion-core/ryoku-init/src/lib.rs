@@ -7,8 +7,10 @@
 //!
 //! Mission 012 adds an **optional** interactive path: when `/bin/ryoku-console`
 //! is present in the guest (Ryoku Minimal initramfs), PID 1 may spawn it once
-//! after READY. The original Boot Seed initramfs lacks that binary, so T3
-//! behavior stays idle-after-READY with **no** console.
+//! after READY. Mission 013 mounts `proc`/`sys` (WARN on fail) and prints an
+//! ASCII banner before that spawn. The original Boot Seed initramfs lacks the
+//! console binary, so T3 behavior stays idle-after-READY with **no** mounts /
+//! **no** console (READY contract unchanged).
 
 #![forbid(unsafe_code)]
 
@@ -97,6 +99,18 @@ pub fn interactive_done_line(detail: &str) -> String {
     format!("{PROCESS_IDENTITY}: console finished ({detail}); remaining as PID 1\n")
 }
 
+/// ASCII banner after READY / mounts, before console (Mission 013).
+/// Splash/artwork for Mission 014 is documentation-only — this stays plain ASCII.
+#[must_use]
+pub fn ascii_banner() -> &'static str {
+    "\
+========================================\n\
+  Ryoku Minimal\n\
+  interactive lab console\n\
+  (not a product OS boot)\n\
+========================================\n"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +181,14 @@ mod tests {
         assert!(!interactive_start_line().contains(BOOT_SEED_READY_MARKER));
         assert!(!interactive_done_line("ok").contains(BOOT_SEED_READY_MARKER));
         assert!(interactive_start_line().contains(CONSOLE_BIN_PATH));
+    }
+
+    #[test]
+    fn ascii_banner_is_plain_and_honest() {
+        let b = ascii_banner();
+        assert!(b.contains("Ryoku Minimal"));
+        assert!(b.contains("not a product OS boot"));
+        assert!(!b.contains(BOOT_SEED_READY_MARKER));
+        assert!(b.is_ascii());
     }
 }

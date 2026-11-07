@@ -7,26 +7,29 @@
 | `ryoku-console` builtins on host | Parser + help/version/status/echo/clear/pwd/ls/cat unit-tested |
 | Interactive QEMU profile | `console-interactive.rvl.conf` uses `serial_log=stdio` |
 | Guest wiring after READY | Mission 012: PID 1 spawns console when `/bin/ryoku-console` exists |
-| **`interactive_guest_boot`** | **`PASS_MANUAL`** (2026-11-07) — Paulo’s authorized QEMU + 012.1 ZIP; **not** CI |
-| Proven guest builtins | `help` `version` `pwd` `ls /` `ls /etc` `cat /etc/ryoku-release` `status`; rejects `sudo` and forbidden `\` |
+| **`interactive_guest_boot` (012.1)** | **`PASS_MANUAL`** — Paulo’s authorized QEMU + 012.1 ZIP; **not** CI |
+| **`guest_013`** | **`PASS_MANUAL`** (2026-11-07) — tip `649b850`; READY once; mounts; `hw *`; **not** CI |
+| Proven guest builtins (012) | `help` `version` `pwd` `ls /` `ls /etc` `cat /etc/ryoku-release` `status`; rejects `sudo` and forbidden `\` |
+| Proven guest `hw *` (013) | `hw summary` `hw cpu` `hw pci` `hw drivers` (drivers = sysfs **names listed**, not bind count) |
 | `clear` in guest | **NOT** proven |
 | T3 Boot Seed PASS | Still `ryoku-init: pid=1` + `RYOKU_BOOT_SEED_READY` on **file** serial — **separate** path |
 | Product OS / login shell | **Not** claimed |
-| Residual risks | TOCTOU; READY×3 channels; serial printk interleave; literal `!` in echo |
+| Residual risks | TOCTOU; serial printk interleave; literal `!` in echo; launcher header still “012.1” (compat) |
 
 Full matrix + log excerpts: [ryoku-minimal.md](ryoku-minimal.md).
 
 `ryoku-console` remains a **separate crate** from `ryoku-init`. Only `ryoku-init`
 emits READY as PID 1.
 
-## Builtins (012)
+## Builtins (012 + 013)
 
 - `help` — list commands  
 - `version` — console version  
 - `status` — honesty / readiness blurb (explicitly not product boot)  
 - `echo …` — print args with **no** expansion (`!` literal allowed)  
 - `clear` — ANSI clear screen (**guest NOT proven**)  
-- `pwd` / `ls` / `cat` — experimental FS (guest **PASS_MANUAL** for listed paths)
+- `pwd` / `ls` / `cat` — experimental FS (guest **PASS_MANUAL** for listed paths)  
+- `hw summary` / `hw cpu` / `hw pci` / `hw drivers` — read-only probe (Mission 013; guest **`PASS_MANUAL`**)
 
 ## Limited parsing (security)
 
