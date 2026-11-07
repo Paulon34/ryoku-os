@@ -102,12 +102,19 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Package gráfico shell separado
 - [x] Guest visual **`SHELL_PREVIEW=PASS_MANUAL`** (tip `4b239a0`; ≠ CI)
 
-## Fase 2.11 — Interactive Shell Input (Missão 015.1)
+## Fase 2.11 — Interactive Shell Input (Missão 015.1) — PARTIAL CLOSEOUT
 
 - [x] Guest evdev mouse + keyboard path; event loop; dock hit-test / launcher panel (code)
 - [x] QEMU virtio keyboard + tablet; Alpine `evdev` + `virtio_input` modules
 - [x] PID1: shell background + serial console + reap (no zombies)
-- [ ] **`INPUT_GUEST` / `MOUSE_INTERACTION` / `KEYBOARD_INTERACTION` = `NOT_RUN`** até confirmação manual
+- [x] Manual (tip `f5cc1c4`; ≠ CI): **`SHELL_RENDER=PASS_MANUAL`**, **`DOCK_VISUAL_FEEDBACK=PASS_MANUAL`**, **`GUEST_INPUT=PARTIAL_PASS_MANUAL`**
+- [ ] **`LAUNCHER_OPEN` / `KEYBOARD_INTERACTION` / `CURSOR_MOVEMENT` = `NOT_CONFIRMED`** → Mission 015.2
+
+## Fase 2.12 — Interactive Launcher (Missão 015.2)
+
+- [ ] Ryoku Launcher panel (title/categories/focus/close/adaptive)
+- [ ] ABS axis from device caps; fact-based input indicators (never auto PASS_MANUAL)
+- [ ] Guest results **NOT_RUN** until manual confirm
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 
