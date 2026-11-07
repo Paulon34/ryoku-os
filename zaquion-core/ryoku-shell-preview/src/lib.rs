@@ -1,22 +1,20 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**016.2**).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**017**).
 //!
 //! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
 //! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
 //! (`ryoku-graphics-demo`).
 //!
-//! Mission **016** adds Adaptive Desktop Foundation profiles (Lite / Balanced /
-//! Ultra). Ultra is architecture-only (paint falls back to Balanced).
-//! Mission **016.1** adds Adaptive Performance instrumentation (compose/present
-//! metrics; optional overlay off-by-default).
-//! Mission **016.2** adds an opt-in controlled benchmark (identical workload per
-//! profile; mean/p95; off in normal use). QEMU TCG ≠ hardware. This crate
-//! **never** invents `PASS_MANUAL` or guest timings from host unit tests or CI.
+//! Mission **016** adaptive profiles; **016.1** perf metrics; **016.2** controlled
+//! benchmark (opt-in). Mission **017** adds an in-process WindowManager (geometry,
+//! focus, z-order, dirty regions) — no external apps, no Wayland compositor claim.
+//! QEMU TCG ≠ hardware. This crate **never** invents `PASS_MANUAL` from CI.
 
 #![forbid(unsafe_code)]
 
 mod adaptive;
 mod benchmark;
 mod perf;
+mod window;
 
 pub use adaptive::{AdaptiveProfile, ProfileTheme, RenderPolicy};
 pub use benchmark::{
@@ -26,6 +24,9 @@ pub use benchmark::{
 };
 pub use perf::{
     ultra_slowdown_investigation, FrameAccumulator, FrameSample, PerfOverlayPolicy, ProfileCompare,
+};
+pub use window::{
+    desktop_work_area, Rect, WinHit, WindowId, WindowKind, WindowLifecycle, WindowManager, WmEvent,
 };
 
 use ryoku_graphics_demo::{blit_rgb_to_fb, blit_rgb_to_fb_rows, FbGeometry, RgbBuffer};
@@ -212,7 +213,7 @@ impl LauncherLayout {
     }
 }
 
-/// Interactive UI state (Mission 015.1 / 015.2 / 016). Guest PASS is manual only.
+/// Interactive UI state (Mission 015–017). Guest PASS is manual only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InteractiveState {
     pub cursor_x: i32,
@@ -225,11 +226,16 @@ pub struct InteractiveState {
     pub input_fact: InputFact,
     /// Mission 016 adaptive profile (session-switchable).
     pub profile: AdaptiveProfile,
+    /// Mission 017 in-process window manager.
+    pub wm: WindowManager,
+    /// Drag/resize gesture state (expanded in 019).
+    pub drag: Option<(WindowId, WinHit, i32, i32)>,
 }
 
 impl InteractiveState {
     #[must_use]
     pub fn new(layout: &ShellLayout) -> Self {
+        let desktop = desktop_work_area(layout.panel_h, layout.dock_y, layout.width, layout.height);
         Self {
             cursor_x: (layout.width / 2) as i32,
             cursor_y: (layout.height / 2) as i32,
@@ -240,6 +246,8 @@ impl InteractiveState {
             left_down: false,
             input_fact: InputFact::Unavailable,
             profile: AdaptiveProfile::Balanced,
+            wm: WindowManager::new(desktop),
+            drag: None,
         }
     }
 
@@ -283,9 +291,23 @@ impl InteractiveState {
         }
     }
 
-    /// Primary click (press). First dock icon toggles Launcher; close button / Esc.
+    /// Primary click (press). WM chrome first; then launcher/dock.
     pub fn on_primary_press(&mut self, layout: &ShellLayout) {
         self.left_down = true;
+        // Mission 017: window chrome / focus before launcher.
+        if let Some((id, hit)) = self.wm.hit_test(self.cursor_x, self.cursor_y) {
+            self.wm.focus_window(id);
+            match hit {
+                WinHit::Close => self.wm.close(id),
+                WinHit::Minimize => self.wm.minimize(id),
+                WinHit::Maximize => self.wm.maximize_toggle(id),
+                WinHit::Titlebar | WinHit::ResizeE | WinHit::ResizeS | WinHit::ResizeSe => {
+                    self.drag = Some((id, hit, self.cursor_x, self.cursor_y));
+                }
+                WinHit::Client => {}
+            }
+            return;
+        }
         let ll = LauncherLayout::for_shell(layout);
         if self.launcher_open {
             if ll.hit_close(self.cursor_x, self.cursor_y) {
@@ -294,14 +316,17 @@ impl InteractiveState {
             }
             if let Some(c) = ll.hit_category(self.cursor_x, self.cursor_y) {
                 self.launcher_focus = c;
-                // Illustrative select only — no app exec.
-                return;
-            }
-            if !ll.contains(self.cursor_x, self.cursor_y) {
-                // Click outside launcher closes it (unless on dock icon 0 toggle).
-                if hit_test_dock(layout, self.cursor_x, self.cursor_y) != Some(0) {
+                // 017: SYSTEM opens WM demo window (no external exec).
+                if c == 0 {
+                    self.open_demo_window(layout);
                     self.close_launcher();
                 }
+                return;
+            }
+            if !ll.contains(self.cursor_x, self.cursor_y)
+                && hit_test_dock(layout, self.cursor_x, self.cursor_y) != Some(0)
+            {
+                self.close_launcher();
             }
         }
         if let Some(idx) = hit_test_dock(layout, self.cursor_x, self.cursor_y) {
@@ -317,6 +342,33 @@ impl InteractiveState {
 
     pub fn on_primary_release(&mut self) {
         self.left_down = false;
+        self.drag = None;
+    }
+
+    /// Open an internal demo window (Mission 017 — no external app).
+    pub fn open_demo_window(&mut self, layout: &ShellLayout) {
+        let desk = desktop_work_area(layout.panel_h, layout.dock_y, layout.width, layout.height);
+        self.wm.set_desktop(desk);
+        let n = self.wm.windows().len() as i32;
+        let geom = Rect::new(40 + n * 24, desk.y + 20 + n * 16, 280, 160);
+        self.wm.create(WindowKind::Demo, geom);
+    }
+
+    /// Pointer motion while dragging title/resize (017 basic; 019 expands).
+    pub fn on_drag_motion(&mut self, x: i32, y: i32) {
+        let Some((id, hit, ox, oy)) = self.drag else {
+            return;
+        };
+        let dx = x - ox;
+        let dy = y - oy;
+        match hit {
+            WinHit::Titlebar => self.wm.move_by(id, dx, dy),
+            WinHit::ResizeE => self.wm.resize_by(id, dx, 0),
+            WinHit::ResizeS => self.wm.resize_by(id, 0, dy),
+            WinHit::ResizeSe => self.wm.resize_by(id, dx, dy),
+            _ => {}
+        }
+        self.drag = Some((id, hit, x, y));
     }
 
     /// Close launcher (Esc / close control).
@@ -348,9 +400,12 @@ impl InteractiveState {
         self.launcher_focus = (cur + delta).rem_euclid(n) as usize;
     }
 
-    pub fn activate_selected(&mut self) {
+    pub fn activate_selected(&mut self, layout: &ShellLayout) {
         if self.launcher_open {
-            // Focus stays; illustrative — no exec.
+            if self.launcher_focus == 0 {
+                self.open_demo_window(layout);
+                self.close_launcher();
+            }
             return;
         }
         if self.selected_dock == Some(0) {
@@ -666,6 +721,11 @@ pub fn compose_shell_interactive(
             1,
             theme.muted,
         );
+    }
+
+    // Mission 017 — in-process windows (under launcher modal; above wallpaper).
+    if let Some(u) = ui {
+        u.wm.compose(buf, profile);
     }
 
     // Ryoku Launcher panel — title / categories / focus / close.

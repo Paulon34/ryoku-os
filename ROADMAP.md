@@ -139,6 +139,27 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] QEMU→guest allowlisted `ryoku.*` cmdline; instrumentation cost docs; T3 intact
 - [ ] Guest **`CONTROLLED_BENCHMARK=NOT_RUN`** until manual; TCG ≠ físico
 
+## Fase 2.16 — Window System (Missão 017)
+
+- [x] WindowManager / geometry / focus / z-order / dirty / chrome (move/resize/min/max/close) — code
+- [x] Internal windows only; no external apps; no Wayland claim; no visible fb clear
+- [ ] Guest **`GUEST_NOT_RUN`** until manual
+
+## Fase 2.17 — Internal Apps (Missão 018)
+
+- [ ] Launcher → WM; About / System Monitor / Settings / Files RO allowlist
+- [ ] Guest **`GUEST_NOT_RUN`** until manual
+
+## Fase 2.18 — Desktop Input (Missão 019)
+
+- [ ] Focus / drag / resize / dock; shortcuts sem conflito F1–F3; lifecycle
+- [ ] Guest **`GUEST_NOT_RUN`** until manual
+
+## Fase 2.19 — Graphics Backend (Missão 020)
+
+- [ ] Abstração display/input; DRM/KMS estudo+fallback fb; Wayland docs only
+- [ ] Guest **`GUEST_NOT_RUN`** until manual
+
 ## Fase 3 — Primeiros serviços Zaquion Core
 
 - [ ] Definição de IPC/API inicial (ex.: socket + schema versionado)

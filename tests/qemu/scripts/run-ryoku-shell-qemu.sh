@@ -51,7 +51,7 @@ case "$DISPLAY_BACKEND" in
   *) fail "RYOKU_SHELL_DISPLAY must be gtk|sdl|none (got $DISPLAY_BACKEND)" ;;
 esac
 
-echo "Ryoku Minimal SHELL QEMU helper (Mission 016.2 controlled-perf)"
+echo "Ryoku Minimal SHELL QEMU helper (Mission 017+ window/desktop)"
 echo "  mode:     $MODE"
 echo "  package:  $PKG"
 echo "  kernel:   $KERNEL"
@@ -59,7 +59,7 @@ echo "  initrd:   $INITRD"
 echo "  sums:     $SUMS"
 echo "  display:  $DISPLAY_BACKEND"
 echo "  execute:  $EXECUTE (0=plan/validate; 1 needs CONFIRM=RUN)"
-echo "  note:     LAUNCHER_GUEST=NOT_RUN ADAPTIVE_PROFILE=NOT_RUN ADAPTIVE_PERF=NOT_RUN CONTROLLED_BENCHMARK=NOT_RUN GUEST_NOT_RUN until human"
+echo "  note:     LAUNCHER_GUEST=NOT_RUN WINDOW_SYSTEM=NOT_RUN CONTROLLED_BENCHMARK=NOT_RUN GUEST_NOT_RUN until human"
 echo "  note:     F1=Lite F2=Balanced F3=Ultra(arch→Balanced); no blur/3D/Wayland claim"
 echo "  note:     QEMU TCG ≠ hardware; PERF overlay / controlled benchmark off by default"
 
