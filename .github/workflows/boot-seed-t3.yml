@@ -1,6 +1,7 @@
 # Mission 009 — Boot Seed T3 (first-party ryoku-init) — MANUAL ONLY
 #
 # workflow_dispatch with confirm=RUN. Does NOT run on push/pull_request.
+# Job also requires github.ref == refs/heads/main (dispatch from main only).
 # Do NOT dispatch from Mission 009 prep — separate human authorization required.
 #
 # Disposable ubuntu-24.04 only: apt QEMU + musl tools + ISO fetch/extract.
@@ -24,7 +25,8 @@ permissions:
 jobs:
   boot-seed-t3:
     name: boot-seed-t3
-    if: github.event.inputs.confirm == 'RUN'
+    # Dispatch + confirm=RUN + EXECUTE env below; refuse non-main refs (no PR/branch dispatch).
+    if: github.ref == 'refs/heads/main' && github.event.inputs.confirm == 'RUN'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
