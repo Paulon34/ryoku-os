@@ -47,10 +47,17 @@ Built by `tests/qemu/scripts/build-boot-seed-initramfs.sh` (dry-run default):
 - Format: `newc` cpio + gzip → `tests/qemu/run/ryoku-boot-seed.cpio.gz` (gitignored)
 - No root, no host `/` modifications, no packing of host system files
 
-### Static linking
+### Static linking (critical)
 
-Prefer `x86_64-unknown-linux-musl` for `/init`. Documented in
-`zaquion-core/ryoku-init/README.md`. GNU builds are OK for host unit tests.
+Prefer `x86_64-unknown-linux-musl` for `/init`. The packer **fail-closes** on
+dynamically linked binaries (Mission 008.5 audit). GNU builds remain OK for
+**host** unit tests only. Documented in `zaquion-core/ryoku-init/README.md`.
+
+### Console / devices
+
+`append = console=ttyS0 earlyprintk=serial`. Initramfs ships empty `dev/`
+(no `mknod`, no sudo). Lab kernels should provide `devtmpfs` so `/dev/console`
+appears; `ryoku-init` also writes stdio.
 
 ## QEMU T3 profile (separate from Alpine T2)
 

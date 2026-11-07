@@ -15,3 +15,7 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "allow", priority = -1 }
+
+# Boot-seed /init must not unwind out of PID 1 on panic (Mission 008.5).
+[profile.release]
+panic = "abort"

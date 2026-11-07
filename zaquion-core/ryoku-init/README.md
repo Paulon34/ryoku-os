@@ -12,22 +12,27 @@ cargo build -p ryoku-init
 cargo test -p ryoku-init
 ```
 
-## Static linking (initramfs)
+## Static linking (initramfs) — required for real T3
 
-Initramfs should ship a **static** `init` so the guest needs no dynamic linker.
-
-Documented approach (when musl toolchain is available on a disposable builder):
+Initramfs must ship a **statically linked** `init`. A glibc/gnu PIE binary needs
+`/lib64/ld-linux-x86-64.so.2` + `libc.so.6`, which this minimal initramfs does
+**not** include. The packer **refuses** dynamic binaries unless
+`RYOKU_INITRAMFS_ALLOW_DYNAMIC=1` (structure tests only — never real T3).
 
 ```bash
 rustup target add x86_64-unknown-linux-musl
-# Debian/Ubuntu builder: apt install musl-tools
+# Disposable builder may also need a musl linker (e.g. musl-tools)
 cargo build -p ryoku-init --release --target x86_64-unknown-linux-musl
+file target/x86_64-unknown-linux-musl/release/ryoku-init   # expect "statically linked"
 ```
 
-This Cursor host typically has only `x86_64-unknown-linux-gnu`. Mission 008
-packages whatever binary `cargo build -p ryoku-init --release` produces for
-**structure tests**; a real T3 guest boot (separate authorization) should use
-the musl static artifact.
+Release builds use `panic = "abort"` (workspace) so PID 1 does not unwind away.
+
+### Guest console
+
+QEMU profile sets `append = console=ttyS0 earlyprintk=serial`. Prefer a lab
+kernel with `CONFIG_DEVTMPFS` (+ mount) so `/dev/console` exists; `ryoku-init`
+also writes stdout/stderr and opens `/dev/console` when present.
 
 ## Initramfs
 

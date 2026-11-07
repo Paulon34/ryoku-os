@@ -479,6 +479,24 @@ mod tests {
     }
 
     #[test]
+    fn qemu_process_streams_cannot_fake_serial_pass() {
+        // Mirrors T2 honesty: PASS eligibility uses serial_markers_pass(serial) only.
+        let markers = vec![BOOT_SEED_MARKER.to_string()];
+        let stdout = format!("harness noise\n{BOOT_SEED_MARKER}\n");
+        let stderr = format!("{BOOT_SEED_MARKER}\n");
+        assert!(
+            !crate::boot::reference_boot_pass_eligible("", &stdout, &stderr, &markers),
+            "marker only in QEMU stdout/stderr must not PASS t3.boot_seed"
+        );
+        assert!(crate::boot::reference_boot_pass_eligible(
+            &format!("ryoku-init\n{BOOT_SEED_MARKER}\n"),
+            &stdout,
+            &stderr,
+            &markers
+        ));
+    }
+
+    #[test]
     fn product_boot_stays_not_run() {
         assert_eq!(ryoku_product_not_claimed().outcome, Outcome::NotRun);
     }
