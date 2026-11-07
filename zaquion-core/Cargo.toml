@@ -7,6 +7,7 @@ members = [
     "ryoku-console",
     "ryoku-hwprobe",
     "ryoku-graphics-demo",
+    "ryoku-shell-preview",
 ]
 default-members = [
     "ryoku-doctor",
@@ -15,6 +16,7 @@ default-members = [
     "ryoku-console",
     "ryoku-hwprobe",
     "ryoku-graphics-demo",
+    "ryoku-shell-preview",
 ]
 
 [workspace.package]

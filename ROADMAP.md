@@ -98,8 +98,9 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.10 — Ryoku Shell Preview (Missão 015)
 
-- [ ] Layout desktop ilustrativo no framebuffer (panel/dock/status; sem input ainda)
-- [ ] Package gráfico shell separado; input (evdev) = Missão 015.1 **NOT_RUN**
+- [x] Layout desktop ilustrativo no framebuffer (panel/dock/status; sem input ainda)
+- [x] Package gráfico shell separado; guest visual **NOT_RUN** até confirmação
+- [ ] Input (evdev) = Missão 015.1 **NOT_RUN**
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

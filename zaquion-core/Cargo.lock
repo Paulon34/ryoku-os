@@ -83,6 +83,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryoku-shell-preview"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "memmap2",
+ "ryoku-graphics-demo",
+]
+
+[[package]]
 name = "ryoku-virtlab"
 version = "0.1.0"
 

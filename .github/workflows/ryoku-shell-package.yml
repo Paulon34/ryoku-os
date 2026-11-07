@@ -1,0 +1,147 @@
+# Mission 015 — Ryoku Shell Preview package (separate from First Pixels graphics).
+#
+# Builds musl init+console+shell-preview, packs ryoku-shell.cpio.gz (+ DRM modules).
+# Does NOT run QEMU. Does NOT replace ryoku-graphics / ryoku-minimal packages.
+name: ryoku-shell-package
+
+on:
+  push:
+    branches: ["cursor/ryoku-shell-015*"]
+  pull_request:
+    branches: [main, "cursor/ryoku-graphics-014*", "cursor/ryoku-hardware-013*", "cursor/ryoku-minimal-012"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ryoku-shell-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.83.0"
+  SOURCE_DATE_EPOCH: "1700000000"
+  RYOKU_FETCH_EXECUTE: "1"
+  RYOKU_VERIFY_GPG: "1"
+  RYOKU_KERNEL_EXTRACT_EXECUTE: "1"
+  RYOKU_SHELL_PREP_EXECUTE: "1"
+  RYOKU_DRM_MODULES_EXECUTE: "1"
+  RYOKU_SHELL_QEMU_EXECUTE: "0"
+  RYOKU_GRAPHICS_QEMU_EXECUTE: "0"
+  RYOKU_MINIMAL_QEMU_EXECUTE: "0"
+  RYOKU_T3_EXECUTE: "0"
+
+jobs:
+  package:
+    name: musl-shell-package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            musl-tools \
+            gzip \
+            xorriso \
+            cpio \
+            squashfs-tools
+
+      - name: Install Rust toolchain (+ musl target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-musl
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zaquion-core
+
+      - name: Fetch + verify Alpine virt ISO (reference channel)
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/fetch-reference-image.sh
+
+      - name: Extract boot/vmlinuz-virt → ryoku-boot-seed-vmlinuz
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/extract-boot-seed-kernel.sh
+          test -f tests/qemu/run/ryoku-boot-seed-vmlinuz
+
+      - name: Build musl + pack ryoku-shell.cpio.gz (+ DRM modules)
+        run: |
+          set -euo pipefail
+          chmod +x tests/qemu/scripts/fetch-virt-drm-modules.sh
+          chmod +x tests/qemu/scripts/prep-ryoku-shell-artifacts.sh
+          tests/qemu/scripts/prep-ryoku-shell-artifacts.sh
+          test -f tests/qemu/run/ryoku-shell.cpio.gz
+          test -f tests/qemu/run/SHA256SUMS-shell.txt
+          test -x zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-shell-preview
+          gzip -dc tests/qemu/run/ryoku-shell.cpio.gz | cpio -t 2>/dev/null \
+            | grep -qx './bin/ryoku-shell-preview'
+          if gzip -dc tests/qemu/run/ryoku-shell.cpio.gz | cpio -t 2>/dev/null \
+            | grep -q 'ryoku-graphics-demo'; then
+            echo "Honesty violation: shell cpio must not contain graphics-demo"
+            exit 1
+          fi
+          echo "shell_package_build=PASS" | tee tests/qemu/results/ryoku-shell-status.txt
+          echo "shell_graphical_guest=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
+          echo "input_015_1=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
+
+      - name: Shell ZIP layout test (no QEMU)
+        run: |
+          set -euo pipefail
+          chmod +x tests/qemu/scripts/run-ryoku-shell-qemu.sh
+          chmod +x tests/qemu/scripts/test-ryoku-shell-vm-zip.sh
+          tests/qemu/scripts/test-ryoku-shell-vm-zip.sh | tee tests/qemu/results/ryoku-shell-zip-test.txt
+
+      - name: Plan/validate shell launcher (repo mode, no guest)
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/run-ryoku-shell-qemu.sh | tee tests/qemu/results/ryoku-shell-qemu-plan.txt
+          grep -q 'OK: SHA256SUMS verified' tests/qemu/results/ryoku-shell-qemu-plan.txt
+          grep -q 'shell graphical guest=NOT_RUN' tests/qemu/results/ryoku-shell-qemu-plan.txt
+          if grep -q 'AUTHORIZED: starting QEMU' tests/qemu/results/ryoku-shell-qemu-plan.txt; then
+            echo "Honesty violation: must not start QEMU"
+            exit 1
+          fi
+
+      - name: Stage downloadable shell VM package
+        run: |
+          set -euo pipefail
+          PKG=tests/qemu/results/ryoku-shell-vm-package
+          rm -rf "$PKG"
+          mkdir -p "$PKG/bin-musl"
+          cp -a tests/qemu/run/ryoku-boot-seed-vmlinuz "$PKG/"
+          cp -a tests/qemu/run/ryoku-shell.cpio.gz "$PKG/"
+          cp -a tests/qemu/README-SHELL.md "$PKG/"
+          cp -a tests/qemu/scripts/run-ryoku-shell-qemu.sh "$PKG/"
+          cp -a tests/qemu/configs/console-shell.rvl.conf "$PKG/"
+          cp -a tests/qemu/fixtures/virt-drm-modules.manifest "$PKG/"
+          cp -a tests/qemu/run/virt-drm-modules/PROVENANCE.txt "$PKG/DRM-MODULES-PROVENANCE.txt"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console "$PKG/bin-musl/"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-shell-preview "$PKG/bin-musl/"
+          (
+            cd "$PKG"
+            sha256sum ryoku-boot-seed-vmlinuz ryoku-shell.cpio.gz \
+              bin-musl/ryoku-init bin-musl/ryoku-console bin-musl/ryoku-shell-preview \
+              | tee SHA256SUMS.txt
+          )
+          ( cd "$PKG" && RYOKU_SHELL_QEMU_EXECUTE=0 ./run-ryoku-shell-qemu.sh ) \
+            | tee tests/qemu/results/ryoku-shell-staged-zip-plan.txt
+          grep -q 'mode:     standalone' tests/qemu/results/ryoku-shell-staged-zip-plan.txt
+
+      - name: Upload Ryoku shell VM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryoku-shell-vm-${{ github.sha }}
+          path: tests/qemu/results/ryoku-shell-vm-package/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,27 @@
+[package]
+name = "ryoku-shell-preview"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Ryoku Shell Preview — illustrative first desktop layout on fb0 (Mission 015)"
+readme = "README.md"
+keywords = ["ryoku", "shell", "framebuffer"]
+categories = ["os"]
+
+[dependencies]
+libc = "0.2"
+memmap2 = "0.9"
+ryoku-graphics-demo = { path = "../ryoku-graphics-demo" }
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "allow", priority = -1 }
+
+[[bin]]
+name = "ryoku-shell-preview"
+path = "src/main.rs"

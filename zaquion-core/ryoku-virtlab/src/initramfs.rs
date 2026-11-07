@@ -28,8 +28,15 @@ pub const RYOKU_RELEASE_TEXT: &str = "ryoku-minimal 0.1.0 (Mission 012)\n";
 pub const RYOKU_GRAPHICS_RELEASE_TEXT: &str =
     "ryoku-minimal 0.1.0 (Mission 014.1 graphics preview + virt DRM modules)\n";
 
+/// Shell package release text (Mission 015) — separate from First Pixels package.
+pub const RYOKU_SHELL_RELEASE_TEXT: &str =
+    "ryoku-minimal 0.1.0 (Mission 015 shell preview + virt DRM modules)\n";
+
 /// Graphics demo binary member (Mission 014 package only).
 pub const REQUIRED_GRAPHICS_DEMO_MEMBER: &str = "./bin/ryoku-graphics-demo";
+
+/// Shell preview binary member (Mission 015 package only — not alongside graphics-demo).
+pub const REQUIRED_SHELL_PREVIEW_MEMBER: &str = "./bin/ryoku-shell-preview";
 
 /// Guest modules root prefix inside graphics cpio (Mission 014.1).
 pub const GRAPHICS_MODULES_ROOT_MEMBER: &str = "./lib/modules/6.12.114-0-virt";
@@ -233,6 +240,23 @@ pub fn ryoku_graphics_members(
         "./bin/ryoku-graphics-demo",
         0o755,
         graphics_demo_bytes.to_vec(),
+    ));
+    members
+}
+
+/// Ryoku Minimal + shell preview members (Mission 015). No graphics-demo (avoid dual FB).
+#[must_use]
+pub fn ryoku_shell_members(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    shell_preview_bytes: &[u8],
+    release_text: &str,
+) -> Vec<NewcMember> {
+    let mut members = ryoku_minimal_members(init_bytes, console_bytes, release_text);
+    members.push(NewcMember::file(
+        "./bin/ryoku-shell-preview",
+        0o755,
+        shell_preview_bytes.to_vec(),
     ));
     members
 }
@@ -724,6 +748,96 @@ pub fn pack_ryoku_graphics_from_paths_with_modules(
     Ok(out)
 }
 
+/// Validate shell preview cpio (Minimal + shell binary; must not include graphics-demo).
+pub fn validate_ryoku_shell_cpio(data: &[u8]) -> Result<(), String> {
+    validate_ryoku_minimal_cpio(data)?;
+    let members = list_newc_members(data)?;
+    if !members.iter().any(|m| m == REQUIRED_SHELL_PREVIEW_MEMBER) {
+        return Err(format!("missing {REQUIRED_SHELL_PREVIEW_MEMBER}"));
+    }
+    if members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER) {
+        return Err("shell package must not contain ryoku-graphics-demo (dual FB)".into());
+    }
+    Ok(())
+}
+
+/// Validate shell cpio including DRM modules.
+pub fn validate_ryoku_shell_cpio_with_modules(data: &[u8]) -> Result<(), String> {
+    validate_ryoku_shell_cpio(data)?;
+    let members = list_newc_members(data)?;
+    for req in REQUIRED_GRAPHICS_MODULE_MEMBERS {
+        if !members.iter().any(|m| m == req) {
+            return Err(format!("missing graphics module member {req}"));
+        }
+    }
+    Ok(())
+}
+
+/// Write shell-preview newc (uncompressed).
+pub fn write_ryoku_shell_newc(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    shell_preview_bytes: &[u8],
+    release_text: &str,
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    write_newc_archive(
+        &ryoku_shell_members(init_bytes, console_bytes, shell_preview_bytes, release_text),
+        out,
+    )
+}
+
+/// Write shell-preview newc including DRM modules.
+pub fn write_ryoku_shell_newc_with_modules(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    shell_preview_bytes: &[u8],
+    release_text: &str,
+    modules_root: &Path,
+    out: &mut dyn Write,
+) -> Result<(), String> {
+    let mut members =
+        ryoku_shell_members(init_bytes, console_bytes, shell_preview_bytes, release_text);
+    append_graphics_modules(&mut members, modules_root)?;
+    write_newc_archive(&members, out).map_err(|e| e.to_string())
+}
+
+/// Pack shell preview initramfs (+ optional DRM modules).
+pub fn pack_ryoku_shell_from_paths_with_modules(
+    init_path: &Path,
+    console_path: &Path,
+    shell_preview_path: &Path,
+    release_text: &str,
+    modules_root: Option<&Path>,
+) -> Result<Vec<u8>, String> {
+    let init = fs::read(init_path).map_err(|e| format!("read init: {e}"))?;
+    let console = fs::read(console_path).map_err(|e| format!("read console: {e}"))?;
+    let shell = fs::read(shell_preview_path).map_err(|e| format!("read shell-preview: {e}"))?;
+    if init.is_empty() || console.is_empty() || shell.is_empty() {
+        return Err("init/console/shell-preview binary empty".into());
+    }
+    let mut out = Vec::new();
+    match modules_root {
+        Some(root) => {
+            write_ryoku_shell_newc_with_modules(
+                &init,
+                &console,
+                &shell,
+                release_text,
+                root,
+                &mut out,
+            )?;
+            validate_ryoku_shell_cpio_with_modules(&out)?;
+        }
+        None => {
+            write_ryoku_shell_newc(&init, &console, &shell, release_text, &mut out)
+                .map_err(|e| e.to_string())?;
+            validate_ryoku_shell_cpio(&out)?;
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -860,6 +974,23 @@ mod tests {
         let err = append_graphics_modules(&mut members, &dir).unwrap_err();
         assert!(err.contains("missing allowlisted"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ryoku_shell_has_preview_not_graphics_demo() {
+        let mut buf = Vec::new();
+        write_ryoku_shell_newc(
+            b"INIT",
+            b"CONSOLE",
+            b"SHELL",
+            RYOKU_SHELL_RELEASE_TEXT,
+            &mut buf,
+        )
+        .unwrap();
+        validate_ryoku_shell_cpio(&buf).unwrap();
+        let members = list_newc_members(&buf).unwrap();
+        assert!(members.iter().any(|m| m == REQUIRED_SHELL_PREVIEW_MEMBER));
+        assert!(!members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER));
     }
 
     #[test]

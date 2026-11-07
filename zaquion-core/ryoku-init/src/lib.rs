@@ -35,6 +35,9 @@ pub const CONSOLE_BIN_PATH: &str = "/bin/ryoku-console";
 /// Guest path for the graphics demo (graphics package only — Mission 014/014.1).
 pub const GRAPHICS_DEMO_BIN_PATH: &str = "/bin/ryoku-graphics-demo";
 
+/// Guest path for the shell preview (shell package only — Mission 015).
+pub const SHELL_PREVIEW_BIN_PATH: &str = "/bin/ryoku-shell-preview";
+
 /// Guest modules root for the pinned Alpine virt lab kernel (Mission 014.1).
 pub const VIRT_DRM_MODULES_ROOT: &str = "/lib/modules/6.12.114-0-virt";
 
@@ -127,6 +130,26 @@ pub fn guest_graphics_profile() -> bool {
     graphics_demo_present(Path::new(GRAPHICS_DEMO_BIN_PATH))
 }
 
+/// True when the shell preview binary is present (Mission 015 package).
+#[must_use]
+pub fn shell_preview_present(path: &Path) -> bool {
+    path.is_file()
+}
+
+/// Default guest check for shell profile (Mission 015).
+///
+/// Prefer shell over graphics-demo when both exist (packages should not ship both).
+#[must_use]
+pub fn guest_shell_profile() -> bool {
+    shell_preview_present(Path::new(SHELL_PREVIEW_BIN_PATH))
+}
+
+/// True when any DRM-backed graphical guest binary should be started.
+#[must_use]
+pub fn guest_any_graphics_profile() -> bool {
+    guest_shell_profile() || guest_graphics_profile()
+}
+
 /// Message when interactive console will be started (after READY; never fakes READY).
 #[must_use]
 pub fn interactive_start_line() -> String {
@@ -158,6 +181,18 @@ pub fn graphics_demo_start_line() -> String {
 #[must_use]
 pub fn graphics_demo_done_line(detail: &str) -> String {
     format!("{PROCESS_IDENTITY}: graphics demo finished ({detail}); continuing\n")
+}
+
+/// Serial line before controlled shell preview start (Mission 015).
+#[must_use]
+pub fn shell_preview_start_line() -> String {
+    format!("{PROCESS_IDENTITY}: shell profile — starting {SHELL_PREVIEW_BIN_PATH}\n")
+}
+
+/// Serial line when shell preview exits or fails; PID 1 continues to console.
+#[must_use]
+pub fn shell_preview_done_line(detail: &str) -> String {
+    format!("{PROCESS_IDENTITY}: shell preview finished ({detail}); continuing\n")
 }
 
 /// Refuse `..`, absolute paths, and names outside the allowlist.
@@ -293,11 +328,20 @@ mod tests {
             graphics_modules_start_line(),
             graphics_demo_start_line(),
             graphics_demo_done_line("ok"),
+            shell_preview_start_line(),
+            shell_preview_done_line("ok"),
         ] {
             assert!(!s.contains(BOOT_SEED_READY_MARKER), "{s}");
             assert!(!s.contains("FIRST_PIXELS=PASS"), "{s}");
         }
         assert!(graphics_demo_start_line().contains(GRAPHICS_DEMO_BIN_PATH));
+        assert!(shell_preview_start_line().contains(SHELL_PREVIEW_BIN_PATH));
+    }
+
+    #[test]
+    fn shell_profile_absent_by_default_path() {
+        let missing = Path::new("/bin/ryoku-shell-preview-definitely-missing-for-test");
+        assert!(!shell_preview_present(missing));
     }
 
     #[test]
