@@ -30,7 +30,7 @@ CI ≠ guest. Never invent `PASS_MANUAL` from host unit tests or package CI.
 
 ## Next
 
-Mission **016.2** — Controlled Performance (benchmark determinístico; guest até manual).
+Mission **016.2** — Controlled Performance: [`ryoku-adaptive-0162.md`](ryoku-adaptive-0162.md).
 
 ## Related
 

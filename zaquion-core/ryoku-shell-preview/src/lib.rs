@@ -1,4 +1,4 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.2 / **016** / **016.1**).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**016.2**).
 //!
 //! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
 //! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
@@ -7,15 +7,23 @@
 //! Mission **016** adds Adaptive Desktop Foundation profiles (Lite / Balanced /
 //! Ultra). Ultra is architecture-only (paint falls back to Balanced).
 //! Mission **016.1** adds Adaptive Performance instrumentation (compose/present
-//! metrics; optional overlay off-by-default). QEMU TCG ≠ hardware. This crate
+//! metrics; optional overlay off-by-default).
+//! Mission **016.2** adds an opt-in controlled benchmark (identical workload per
+//! profile; mean/p95; off in normal use). QEMU TCG ≠ hardware. This crate
 //! **never** invents `PASS_MANUAL` or guest timings from host unit tests or CI.
 
 #![forbid(unsafe_code)]
 
 mod adaptive;
+mod benchmark;
 mod perf;
 
 pub use adaptive::{AdaptiveProfile, ProfileTheme, RenderPolicy};
+pub use benchmark::{
+    controlled_band, controlled_benchmark_enabled, controlled_profile_order,
+    instrumentation_cost_note, ControlledProfileRun, ControlledSummary, CONTROLLED_BAND_FRAMES,
+    CONTROLLED_FULL_FRAMES,
+};
 pub use perf::{
     ultra_slowdown_investigation, FrameAccumulator, FrameSample, PerfOverlayPolicy, ProfileCompare,
 };

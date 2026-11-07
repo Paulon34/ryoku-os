@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Mission 015.1 — Ryoku Shell Preview + guest input QEMU helper (plan-only by default).
+# Mission 016.2 — Ryoku Shell + adaptive/controlled-perf QEMU helper (plan-only by default).
 # Dual gate: RYOKU_SHELL_QEMU_EXECUTE=1 + RYOKU_SHELL_QEMU_CONFIRM=RUN
 # Adds virtio keyboard + tablet so the guest can expose /dev/input/event*.
+# Allowlisted host→guest params via kernel cmdline (ryoku.*) — T3 append path unchanged.
 set -euo pipefail
 
 fail() { echo "error: $*" >&2; exit 1; }
@@ -50,7 +51,7 @@ case "$DISPLAY_BACKEND" in
   *) fail "RYOKU_SHELL_DISPLAY must be gtk|sdl|none (got $DISPLAY_BACKEND)" ;;
 esac
 
-echo "Ryoku Minimal SHELL QEMU helper (Mission 016.1 adaptive-perf)"
+echo "Ryoku Minimal SHELL QEMU helper (Mission 016.2 controlled-perf)"
 echo "  mode:     $MODE"
 echo "  package:  $PKG"
 echo "  kernel:   $KERNEL"
@@ -58,9 +59,9 @@ echo "  initrd:   $INITRD"
 echo "  sums:     $SUMS"
 echo "  display:  $DISPLAY_BACKEND"
 echo "  execute:  $EXECUTE (0=plan/validate; 1 needs CONFIRM=RUN)"
-echo "  note:     LAUNCHER_GUEST=NOT_RUN ADAPTIVE_PROFILE=NOT_RUN ADAPTIVE_PERF=NOT_RUN GUEST_NOT_RUN until human"
+echo "  note:     LAUNCHER_GUEST=NOT_RUN ADAPTIVE_PROFILE=NOT_RUN ADAPTIVE_PERF=NOT_RUN CONTROLLED_BENCHMARK=NOT_RUN GUEST_NOT_RUN until human"
 echo "  note:     F1=Lite F2=Balanced F3=Ultra(arch→Balanced); no blur/3D/Wayland claim"
-echo "  note:     QEMU TCG ≠ hardware; PERF overlay off by default (RYOKU_SHELL_PERF_OVERLAY=1)"
+echo "  note:     QEMU TCG ≠ hardware; PERF overlay / controlled benchmark off by default"
 
 [[ -f "$SUMS" ]] || fail "missing SHA256SUMS at $SUMS"
 [[ -f "$KERNEL" ]] || fail "missing lab kernel $KERNEL"
@@ -91,6 +92,33 @@ echo
 # Serial/T3/minimal packages do NOT set vt.global_cursor_default.
 APPEND_CMDLINE="console=ttyS0 vt.global_cursor_default=0"
 
+# Mission 016.2 — allowlisted host→guest params only (init maps ryoku.* → env).
+# T3 boot-seed helpers never set these; they stay on console=ttyS0 (+ earlyprintk).
+RYOKU_APPEND_EXTRA=()
+case "${RYOKU_DESKTOP_PROFILE:-}" in
+  lite|balanced|ultra)
+    RYOKU_APPEND_EXTRA+=("ryoku.profile=${RYOKU_DESKTOP_PROFILE}")
+    ;;
+  "") ;;
+  *) fail "RYOKU_DESKTOP_PROFILE must be lite|balanced|ultra when set (got ${RYOKU_DESKTOP_PROFILE})" ;;
+esac
+case "${RYOKU_SHELL_PERF_OVERLAY:-}" in
+  1|true|TRUE) RYOKU_APPEND_EXTRA+=("ryoku.perf_overlay=1") ;;
+  0|false|FALSE|"") ;;
+  *) fail "RYOKU_SHELL_PERF_OVERLAY must be 0|1 when set" ;;
+esac
+case "${RYOKU_CONTROLLED_BENCHMARK:-}" in
+  1|true|TRUE) RYOKU_APPEND_EXTRA+=("ryoku.controlled_benchmark=1") ;;
+  0|false|FALSE|"") ;;
+  *) fail "RYOKU_CONTROLLED_BENCHMARK must be 0|1 when set" ;;
+esac
+for tok in "${RYOKU_APPEND_EXTRA[@]+"${RYOKU_APPEND_EXTRA[@]}"}"; do
+  APPEND_CMDLINE+=" $tok"
+done
+if [[ ${#RYOKU_APPEND_EXTRA[@]} -gt 0 ]]; then
+  echo "  cmdline+: ${RYOKU_APPEND_EXTRA[*]}"
+fi
+
 echo "PLAN (reproducible argv — not executed unless authorized):"
 echo "  qemu-system-x86_64 \\"
 echo "    -name ryoku-virtlab-shell-input \\"
@@ -107,6 +135,7 @@ echo "    -machine type=pc"
 echo
 echo "Honesty: guest evdev only (not host /dev/input). No Bash/Hyprland/Wayland. No arbitrary app exec."
 echo "Honesty: vt.global_cursor_default=0 is fbcon cursor hide (not DRM pageflip / not GTK tear claim)."
+echo "Honesty: ryoku.* cmdline keys are allowlisted only; T3 packages omit them."
 
 if [[ "$EXECUTE" != "1" ]]; then
   echo "OK: plan+validate only ($MODE). Set RYOKU_SHELL_QEMU_EXECUTE=1 RYOKU_SHELL_QEMU_CONFIRM=RUN for guest (authorized)."

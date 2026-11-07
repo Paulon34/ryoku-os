@@ -135,7 +135,8 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.15 — Controlled Performance (Missão 016.2)
 
-- [ ] Benchmark determinístico idêntico por perfil (full vs partial; mean/p95); off no uso normal
+- [x] Benchmark determinístico idêntico por perfil (full vs partial; mean/p95); reset on switch; off no uso normal — code
+- [x] QEMU→guest allowlisted `ryoku.*` cmdline; instrumentation cost docs; T3 intact
 - [ ] Guest **`CONTROLLED_BENCHMARK=NOT_RUN`** until manual; TCG ≠ físico
 
 ## Fase 3 — Primeiros serviços Zaquion Core
