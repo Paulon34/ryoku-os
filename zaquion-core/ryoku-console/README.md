@@ -26,8 +26,10 @@ This crate is **separate from** `ryoku-init` PID 1. Mission 011 does **not** cha
 ## Limited parsing (security)
 
 - No shell: no `|`, `&`, `;`, `` ` ``, `$`, redirects, quotes nesting, globs
-- ASCII printable args only; max line / arg / argc caps
+- Tabs, CR, embedded newlines, and other controls are rejected (not stripped by `trim()`)
+- Only ASCII spaces pad/separate tokens; max line / arg / argc caps
 - Unknown commands rejected; empty input ignored
+- `echo` reproduces args literally (not boot-seed evidence)
 
 See [docs/testing/console.md](../../docs/testing/console.md).
 

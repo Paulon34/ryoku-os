@@ -77,6 +77,8 @@ pub enum LimitedLine {
     Line(String),
     /// Line exceeded [`MAX_LINE_BYTES`] (reader drained through the terminator).
     TooLong { observed: usize },
+    /// Non-UTF-8 bytes in the line payload (reader drained through the terminator when present).
+    InvalidBytes,
     /// No more input.
     Eof,
 }
@@ -164,11 +166,15 @@ fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
 }
 
 /// Parse one console line into a [`Command`].
-/// Only ASCII spaces separate tokens; tabs/CR inside the command are forbidden.
+///
+/// Only ASCII spaces (`' '`) are allowed as leading/trailing padding and token
+/// separators. Do **not** use [`str::trim`]: it would silently strip tabs/CR and
+/// other Unicode whitespace that must remain visible to validation.
 pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
     if raw.len() > MAX_LINE_BYTES {
         return Err(ParseError::TooLong { len: raw.len() });
     }
+    // Space-only edges — never `trim()` / Unicode whitespace classes.
     let line = raw.trim_matches(' ');
     if line.is_empty() {
         return Err(ParseError::Empty);
@@ -181,6 +187,10 @@ pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
             continue;
         }
         if is_forbidden_char(ch) {
+            return Err(ParseError::ForbiddenChar { ch });
+        }
+        // Catch remaining C0 controls (and DEL) before tokenize.
+        if ch.is_ascii_control() {
             return Err(ParseError::ForbiddenChar { ch });
         }
     }
@@ -318,9 +328,7 @@ pub fn read_limited_line<R: BufRead>(reader: &mut R) -> io::Result<LimitedLine> 
             // EOF without terminator — deliver what we have (parser may still reject).
             return match String::from_utf8(line) {
                 Ok(s) => Ok(LimitedLine::Line(s)),
-                Err(_) => Ok(LimitedLine::TooLong {
-                    observed: MAX_LINE_BYTES + 1,
-                }),
+                Err(_) => Ok(LimitedLine::InvalidBytes),
             };
         }
 
@@ -340,9 +348,7 @@ pub fn read_limited_line<R: BufRead>(reader: &mut R) -> io::Result<LimitedLine> 
             line.extend_from_slice(&piece);
             return match String::from_utf8(line) {
                 Ok(s) => Ok(LimitedLine::Line(s)),
-                Err(_) => Ok(LimitedLine::TooLong {
-                    observed: MAX_LINE_BYTES + 1,
-                }),
+                Err(_) => Ok(LimitedLine::InvalidBytes),
             };
         }
 
@@ -405,6 +411,51 @@ mod tests {
                 "CR should be forbidden in {line:?}"
             );
         }
+    }
+
+    #[test]
+    fn rejects_unexpected_newlines_and_control_chars() {
+        for line in ["help\n", "\nhelp", "echo hello\nworld", "help\nversion"] {
+            assert!(
+                matches!(
+                    parse_line(line).unwrap_err(),
+                    ParseError::ForbiddenChar { ch: '\n' }
+                ),
+                "embedded newline must fail for {line:?}"
+            );
+        }
+        for (line, ch) in [
+            ("help\u{0001}", '\u{0001}'),
+            ("\u{0007}help", '\u{0007}'),
+            ("echo\u{001b}hi", '\u{001b}'),
+            ("status\u{007f}", '\u{007f}'),
+            ("echo\0x", '\0'),
+        ] {
+            assert!(
+                matches!(
+                    parse_line(line).unwrap_err(),
+                    ParseError::ForbiddenChar { ch: got } if got == ch
+                ),
+                "control {ch:?} must fail for {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ascii_spaces_only_are_trimmed_not_tabs() {
+        assert!(matches!(parse_line("  help  ").unwrap(), Command::Help));
+        // `trim()` would hide the leading tab; space-only trim must not.
+        assert!(matches!(
+            parse_line("\thelp").unwrap_err(),
+            ParseError::ForbiddenChar { ch: '\t' }
+        ));
+    }
+
+    #[test]
+    fn echo_may_reproduce_ready_text_without_console_claiming_boot() {
+        let out = eval_line("echo RYOKU_BOOT_SEED_READY").unwrap();
+        assert_eq!(out, "RYOKU_BOOT_SEED_READY\n");
+        assert!(!output_claims_boot_seed_ready(&startup_banner("0.0.0")));
     }
 
     #[test]
@@ -542,5 +593,25 @@ mod tests {
             read_limited_line(&mut cur).unwrap(),
             LimitedLine::Line("clear".into())
         );
+    }
+
+    #[test]
+    fn cursor_read_invalid_bytes_then_valid_command() {
+        let mut cur = Cursor::new(b"hel\xffp\nversion\n");
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::InvalidBytes
+        );
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("version".into())
+        );
+        assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_eof_without_payload() {
+        let mut cur = Cursor::new(b"");
+        assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
     }
 }

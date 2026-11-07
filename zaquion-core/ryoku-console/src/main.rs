@@ -30,6 +30,9 @@ fn main() -> ExitCode {
             Ok(LimitedLine::TooLong { observed }) => {
                 let _ = writeln!(stdout, "error: {}", ParseError::TooLong { len: observed });
             }
+            Ok(LimitedLine::InvalidBytes) => {
+                let _ = writeln!(stdout, "error: {}", ParseError::NonAscii);
+            }
             Ok(LimitedLine::Line(line)) => match eval_line(&line) {
                 Ok(out) => {
                     let _ = write!(stdout, "{out}");
