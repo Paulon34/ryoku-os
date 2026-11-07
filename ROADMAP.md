@@ -110,12 +110,20 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Manual (tip `f5cc1c4`; ≠ CI): **`SHELL_RENDER=PASS_MANUAL`**, **`DOCK_VISUAL_FEEDBACK=PASS_MANUAL`**, **`GUEST_INPUT=PARTIAL_PASS_MANUAL`**
 - [ ] **`LAUNCHER_OPEN` / `KEYBOARD_INTERACTION` / `CURSOR_MOVEMENT` = `NOT_CONFIRMED`** → Mission 015.2
 
-## Fase 2.12 — Interactive Launcher (Missão 015.2 / 015.2.1)
+## Fase 2.12 — Interactive Launcher (Missão 015.2 / 015.2.1) — CLOSEOUT
 
 - [x] Ryoku Launcher panel (title/categories/focus/close/adaptive) — code
 - [x] ABS axis from device caps; device filter; fact-based indicators (never auto PASS_MANUAL)
 - [x] 015.2.1: no visible fb clear; dirty/scanline blit; keep all keyboards; `vt.global_cursor_default=0` (shell QEMU)
-- [ ] Guest: prior tip `052c84c` **`GRAPHICS_FLICKER=FAIL_MANUAL`**; re-test after 015.2.1 (no auto PASS)
+- [x] Manual tip `6993807` (≠ CI): **`GRAPHICS_STABILITY=PASS_MANUAL`**, **`MOUSE_LAUNCHER_OPEN=PASS_MANUAL`**, **`LAUNCHER_RENDER=PASS_MANUAL`**
+- [ ] **`KEYBOARD_INTERACTION` / `LAUNCHER_CLOSE` = `NOT_CONFIRMED`**
+- [x] Prior FAIL preserved: tip `052c84c` **`GRAPHICS_FLICKER=FAIL_MANUAL`**
+
+## Fase 2.13 — Adaptive Desktop Foundation (Missão 016)
+
+- [ ] Perfis Lite / Balanced / Ultra (tema, layout, animação, políticas de render)
+- [ ] Troca de perfil na sessão; fallback Lite; métricas; sem fingir blur/3D/Wayland
+- [ ] Guest results **NOT_RUN** until manual
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

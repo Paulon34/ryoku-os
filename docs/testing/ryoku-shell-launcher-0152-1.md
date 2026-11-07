@@ -1,36 +1,38 @@
-# Mission 015.2.1 — Flicker / input stability (on PR #11)
+# Mission 015.2.1 — CLOSEOUT (PR #11)
 
-**Manual tip tested:** `052c84c` · **`GRAPHICS_FLICKER=FAIL_MANUAL`** (≠ CI)  
-Guest: fb **941×993** 32bpp stride **3764**; event0/event1 Keyboard, event2 PointerAbs.
+**Closeout tip:** **`6993807ee0e1c37309b6274e19120fce7760d4a6`** · PR #11  
+**Official claims are manual only (≠ CI).** No invented keyboard/close/general compat PASS.
 
-## Fixes in this revision
+## Status matrix (Paulo NixOS visual)
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| **`GRAPHICS_STABILITY`** | **`PASS_MANUAL`** | Flicker gone; shell OK; serial OK |
+| **`MOUSE_LAUNCHER_OPEN`** | **`PASS_MANUAL`** | dock0 opened RYOKU LAUNCHER |
+| **`LAUNCHER_RENDER`** | **`PASS_MANUAL`** | SYSTEM / DEV TOOLS / FILES / SETTINGS visible |
+| **`KEYBOARD_INTERACTION`** | **`NOT_CONFIRMED`** | — |
+| **`LAUNCHER_CLOSE`** | **`NOT_CONFIRMED`** | — |
+| Wayland / full Desktop / compositor | **Not** claimed | — |
+
+Guest: fb **941×474** 32bpp; mouse/input; `EVENTS RECEIVED` observed (fact only ≠ kbd/close PASS).
+
+## Prior FAIL history (preserved)
+
+Tip `052c84c`: **`GRAPHICS_FLICKER=FAIL_MANUAL`** (flicker on move + rest; launcher not opening).
+
+## What 015.2.1 fixed (code)
 
 | Area | Change |
 |------|--------|
-| Render | Removed visible mmap clear in `blit_rgb_to_fb`; scanline convert; dirty rows; no vblank claim |
-| Rest | QEMU shell profile: `vt.global_cursor_default=0` (fbcon cursor hide only) |
-| Efficiency | Redraw only on visual change; motion coalesce; `RYOKU_SHELL_TARGET_FPS`; metrics |
-| Input | Keep **all** keyboards + one pointer; partial reads; BTN_LEFT/TOUCH; launcher open/close |
-| Honesty | `EVENTS RECEIVED` ≠ functional click/nav; no auto `PASS_MANUAL` |
+| Render | No visible mmap clear; scanline/dirty blit; no vblank claim |
+| Rest | QEMU shell: `vt.global_cursor_default=0` (fbcon only) |
+| Efficiency | Visual-change redraw; motion coalesce; FPS/metrics |
+| Input | All keyboards + one pointer; partial reads |
 
-## Flicker taxonomy (do not conflate)
+## Next
 
-| Symptom | Likely cause |
-|---------|----------------|
-| Blink while idle | fbcon hardware cursor (mitigate: `vt.global_cursor_default=0`) |
-| Flash on every mouse move | Visible fb clear before blit (fixed 015.2.1) |
-| Horizontal tear / double image | Host GTK/display path — not claimed fixed here |
-| Full-screen strobe | Wrong clear / wrong geometry — check stride×height |
+Mission **016** — Adaptive Desktop Foundation (Lite / Balanced / Ultra profiles).
 
-DRM pageflip / true vsync = **future** (docs only; not claimed on fbdev).
+## Related
 
-## Opt-in diag
-
-```bash
-RYOKU_SHELL_INPUT_DIAG=1 RYOKU_SHELL_TARGET_FPS=30 \
-  RYOKU_SHELL_QEMU_EXECUTE=1 RYOKU_SHELL_QEMU_CONFIRM=RUN ./run-ryoku-shell-qemu.sh
-```
-
-## Guest results until re-test
-
-`LAUNCHER_GUEST` / functional mouse / keyboard / flicker = **NOT_RUN** (or prior FAIL_MANUAL) until Paulo confirms.
+- Package: [`tests/qemu/README-SHELL-LAUNCHER.md`](../../tests/qemu/README-SHELL-LAUNCHER.md)
