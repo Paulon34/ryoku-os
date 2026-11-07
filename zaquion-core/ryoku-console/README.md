@@ -1,15 +1,16 @@
 # ryoku-console
 
-Interactive **Ryoku console** (Mission 011 / 012). Guest child of `ryoku-init`
-in Ryoku Minimal; host REPL for prep/tests.
+Interactive **Ryoku console** (Mission 011 / 012 / 013). Guest child of
+`ryoku-init` in Ryoku Minimal; host REPL for prep/tests.
 
 ## Honesty
 
 | Claim | Meaning |
 |-------|---------|
-| Host/unit tests of this crate | Parser + builtins + experimental FS work on the developer host |
+| Host/unit tests of this crate | Parser + builtins + experimental FS + `hw *` fixtures |
 | Guest spawn after READY | Wired in `ryoku-init` when `/bin/ryoku-console` exists (Minimal initramfs) |
-| Interactive QEMU session | Prep profile only — **not** executed in Mission 012 |
+| `hw summary` / `cpu` / `pci` / `drivers` | Mission 013 via `ryoku-hwprobe` (guest probe **NOT_RUN**) |
+| Interactive QEMU session (012.1) | **PASS_MANUAL** once — see `docs/testing/ryoku-minimal.md` |
 | `t3.boot_seed` PASS | Still only `ryoku-init` PID 1 + `RYOKU_BOOT_SEED_READY` |
 | Full Ryoku OS / login shell | **Not** claimed |
 
@@ -27,6 +28,10 @@ This crate is **separate from** `ryoku-init` PID 1. It must never emit READY as 
 | `pwd` | Experimental cwd |
 | `ls [path]` | List directory (confined FS) |
 | `cat path` | Read file capped (confined FS) |
+| `hw summary` | Read-only inventory (proc/sys) |
+| `hw cpu` | `/proc/cpuinfo` summary |
+| `hw pci` | PCI device vendor/device |
+| `hw drivers` | sysfs bus drivers listing |
 
 ## Limited parsing (security)
 

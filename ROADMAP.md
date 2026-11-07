@@ -79,11 +79,11 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Sessão QEMU guest autorizada — **`interactive_guest_boot=PASS_MANUAL`** (Paulo; tip `fecc0b5`; CI ≠ boot)
 - [ ] `clear` guest; product OS boot (não claims)
 
-## Fase 2.8 — Hardware probe (Missão 013) — planejado / em curso
+## Fase 2.8 — Hardware probe (Missão 013)
 
-- [ ] Mount `proc`/`sys` após READY (antes do console); WARN se falhar
-- [ ] Crate `ryoku-hwprobe` + builtins `hw summary|cpu|pci|drivers`
-- [ ] Anúncio READY single-channel; banner ASCII; docs splash Missão 014
+- [x] Mount `proc`/`sys` após READY (antes do console); WARN se falhar; T3 intacto
+- [x] Crate `ryoku-hwprobe` + builtins `hw summary|cpu|pci|drivers`
+- [x] Anúncio READY single-channel; banner ASCII; docs splash Missão 014
 - [ ] Guest boot 013 = **NOT_RUN** até evidência manual nova
 
 ## Fase 3 — Primeiros serviços Zaquion Core

@@ -1,7 +1,19 @@
 [workspace]
 resolver = "2"
-members = ["ryoku-doctor", "ryoku-virtlab", "ryoku-init", "ryoku-console"]
-default-members = ["ryoku-doctor", "ryoku-virtlab", "ryoku-init", "ryoku-console"]
+members = [
+    "ryoku-doctor",
+    "ryoku-virtlab",
+    "ryoku-init",
+    "ryoku-console",
+    "ryoku-hwprobe",
+]
+default-members = [
+    "ryoku-doctor",
+    "ryoku-virtlab",
+    "ryoku-init",
+    "ryoku-console",
+    "ryoku-hwprobe",
+]
 
 [workspace.package]
 edition = "2021"

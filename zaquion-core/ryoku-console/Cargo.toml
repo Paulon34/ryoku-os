@@ -11,7 +11,8 @@ keywords = ["ryoku", "console", "shell"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-# Stdlib only. Must stay separate from ryoku-init PID 1 core (Mission 011).
+ryoku-hwprobe = { path = "../ryoku-hwprobe" }
+# Must stay separate from ryoku-init PID 1 core (Mission 011 / 013).
 
 [lints]
 workspace = true

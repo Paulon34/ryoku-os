@@ -19,14 +19,15 @@ Full matrix + log excerpts: [ryoku-minimal.md](ryoku-minimal.md).
 `ryoku-console` remains a **separate crate** from `ryoku-init`. Only `ryoku-init`
 emits READY as PID 1.
 
-## Builtins (012)
+## Builtins (012 + 013)
 
 - `help` — list commands  
 - `version` — console version  
 - `status` — honesty / readiness blurb (explicitly not product boot)  
 - `echo …` — print args with **no** expansion (`!` literal allowed)  
 - `clear` — ANSI clear screen (**guest NOT proven**)  
-- `pwd` / `ls` / `cat` — experimental FS (guest **PASS_MANUAL** for listed paths)
+- `pwd` / `ls` / `cat` — experimental FS (guest **PASS_MANUAL** for listed paths)  
+- `hw summary` / `hw cpu` / `hw pci` / `hw drivers` — read-only probe (Mission 013; **guest NOT_RUN**)
 
 ## Limited parsing (security)
 
