@@ -6,14 +6,11 @@
 
 | Claim | Status |
 |-------|--------|
-| Musl init + console + `ryoku-shell-preview` + DRM modules | CI package |
-| Shell layout on software buffer / fb0 when present | Host unit |
-| Graphical shell guest | **`NOT_RUN`** until human visual confirm |
+| Musl init + console + `ryoku-shell-preview` + DRM modules | CI **PASS** |
+| **`SHELL_PREVIEW` tip `4b239a0`** | **`PASS_MANUAL`** (Paulo visual; ≠ CI) |
 | Input (evdev / mouse / keyboard) | Mission **015.1** — **`NOT_RUN`** |
-| Wayland / Hyprland / XFCE / KDE / COSMIC | **Not** claimed |
-| First Pixels (`FIRST_PIXELS=PASS_MANUAL` on 014) | **Preserved** on graphics package |
-
-Chrome (panel / dock / icons) is **illustrative** until 015.1 input.
+| Wayland / product Desktop | **Not** claimed |
+| First Pixels (`FIRST_PIXELS=PASS_MANUAL`) | **Preserved** on graphics package |
 
 ## Download → plan → authorized execute
 
