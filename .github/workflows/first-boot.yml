@@ -68,6 +68,19 @@ jobs:
           # Record digest for the artifact summary
           sha256sum tests/qemu/run/alpine-virt-3.21.9-x86_64.iso | tee tests/qemu/results/iso-sha256.txt
 
+      - name: Diagnostics — absolute ISO path from zaquion-core cwd
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          echo "cwd=$(pwd)"
+          cargo run -p ryoku-virtlab -- print-lab-paths
+          # Hard fail if fetch left sidecars but harness cannot see the ISO.
+          test -f ../tests/qemu/run/alpine-virt-3.21.9-x86_64.iso
+          ISO_ABS="$(cargo run -q -p ryoku-virtlab -- print-lab-paths | awk -F= '/^iso_abs=/{print $2}')"
+          echo "workflow_checks_iso_abs=$ISO_ABS"
+          test -n "$ISO_ABS"
+          test -f "$ISO_ABS"
+
       - name: Run Virtual Lab T0 then first-boot (TCG)
         working-directory: zaquion-core
         run: |

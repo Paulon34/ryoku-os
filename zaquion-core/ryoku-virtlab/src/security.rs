@@ -119,21 +119,25 @@ pub fn validate_optional_path(
         return Err(SecurityError::ParentEscape(raw.to_string()));
     }
 
-    let joined = lab_root.join(candidate);
+    // Lab root must be absolute so lexical `..` popping cannot retarget assets
+    // under a different tree (e.g. `../tests/qemu` + join → collapse to `tests/qemu`
+    // under `zaquion-core/`).
+    let lab_abs = ensure_absolute_lab_root(lab_root)?;
+    let joined = lab_abs.join(candidate);
     let normalized = normalize_lexically(&joined);
 
     let allowed = match role {
-        PathRole::SerialLog => vec![normalize_lexically(&lab_root.join("results"))],
+        PathRole::SerialLog => vec![normalize_lexically(&lab_abs.join("results"))],
         PathRole::Disk | PathRole::Kernel | PathRole::Iso => vec![
-            normalize_lexically(&lab_root.join("fixtures")),
-            normalize_lexically(&lab_root.join("run")),
+            normalize_lexically(&lab_abs.join("fixtures")),
+            normalize_lexically(&lab_abs.join("run")),
         ],
     };
 
     if !allowed.iter().any(|root| is_under(&normalized, root)) {
         return Err(SecurityError::OutsideLab {
             path: normalized.display().to_string(),
-            lab_root: lab_root.display().to_string(),
+            lab_root: lab_abs.display().to_string(),
         });
     }
 
@@ -145,7 +149,8 @@ fn is_under(path: &Path, root: &Path) -> bool {
 }
 
 /// Lexical normalization without touching the real filesystem (no symlink resolve).
-fn normalize_lexically(path: &Path) -> PathBuf {
+#[must_use]
+pub fn normalize_lexically(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for comp in path.components() {
         match comp {
@@ -157,6 +162,51 @@ fn normalize_lexically(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// Make `path` absolute against `base` (typically the process cwd), then normalize.
+///
+/// Does **not** call `canonicalize` (no symlink follow). Safe for constructing lab roots
+/// before the directory fully exists.
+#[must_use]
+pub fn absolute_from(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        normalize_lexically(path)
+    } else {
+        normalize_lexically(&base.join(path))
+    }
+}
+
+/// Ensure `lab_root` is absolute. Relative roots are resolved against the current directory.
+fn ensure_absolute_lab_root(lab_root: &Path) -> Result<PathBuf, SecurityError> {
+    if lab_root.as_os_str().is_empty() {
+        return Err(SecurityError::EmptyPath);
+    }
+    if lab_root.is_absolute() {
+        return Ok(normalize_lexically(lab_root));
+    }
+    let cwd = std::env::current_dir().map_err(|err| {
+        SecurityError::Suspicious(format!("cannot resolve cwd for relative lab_root: {err}"))
+    })?;
+    Ok(absolute_from(&cwd, lab_root))
+}
+
+/// Canonicalize an existing directory. Rejects results that are not directories.
+///
+/// Used only for lab-root discovery after the path is known to contain `configs/` or
+/// `fixtures/`. Does not follow a symlink *out* of policy beyond what the OS returns;
+/// callers still constrain assets under `run/` / `fixtures/` / `results/`.
+pub fn safe_canonicalize_existing(path: &Path) -> Result<PathBuf, SecurityError> {
+    let canon = std::fs::canonicalize(path).map_err(|err| {
+        SecurityError::Suspicious(format!("cannot canonicalize `{}`: {err}", path.display()))
+    })?;
+    if !canon.is_dir() {
+        return Err(SecurityError::Suspicious(format!(
+            "canonical lab root is not a directory: {}",
+            canon.display()
+        )));
+    }
+    Ok(canon)
 }
 
 #[cfg(test)]
@@ -210,5 +260,24 @@ mod tests {
         assert!(ok.is_ok());
         let bad = validate_optional_path("run/serial.log", PathRole::SerialLog, &lab());
         assert!(matches!(bad, Err(SecurityError::OutsideLab { .. })));
+    }
+
+    #[test]
+    fn absolute_from_preserves_parent_then_normalizes() {
+        let abs = absolute_from(Path::new("/repo/zaquion-core"), Path::new("../tests/qemu"));
+        assert_eq!(abs, PathBuf::from("/repo/tests/qemu"));
+        let iso = validate_optional_path("run/alpine.iso", PathRole::Iso, &abs).unwrap();
+        assert_eq!(iso, PathBuf::from("/repo/tests/qemu/run/alpine.iso"));
+        assert!(iso.is_absolute());
+    }
+
+    #[test]
+    fn missing_asset_path_stays_absolute_never_pass_path() {
+        let lab = PathBuf::from("/repo/tests/qemu");
+        let iso = validate_optional_path("run/missing.iso", PathRole::Iso, &lab).unwrap();
+        assert!(iso.is_absolute());
+        assert!(!iso.is_file());
+        // Path validation succeeded; existence is a separate concern (NOT_RUN/FAIL in boot).
+        assert_eq!(iso, PathBuf::from("/repo/tests/qemu/run/missing.iso"));
     }
 }

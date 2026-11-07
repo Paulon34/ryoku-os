@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use ryoku_virtlab::lab::discover_lab_root_from;
 use ryoku_virtlab::report::{exit_code, format_lab_report};
 use ryoku_virtlab::{run_first_boot, run_t0, run_t1, HostToolProbe};
 
@@ -24,6 +25,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "t0" | "t1" | "first-boot" | "t2" | "all" => run_suite(args[0].as_str()),
+        "print-lab-paths" => print_lab_paths(),
         other => {
             eprintln!("error: unknown command `{other}`");
             print_help();
@@ -34,6 +36,7 @@ fn main() -> ExitCode {
 
 fn run_suite(which: &str) -> ExitCode {
     let lab_root = discover_lab_root();
+    eprintln!("lab_root_abs={}", lab_root.display());
     if let Err(err) = ensure_lab_dirs(&lab_root) {
         eprintln!("error: {err}");
         return ExitCode::from(1);
@@ -76,17 +79,27 @@ fn run_suite(which: &str) -> ExitCode {
 }
 
 fn discover_lab_root() -> PathBuf {
-    let candidates = [
-        PathBuf::from("tests/qemu"),
-        PathBuf::from("../tests/qemu"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/qemu"),
-    ];
-    for path in candidates {
-        if path.join("configs").exists() || path.join("fixtures").exists() {
-            return path;
-        }
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    discover_lab_root_from(&cwd, Path::new(env!("CARGO_MANIFEST_DIR")))
+}
+
+fn print_lab_paths() -> ExitCode {
+    let lab_root = discover_lab_root();
+    let iso = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso");
+    let sha = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.sha256");
+    let asc = lab_root.join("run/alpine-virt-3.21.9-x86_64.iso.asc");
+    println!("lab_root_abs={}", lab_root.display());
+    println!("iso_abs={}", iso.display());
+    println!("iso_exists={}", iso.is_file());
+    println!("sha256_sidecar_exists={}", sha.is_file());
+    println!("asc_sidecar_exists={}", asc.is_file());
+    if sha.is_file() && !iso.is_file() {
+        eprintln!(
+            "error: path inconsistency — checksum sidecar present but ISO missing at harness path"
+        );
+        return ExitCode::from(1);
     }
-    PathBuf::from("tests/qemu")
+    ExitCode::SUCCESS
 }
 
 fn ensure_lab_dirs(lab_root: &Path) -> Result<(), String> {
@@ -114,6 +127,7 @@ USAGE:
     ryoku-virtlab t0
     ryoku-virtlab t1
     ryoku-virtlab first-boot
+    ryoku-virtlab print-lab-paths
     ryoku-virtlab --help
 
 NOTES:
