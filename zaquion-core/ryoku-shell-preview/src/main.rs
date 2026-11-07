@@ -20,12 +20,13 @@ use ryoku_graphics_demo::{
 };
 use ryoku_shell_preview::{
     compose_shell_interactive, dirty_band_for_cursor, merge_dirty, present_shell,
-    present_shell_rows, InputFact, InteractiveState, ShellLayout, SHELL_IDENTITY,
+    present_shell_rows, AdaptiveProfile, InputFact, InteractiveState, ShellLayout, SHELL_IDENTITY,
 };
 
 use crate::input::{
     coalesce_actions, scan_evdev_devices, EvdevDevice, InputAction, RedrawGate, BTN_LEFT,
-    BTN_TOUCH, KEY_DOWN, KEY_ENTER, KEY_ESC, KEY_LEFT, KEY_RIGHT, KEY_SPACE, KEY_TAB, KEY_UP,
+    BTN_TOUCH, KEY_DOWN, KEY_ENTER, KEY_ESC, KEY_F1, KEY_F2, KEY_F3, KEY_LEFT, KEY_RIGHT,
+    KEY_SPACE, KEY_TAB, KEY_UP,
 };
 
 #[derive(Debug, Default)]
@@ -33,14 +34,16 @@ struct RenderMetrics {
     frames: u64,
     compose_ns: u128,
     blit_ns: u128,
+    scratch_bytes: usize,
     last_report: Option<Instant>,
 }
 
 impl RenderMetrics {
-    fn note(&mut self, compose: Duration, blit: Duration) {
+    fn note(&mut self, compose: Duration, blit: Duration, scratch_bytes: usize) {
         self.frames = self.frames.saturating_add(1);
         self.compose_ns = self.compose_ns.saturating_add(compose.as_nanos());
         self.blit_ns = self.blit_ns.saturating_add(blit.as_nanos());
+        self.scratch_bytes = scratch_bytes;
         let now = Instant::now();
         let due = match self.last_report {
             None => true,
@@ -50,10 +53,11 @@ impl RenderMetrics {
             let avg_c = self.compose_ns / u128::from(self.frames);
             let avg_b = self.blit_ns / u128::from(self.frames);
             eprintln!(
-                "{SHELL_IDENTITY}: metrics frames={} avg_compose_us={} avg_blit_us={}",
+                "{SHELL_IDENTITY}: metrics frames={} avg_compose_us={} avg_blit_us={} scratch_kib={}",
                 self.frames,
                 avg_c / 1000,
-                avg_b / 1000
+                avg_b / 1000,
+                self.scratch_bytes / 1024
             );
             self.last_report = Some(now);
             self.frames = 0;
@@ -63,12 +67,19 @@ impl RenderMetrics {
     }
 }
 
-fn target_fps() -> u32 {
+fn target_fps(profile: AdaptiveProfile) -> u32 {
     env::var("RYOKU_SHELL_TARGET_FPS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(30)
+        .unwrap_or_else(|| profile.target_fps())
         .clamp(1, 120)
+}
+
+fn profile_from_env() -> AdaptiveProfile {
+    env::var("RYOKU_DESKTOP_PROFILE")
+        .ok()
+        .and_then(|s| AdaptiveProfile::parse(&s))
+        .unwrap_or(AdaptiveProfile::Balanced)
 }
 
 fn input_diag() -> bool {
@@ -117,6 +128,23 @@ fn apply_discrete(
             }
             if diag {
                 eprintln!("{SHELL_IDENTITY}: diag key code={code}");
+            }
+            // Mission 016: F1/F2/F3 switch profile (session); Ultra = arch fallback.
+            if matches!(code, KEY_F1 | KEY_F2 | KEY_F3) {
+                let next = match code {
+                    KEY_F1 => AdaptiveProfile::Lite,
+                    KEY_F2 => AdaptiveProfile::Balanced,
+                    _ => AdaptiveProfile::Ultra,
+                };
+                ui.set_profile(next);
+                eprintln!(
+                    "{SHELL_IDENTITY}: profile -> {} (effective={}) anim={} fps={}",
+                    next.name(),
+                    next.effective().name(),
+                    next.animation_policy(),
+                    next.target_fps()
+                );
+                return (true, true);
             }
             let visual = if ui.launcher_open {
                 match code {
@@ -188,7 +216,7 @@ fn present_dirty(
     // flush is best-effort mmap sync — **not** vblank / pageflip (fbdev).
     let _ = mmap.flush();
     let t2 = Instant::now();
-    metrics.note(t1 - t0, t2 - t1);
+    metrics.note(t1 - t0, t2 - t1, scratch.pixels.len());
     Ok(())
 }
 
@@ -200,7 +228,7 @@ fn event_loop(
     devices: &mut [EvdevDevice],
     scratch: &mut RgbBuffer,
 ) -> ! {
-    let fps = target_fps();
+    let mut fps = target_fps(ui.profile);
     let mut gate = RedrawGate::from_fps(fps);
     let mut dirty = true;
     let mut full_dirty = true;
@@ -214,10 +242,12 @@ fn event_loop(
     let mut prev_focus = ui.launcher_focus;
     let mut prev_hover = ui.hover_dock;
     let mut prev_selected = ui.selected_dock;
+    let mut prev_profile = ui.profile;
 
     eprintln!(
-        "{SHELL_IDENTITY}: event loop 015.2.1 fps={fps} diag={diag}; \
-         EVENTS RECEIVED ≠ functional click/nav; guest results NOT_RUN — fact={:?}",
+        "{SHELL_IDENTITY}: event loop 016 adaptive fps={fps} profile={} diag={diag}; \
+         no continuous redraw; EVENTS RECEIVED ≠ click; GUEST_NOT_RUN — fact={:?}",
+        ui.profile.name(),
         ui.input_fact
     );
 
@@ -268,9 +298,15 @@ fn event_loop(
             || ui.launcher_focus != prev_focus
             || ui.hover_dock != prev_hover
             || ui.selected_dock != prev_selected
+            || ui.profile != prev_profile
         {
             visual = true;
             full_dirty = true;
+        }
+        if ui.profile != prev_profile {
+            fps = target_fps(ui.profile);
+            gate = RedrawGate::from_fps(fps);
+            prev_profile = ui.profile;
         }
         if (ui.cursor_x, ui.cursor_y) != prev_cursor {
             visual = true;
@@ -280,6 +316,7 @@ fn event_loop(
             dirty = true;
         }
 
+        // Never continuous redraw: idle sleeps without present.
         if dirty && gate.allow() {
             let band = if full_dirty { None } else { Some(dirty_y) };
             if let Err(err) = present_dirty(mmap, geom, layout, ui, scratch, band, &mut metrics) {
@@ -310,7 +347,7 @@ fn main() -> ExitCode {
     };
 
     eprintln!(
-        "{SHELL_IDENTITY}: starting interactive shell+launcher under {} (Mission 015.2.1)",
+        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 016)",
         root.display()
     );
 
@@ -347,10 +384,11 @@ fn main() -> ExitCode {
         }
     };
     let mut ui = InteractiveState::new(&layout);
+    ui.set_profile(profile_from_env());
     let mut scratch = RgbBuffer::new(layout.width, layout.height, ryoku_shell_preview::COLOR_NAVY);
 
     eprintln!(
-        "{SHELL_IDENTITY}: layout panel_h={} dock={}x{} at ({},{}) desktop_h={} fb={}x{} stride={}",
+        "{SHELL_IDENTITY}: layout panel_h={} dock={}x{} at ({},{}) desktop_h={} fb={}x{} stride={} profile={}",
         layout.panel_h,
         layout.dock_w,
         layout.dock_h,
@@ -359,7 +397,8 @@ fn main() -> ExitCode {
         layout.desktop_h,
         plan.geom.width,
         plan.geom.height,
-        plan.geom.stride
+        plan.geom.stride,
+        ui.profile.name()
     );
 
     let mut mmap = match fb_mmap::map_fb_explicit(&file, &plan) {

@@ -43,6 +43,9 @@ pub const KEY_DOWN: u16 = 108;
 pub const KEY_TAB: u16 = 15;
 pub const KEY_SPACE: u16 = 57;
 pub const KEY_A: u16 = 30;
+pub const KEY_F1: u16 = 59;
+pub const KEY_F2: u16 = 60;
+pub const KEY_F3: u16 = 61;
 
 /// Fallback only when EVIOCGABS fails (never assumed as the primary path).
 pub const FALLBACK_ABS_MAX: i32 = 32767;
