@@ -1,11 +1,18 @@
-//! Ryoku Boot Seed — shared identity constants and helpers (Mission 008 / 008.5).
+//! Ryoku Boot Seed — shared identity constants and helpers (Mission 008 / 012).
 //!
 //! This is a **prototype init**, not a finished Ryoku userland or product OS boot.
 //! A future T3 QEMU run may PASS `t3.boot_seed` when the guest serial contains
 //! both [`PID1_IDENTITY_MARKER`] and [`BOOT_SEED_READY_MARKER`] from a real PID 1
 //! process. That is still **not** a full Ryoku OS product boot.
+//!
+//! Mission 012 adds an **optional** interactive path: when `/bin/ryoku-console`
+//! is present in the guest (Ryoku Minimal initramfs), PID 1 may spawn it once
+//! after READY. The original Boot Seed initramfs lacks that binary, so T3
+//! behavior stays idle-after-READY with **no** console.
 
 #![forbid(unsafe_code)]
+
+use std::path::Path;
 
 /// Printed by `ryoku-init` as process identity.
 pub const PROCESS_IDENTITY: &str = "ryoku-init";
@@ -15,6 +22,9 @@ pub const BOOT_SEED_READY_MARKER: &str = "RYOKU_BOOT_SEED_READY";
 
 /// Identity line substring required on guest serial for T3 PASS (`ryoku-init: pid=1`).
 pub const PID1_IDENTITY_MARKER: &str = "ryoku-init: pid=1";
+
+/// Guest path for the interactive console binary (Ryoku Minimal initramfs only).
+pub const CONSOLE_BIN_PATH: &str = "/bin/ryoku-console";
 
 /// True when `pid` is the init process id.
 #[must_use]
@@ -60,9 +70,38 @@ pub fn serial_has_pid1_boot_seed(serial: &str) -> bool {
     serial.contains(PID1_IDENTITY_MARKER) && serial.contains(BOOT_SEED_READY_MARKER)
 }
 
+/// Explicit interactive mode: guest has a regular file at [`CONSOLE_BIN_PATH`].
+///
+/// Original T3 Boot Seed initramfs does **not** ship this path → returns false →
+/// PID 1 stays in the idle loop (exact prior behavior).
+#[must_use]
+pub fn interactive_console_present(console_path: &Path) -> bool {
+    console_path.is_file()
+}
+
+/// Default guest check for interactive mode.
+#[must_use]
+pub fn guest_interactive_mode() -> bool {
+    interactive_console_present(Path::new(CONSOLE_BIN_PATH))
+}
+
+/// Message when interactive console will be started (after READY; never fakes READY).
+#[must_use]
+pub fn interactive_start_line() -> String {
+    format!("{PROCESS_IDENTITY}: interactive mode — spawning {CONSOLE_BIN_PATH}\n")
+}
+
+/// Message when console child exits or fails; PID 1 remains.
+#[must_use]
+pub fn interactive_done_line(detail: &str) -> String {
+    format!("{PROCESS_IDENTITY}: console finished ({detail}); remaining as PID 1\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn pid1_emits_ready_and_identity() {
@@ -98,5 +137,35 @@ mod tests {
         assert!(serial_has_pid1_boot_seed(
             "ryoku-init: pid=1 seed=mission-008\nRYOKU_BOOT_SEED_READY\n"
         ));
+    }
+
+    #[test]
+    fn interactive_absent_by_default_path() {
+        // Host unit tests are not a guest Minimal FS — console binary usually absent.
+        // Behavior under test: missing path ⇒ not interactive (T3-compatible).
+        let missing = Path::new("/bin/ryoku-console-definitely-missing-for-test");
+        assert!(!interactive_console_present(missing));
+    }
+
+    #[test]
+    fn interactive_present_when_file_exists() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ryoku-init-interactive-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("ryoku-console");
+        fs::write(&bin, b"fake").unwrap();
+        assert!(interactive_console_present(&bin));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn interactive_messages_do_not_emit_ready() {
+        assert!(!interactive_start_line().contains(BOOT_SEED_READY_MARKER));
+        assert!(!interactive_done_line("ok").contains(BOOT_SEED_READY_MARKER));
+        assert!(interactive_start_line().contains(CONSOLE_BIN_PATH));
     }
 }

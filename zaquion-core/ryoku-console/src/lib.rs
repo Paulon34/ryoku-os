@@ -1,13 +1,21 @@
-//! Ryoku console — limited interactive builtins (Mission 011).
+//! Ryoku console — limited interactive builtins (Mission 011 / 012).
 //!
 //! Separate from `ryoku-init` PID 1. Emitting boot-seed markers remains sole
 //! responsibility of `ryoku-init`. This crate must not print
 //! `RYOKU_BOOT_SEED_READY` or claim a product OS shell.
+//!
+//! Mission 012 adds experimental FS builtins (`pwd` / `ls` / `cat`) confined to
+//! a staged root — still not an external shell.
 
 #![forbid(unsafe_code)]
 
+pub mod fs;
+
 use std::fmt;
 use std::io::{self, BufRead};
+use std::path::PathBuf;
+
+pub use fs::{FsError, GuestFs, MAX_CAT_BYTES};
 
 /// Console process identity (not PID 1 init).
 pub const CONSOLE_IDENTITY: &str = "ryoku-console";
@@ -24,7 +32,7 @@ pub const MAX_ARGS: usize = 16;
 /// for a CRLF/LF terminator before declaring the line too long.
 pub const LINE_READ_MARGIN: usize = 2;
 
-/// Builtins supported in Mission 011.
+/// Builtins supported in Mission 011 + experimental FS (Mission 012).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Help,
@@ -32,6 +40,34 @@ pub enum Command {
     Status,
     Echo(Vec<String>),
     Clear,
+    Pwd,
+    Ls(Option<String>),
+    Cat(String),
+}
+
+/// REPL session holding the confined FS cursor.
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub fs: GuestFs,
+}
+
+impl Session {
+    #[must_use]
+    pub fn new(fs: GuestFs) -> Self {
+        Self { fs }
+    }
+
+    /// Guest default: root `/`, cwd `/home/ryoku` when present.
+    #[must_use]
+    pub fn guest_default() -> Self {
+        Self::new(GuestFs::guest_root())
+    }
+
+    /// Host/test session rooted at `root`.
+    #[must_use]
+    pub fn with_root(root: PathBuf) -> Self {
+        Self::new(GuestFs::new(root))
+    }
 }
 
 /// Parse / validation failures (no shell fallback).
@@ -233,6 +269,30 @@ pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
             }
             Ok(Command::Clear)
         }
+        "pwd" => {
+            if tokens.len() != 1 {
+                return Err(ParseError::TooManyArgs {
+                    count: tokens.len(),
+                });
+            }
+            Ok(Command::Pwd)
+        }
+        "ls" => {
+            if tokens.len() > 2 {
+                return Err(ParseError::TooManyArgs {
+                    count: tokens.len(),
+                });
+            }
+            Ok(Command::Ls(tokens.get(1).cloned()))
+        }
+        "cat" => {
+            if tokens.len() != 2 {
+                return Err(ParseError::TooManyArgs {
+                    count: tokens.len(),
+                });
+            }
+            Ok(Command::Cat(tokens[1].clone()))
+        }
         "echo" => Ok(Command::Echo(tokens[1..].to_vec())),
         other => Err(ParseError::UnknownCommand {
             name: other.to_string(),
@@ -249,12 +309,12 @@ pub fn startup_banner(version: &str) -> String {
     )
 }
 
-/// Render command output (no side effects beyond the returned string).
+/// Render pure (non-FS) command output.
 #[must_use]
 pub fn render(cmd: &Command) -> String {
     match cmd {
         Command::Help => {
-            "ryoku-console builtins:\n  help     — this list\n  version  — console version\n  status   — short honesty / readiness status\n  echo …   — print arguments (no expansion)\n  clear    — clear screen (ANSI)\n\nLimited parser: no shell metacharacters, no pipes/redirects/substitution.\nNot a product OS login shell. Separate from ryoku-init PID 1.\n"
+            "ryoku-console builtins:\n  help     — this list\n  version  — console version\n  status   — short honesty / readiness status\n  echo …   — print arguments (no expansion)\n  clear    — clear screen (ANSI)\n  pwd      — print experimental cwd\n  ls [path]— list directory (experimental FS)\n  cat path — read file (experimental FS, capped)\n\nLimited parser: no shell metacharacters, no pipes/redirects/substitution.\nNot a product OS login shell. Separate from ryoku-init PID 1.\n"
                 .to_string()
         }
         Command::Version => {
@@ -262,10 +322,11 @@ pub fn render(cmd: &Command) -> String {
         }
         Command::Status => {
             format!(
-                "{CONSOLE_IDENTITY}: interactive prototype (Mission 011)\n\
+                "{CONSOLE_IDENTITY}: Ryoku Minimal interactive (Mission 012)\n\
                  pid1_core: separate (ryoku-init owns guest pid=1 markers)\n\
                  product_os_boot: NOT claimed\n\
                  parser: limited builtins only\n\
+                 fs: experimental initramfs view (pwd/ls/cat)\n\
                  network: none (lab default)\n"
             )
         }
@@ -277,15 +338,39 @@ pub fn render(cmd: &Command) -> String {
             }
         }
         Command::Clear => "\u{001b}[2J\u{001b}[H".to_string(),
+        // FS commands need a session — callers should use `eval_line_in`.
+        Command::Pwd | Command::Ls(_) | Command::Cat(_) => {
+            format!("{CONSOLE_IDENTITY}: internal: FS command requires session\n")
+        }
     }
 }
 
-/// Parse then render; empty lines yield empty Ok for REPL convenience.
+/// Eval FS-aware command against a [`Session`].
+pub fn render_in(session: &Session, cmd: &Command) -> Result<String, FsError> {
+    match cmd {
+        Command::Pwd => Ok(session.fs.pwd()),
+        Command::Ls(path) => session.fs.ls(path.as_deref()),
+        Command::Cat(path) => session.fs.cat(path),
+        other => Ok(render(other)),
+    }
+}
+
+/// Parse then render without FS (FS commands return a session-required message).
+/// Empty lines yield empty Ok for REPL convenience.
 pub fn eval_line(raw: &str) -> Result<String, ParseError> {
     match parse_line(raw) {
         Err(ParseError::Empty) => Ok(String::new()),
         Err(err) => Err(err),
         Ok(cmd) => Ok(render(&cmd)),
+    }
+}
+
+/// Parse + session-aware eval. FS errors are mapped to a display string via `Err`.
+pub fn eval_line_in(session: &Session, raw: &str) -> Result<String, String> {
+    match parse_line(raw) {
+        Err(ParseError::Empty) => Ok(String::new()),
+        Err(err) => Err(err.to_string()),
+        Ok(cmd) => render_in(session, &cmd).map_err(|e| e.to_string()),
     }
 }
 
@@ -406,6 +491,46 @@ mod tests {
     }
 
     #[test]
+    fn pwd_ls_cat_parse_and_session_eval() {
+        assert!(matches!(parse_line("pwd").unwrap(), Command::Pwd));
+        assert_eq!(parse_line("ls").unwrap(), Command::Ls(None));
+        assert_eq!(
+            parse_line("ls /etc").unwrap(),
+            Command::Ls(Some("/etc".into()))
+        );
+        assert_eq!(
+            parse_line("cat /etc/ryoku-release").unwrap(),
+            Command::Cat("/etc/ryoku-release".into())
+        );
+        assert!(matches!(
+            parse_line("cat").unwrap_err(),
+            ParseError::TooManyArgs { count: 1 }
+        ));
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("ryoku-console-sess-{nanos}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("home/ryoku")).unwrap();
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        std::fs::write(root.join("etc/ryoku-release"), b"ryoku-minimal\n").unwrap();
+        std::fs::write(root.join("home/ryoku/note.txt"), b"hi\n").unwrap();
+        let session = Session::with_root(root.clone());
+        assert_eq!(eval_line_in(&session, "pwd").unwrap(), "/home/ryoku\n");
+        assert!(eval_line_in(&session, "ls").unwrap().contains("note.txt"));
+        assert_eq!(
+            eval_line_in(&session, "cat /etc/ryoku-release").unwrap(),
+            "ryoku-minimal\n"
+        );
+        assert!(eval_line_in(&session, "cat /../../etc/passwd")
+            .unwrap_err()
+            .contains("escape"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn rejects_tabs_and_cr_inside_commands() {
         for line in ["\thelp", "help\t", "echo\thello", "echo hello\tworld"] {
             assert!(
@@ -523,11 +648,40 @@ mod tests {
             Command::Version,
             Command::Status,
             Command::Clear,
+            Command::Pwd,
+            Command::Ls(None),
+            Command::Cat("x".into()),
         ] {
             let out = render(&cmd);
             assert!(!output_claims_boot_seed_ready(&out));
             assert!(!out.contains("READY"), "must not contain READY: {out:?}");
         }
+    }
+
+    #[test]
+    fn repl_script_without_qemu_help_pwd() {
+        // Future guest harness shape — host-side dialogue, no QEMU.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("ryoku-console-repl-{nanos}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("home/ryoku")).unwrap();
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        std::fs::write(root.join("etc/ryoku-release"), b"ryoku-minimal 0.1.0\n").unwrap();
+        let session = Session::with_root(root.clone());
+        let script = ["help", "pwd", "ls /etc", "cat /etc/ryoku-release", "status"];
+        let mut out = String::new();
+        for line in script {
+            out.push_str(&eval_line_in(&session, line).unwrap());
+        }
+        assert!(out.contains("pwd"));
+        assert!(out.contains("/home/ryoku"));
+        assert!(out.contains("ryoku-release"));
+        assert!(out.contains("ryoku-minimal 0.1.0"));
+        assert!(!output_claims_boot_seed_ready(&out));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

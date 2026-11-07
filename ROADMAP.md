@@ -62,10 +62,19 @@ Ver [docs/testing/boot-seed.md](docs/testing/boot-seed.md), [boot-seed-t3.md](do
 - [x] Crate `ryoku-console` (help/version/status/echo/clear) separado do PID 1
 - [x] Parser limitado (sem shell) + testes de segurança
 - [x] Perfil QEMU `console-interactive` (`serial_log=stdio`) **sem** substituir T3 file-serial
-- [ ] Boot guest interativo real / wiring console após READY (missão futura)
+- [x] Wiring console após READY + Minimal FS (Missão 012 — sem QEMU guest run)
+- [ ] Boot guest interativo real autorizado (missão futura)
 - [ ] Claim de shell de produto (nunca nesta fase)
 
-Ver [docs/testing/console.md](docs/testing/console.md).
+Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/testing/ryoku-minimal.md).
+
+## Fase 2.7 — Ryoku Minimal (Missão 012) — review stop
+
+- [x] `ryoku-init` spawna `ryoku-console` uma vez após READY (se `/bin/ryoku-console` existir)
+- [x] Initramfs experimental separado do T3 (`ryoku-minimal.cpio.gz`)
+- [x] Builtins `pwd` / `ls` / `cat` + testes sem QEMU
+- [x] Perfil interativo + planos de harness (EXECUTE recusado)
+- [ ] Sessão QEMU guest autorizada / harness automatizado real
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

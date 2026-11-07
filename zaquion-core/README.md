@@ -15,7 +15,7 @@ zaquion-core/
 ├── ryoku-doctor/           # read-only host diagnostics CLI
 ├── ryoku-virtlab/          # Virtual Lab harness T0/T1/T2/T3
 ├── ryoku-init/             # Boot Seed PID 1 prototype (Mission 008)
-└── ryoku-console/          # Interactive console prototype (Mission 011; ≠ PID 1)
+└── ryoku-console/          # Interactive console (Mission 011/012; ≠ PID 1)
 ```
 
 ## License
@@ -58,6 +58,6 @@ Missing QEMU or KVM access may make the doctor print **WARN** and Virtual Lab T1
 | `ryoku-doctor` | bin (+ lib) | Host diagnostics (Mission 002+) |
 | `ryoku-virtlab` | bin (+ lib) | Virtual Lab T0–T3 harness |
 | `ryoku-init` | bin (+ lib) | Boot Seed PID 1 prototype (Mission 008) |
-| `ryoku-console` | bin (+ lib) | Interactive console prototype (Mission 011; separate from PID 1) |
+| `ryoku-console` | bin (+ lib) | Interactive console / Minimal FS (Mission 011–012; ≠ PID 1) |
 
 No privileged system services and no kernel code live here yet.

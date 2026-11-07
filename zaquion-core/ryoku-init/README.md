@@ -1,10 +1,18 @@
-# `ryoku-init` — Ryoku Boot Seed (Mission 008)
+# `ryoku-init` — Ryoku Boot Seed / Minimal PID 1 (Mission 008 / 012)
 
 Minimal **PID 1** prototype for early QEMU smoke tests. Emits
 `RYOKU_BOOT_SEED_READY` **only when `pid == 1`**. Non-PID-1 invocations print a
 diagnostic (no READY) and exit non-zero. Virtual Lab **T3** requires guest serial
 `ryoku-init: pid=1` **and** `RYOKU_BOOT_SEED_READY` — **not** Alpine reference boot,
 and **not** a finished Ryoku OS.
+
+### Interactive mode (Mission 012 — separate from T3)
+
+After READY, if `/bin/ryoku-console` exists (Ryoku Minimal initramfs), PID 1
+spawns it **once** with stdin/stdout/stderr on `/dev/console`, reaps the child,
+then idles forever. Original Boot Seed initramfs lacks that binary → **exact**
+prior T3 idle-after-READY behavior. Console exit/EOF/failure must **not** kill
+PID 1; there is **no** uncontrolled restart loop.
 
 ## Build (dev / tests)
 
