@@ -9,9 +9,9 @@ name: ryoku-minimal-package
 
 on:
   push:
-    branches: ["cursor/ryoku-minimal-012"]
+    branches: ["cursor/ryoku-minimal-012", "cursor/ryoku-hardware-013*"]
   pull_request:
-    branches: [main]
+    branches: [main, "cursor/ryoku-minimal-012"]
   workflow_dispatch:
 
 permissions:
