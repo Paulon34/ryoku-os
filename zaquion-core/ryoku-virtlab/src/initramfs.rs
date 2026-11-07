@@ -24,6 +24,13 @@ pub const REQUIRED_HOME_MEMBER: &str = "./home/ryoku";
 /// Default contents of `./etc/ryoku-release` in Minimal initramfs.
 pub const RYOKU_RELEASE_TEXT: &str = "ryoku-minimal 0.1.0 (Mission 012)\n";
 
+/// Graphics package release text (Mission 014) — separate from serial Minimal package.
+pub const RYOKU_GRAPHICS_RELEASE_TEXT: &str =
+    "ryoku-minimal 0.1.0 (Mission 014 graphics preview)\n";
+
+/// Graphics demo binary member (Mission 014 package only).
+pub const REQUIRED_GRAPHICS_DEMO_MEMBER: &str = "./bin/ryoku-graphics-demo";
+
 const S_IFREG: u32 = 0o100_000;
 const S_IFDIR: u32 = 0o040_000;
 const S_IFCHR: u32 = 0o020_000;
@@ -190,6 +197,37 @@ pub fn write_ryoku_minimal_newc(
 ) -> io::Result<()> {
     write_newc_archive(
         &ryoku_minimal_members(init_bytes, console_bytes, release_text),
+        out,
+    )
+}
+
+/// Ryoku Minimal + graphics demo members (Mission 014). Does not replace T3/Minimal serial pack.
+#[must_use]
+pub fn ryoku_graphics_members(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    graphics_demo_bytes: &[u8],
+    release_text: &str,
+) -> Vec<NewcMember> {
+    let mut members = ryoku_minimal_members(init_bytes, console_bytes, release_text);
+    members.push(NewcMember::file(
+        "./bin/ryoku-graphics-demo",
+        0o755,
+        graphics_demo_bytes.to_vec(),
+    ));
+    members
+}
+
+/// Write graphics-preview newc archive (uncompressed).
+pub fn write_ryoku_graphics_newc(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    graphics_demo_bytes: &[u8],
+    release_text: &str,
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    write_newc_archive(
+        &ryoku_graphics_members(init_bytes, console_bytes, graphics_demo_bytes, release_text),
         out,
     )
 }
@@ -508,6 +546,36 @@ pub fn pack_ryoku_minimal_from_paths(
     Ok(out)
 }
 
+/// Validate graphics preview cpio (Minimal layout + graphics demo binary).
+pub fn validate_ryoku_graphics_cpio(data: &[u8]) -> Result<(), String> {
+    validate_ryoku_minimal_cpio(data)?;
+    let members = list_newc_members(data)?;
+    if !members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER) {
+        return Err(format!("missing {REQUIRED_GRAPHICS_DEMO_MEMBER}"));
+    }
+    Ok(())
+}
+
+/// Pack graphics preview initramfs from init + console + graphics-demo static binaries.
+pub fn pack_ryoku_graphics_from_paths(
+    init_path: &Path,
+    console_path: &Path,
+    graphics_demo_path: &Path,
+    release_text: &str,
+) -> Result<Vec<u8>, String> {
+    let init = fs::read(init_path).map_err(|e| format!("read init: {e}"))?;
+    let console = fs::read(console_path).map_err(|e| format!("read console: {e}"))?;
+    let demo = fs::read(graphics_demo_path).map_err(|e| format!("read graphics-demo: {e}"))?;
+    if init.is_empty() || console.is_empty() || demo.is_empty() {
+        return Err("init/console/graphics-demo binary empty".into());
+    }
+    let mut out = Vec::new();
+    write_ryoku_graphics_newc(&init, &console, &demo, release_text, &mut out)
+        .map_err(|e| e.to_string())?;
+    validate_ryoku_graphics_cpio(&out)?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,6 +641,24 @@ mod tests {
         assert!(validate_boot_seed_cpio(&buf)
             .unwrap_err()
             .contains("ryoku-console"));
+    }
+
+    #[test]
+    fn ryoku_graphics_has_demo_binary() {
+        let mut buf = Vec::new();
+        write_ryoku_graphics_newc(
+            b"INIT",
+            b"CONSOLE",
+            b"GFXDEMO",
+            RYOKU_GRAPHICS_RELEASE_TEXT,
+            &mut buf,
+        )
+        .unwrap();
+        validate_ryoku_graphics_cpio(&buf).unwrap();
+        let members = list_newc_members(&buf).unwrap();
+        assert!(members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER));
+        // Still validates as Minimal layout too.
+        validate_ryoku_minimal_cpio(&buf).unwrap();
     }
 
     #[test]

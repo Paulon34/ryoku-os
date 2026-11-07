@@ -1,0 +1,136 @@
+# Mission 014 — Ryoku Minimal GRAPHICS preview package (separate from serial Minimal).
+#
+# Builds musl init+console+graphics-demo, packs ryoku-graphics.cpio.gz, reuses lab
+# kernel extract, uploads downloadable artifacts + SHA256SUMS. Does NOT run QEMU.
+# Does NOT replace ryoku-minimal-package / ryoku-minimal.cpio.gz.
+name: ryoku-graphics-package
+
+on:
+  push:
+    branches: ["cursor/ryoku-graphics-014*"]
+  pull_request:
+    branches: [main, "cursor/ryoku-hardware-013*", "cursor/ryoku-minimal-012"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ryoku-graphics-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.83.0"
+  SOURCE_DATE_EPOCH: "1700000000"
+  RYOKU_FETCH_EXECUTE: "1"
+  RYOKU_VERIFY_GPG: "1"
+  RYOKU_KERNEL_EXTRACT_EXECUTE: "1"
+  RYOKU_GRAPHICS_PREP_EXECUTE: "1"
+  RYOKU_GRAPHICS_QEMU_EXECUTE: "0"
+  RYOKU_MINIMAL_QEMU_EXECUTE: "0"
+  RYOKU_T3_EXECUTE: "0"
+
+jobs:
+  package:
+    name: musl-graphics-package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            musl-tools \
+            gzip \
+            xorriso \
+            cpio
+
+      - name: Install Rust toolchain (+ musl target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-musl
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: zaquion-core
+
+      - name: Fetch + verify Alpine virt ISO (reference channel)
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/fetch-reference-image.sh
+
+      - name: Extract boot/vmlinuz-virt → ryoku-boot-seed-vmlinuz
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/extract-boot-seed-kernel.sh
+          test -f tests/qemu/run/ryoku-boot-seed-vmlinuz
+
+      - name: Build musl + pack ryoku-graphics.cpio.gz
+        run: |
+          set -euo pipefail
+          chmod +x tests/qemu/scripts/prep-ryoku-graphics-artifacts.sh
+          tests/qemu/scripts/prep-ryoku-graphics-artifacts.sh
+          test -f tests/qemu/run/ryoku-graphics.cpio.gz
+          test -f tests/qemu/run/SHA256SUMS-graphics.txt
+          test -x zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-graphics-demo
+          # Serial Minimal artifact must not be required/overwritten here.
+          echo "graphics_package_build=PASS" | tee tests/qemu/results/ryoku-graphics-status.txt
+          echo "first_graphical_boot=NOT_RUN" | tee -a tests/qemu/results/ryoku-graphics-status.txt
+          echo "FIRST_PIXELS=NOT_RUN" | tee -a tests/qemu/results/ryoku-graphics-status.txt
+
+      - name: Graphics ZIP layout test (no QEMU)
+        run: |
+          set -euo pipefail
+          chmod +x tests/qemu/scripts/run-ryoku-graphics-qemu.sh
+          chmod +x tests/qemu/scripts/test-ryoku-graphics-vm-zip.sh
+          tests/qemu/scripts/test-ryoku-graphics-vm-zip.sh | tee tests/qemu/results/ryoku-graphics-zip-test.txt
+
+      - name: Plan/validate graphics launcher (repo mode, no guest)
+        run: |
+          set -euo pipefail
+          tests/qemu/scripts/run-ryoku-graphics-qemu.sh | tee tests/qemu/results/ryoku-graphics-qemu-plan.txt
+          grep -q 'OK: SHA256SUMS verified' tests/qemu/results/ryoku-graphics-qemu-plan.txt
+          grep -q 'FIRST_PIXELS=NOT_RUN' tests/qemu/results/ryoku-graphics-qemu-plan.txt
+          if grep -q 'AUTHORIZED: starting QEMU' tests/qemu/results/ryoku-graphics-qemu-plan.txt; then
+            echo "Honesty violation: must not start QEMU"
+            exit 1
+          fi
+
+      - name: Stage downloadable graphics VM package
+        run: |
+          set -euo pipefail
+          PKG=tests/qemu/results/ryoku-graphics-vm-package
+          rm -rf "$PKG"
+          mkdir -p "$PKG/bin-musl"
+          cp -a tests/qemu/run/ryoku-boot-seed-vmlinuz "$PKG/"
+          cp -a tests/qemu/run/ryoku-graphics.cpio.gz "$PKG/"
+          cp -a tests/qemu/README-GRAPHICS.md "$PKG/"
+          cp -a tests/qemu/scripts/run-ryoku-graphics-qemu.sh "$PKG/"
+          cp -a tests/qemu/configs/console-graphics.rvl.conf "$PKG/"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console "$PKG/bin-musl/"
+          cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-graphics-demo "$PKG/bin-musl/"
+          (
+            cd "$PKG"
+            sha256sum ryoku-boot-seed-vmlinuz ryoku-graphics.cpio.gz \
+              bin-musl/ryoku-init bin-musl/ryoku-console bin-musl/ryoku-graphics-demo \
+              | tee SHA256SUMS.txt
+          )
+          ( cd "$PKG" && RYOKU_GRAPHICS_QEMU_EXECUTE=0 ./run-ryoku-graphics-qemu.sh ) \
+            | tee tests/qemu/results/ryoku-graphics-staged-zip-plan.txt
+          grep -q 'mode:     standalone' tests/qemu/results/ryoku-graphics-staged-zip-plan.txt
+
+      - name: Upload Ryoku graphics VM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryoku-graphics-vm-${{ github.sha }}
+          path: tests/qemu/results/ryoku-graphics-vm-package/
+          if-no-files-found: error
+          retention-days: 30

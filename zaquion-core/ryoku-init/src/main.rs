@@ -47,7 +47,12 @@ fn announce(text: &str) {
 
 /// Mount procfs + sysfs for hardware probe honesty. WARN on failure; never abort console.
 fn mount_proc_sys_best_effort() {
-    for (source, target, fstype) in [("proc", "/proc", "proc"), ("sysfs", "/sys", "sysfs")] {
+    for (source, target, fstype) in [
+        ("proc", "/proc", "proc"),
+        ("sysfs", "/sys", "sysfs"),
+        // Populate /dev/fb0 /dev/dri/* when drivers exist; kernel should recreate console.
+        ("devtmpfs", "/dev", "devtmpfs"),
+    ] {
         // Ensure mountpoint dirs exist (initramfs ships them; recreate if needed).
         let _ = std::fs::create_dir_all(target);
         match mount(source, target, fstype, MountFlags::empty(), None) {

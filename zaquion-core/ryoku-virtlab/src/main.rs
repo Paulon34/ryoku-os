@@ -8,8 +8,9 @@ use std::process::ExitCode;
 
 use ryoku_virtlab::elf_static::prove_static_x86_64_elf;
 use ryoku_virtlab::initramfs::{
-    pack_boot_seed_from_init_path, pack_ryoku_minimal_from_paths, validate_boot_seed_cpio,
-    validate_ryoku_minimal_cpio, RYOKU_RELEASE_TEXT,
+    pack_boot_seed_from_init_path, pack_ryoku_graphics_from_paths, pack_ryoku_minimal_from_paths,
+    validate_boot_seed_cpio, validate_ryoku_minimal_cpio, RYOKU_GRAPHICS_RELEASE_TEXT,
+    RYOKU_RELEASE_TEXT,
 };
 use ryoku_virtlab::lab::discover_lab_root_from;
 use ryoku_virtlab::report::{exit_code, format_lab_report};
@@ -113,6 +114,81 @@ fn main() -> ExitCode {
                         }
                     }
                 }
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        "pack-ryoku-graphics-cpio" => {
+            // Mission 014 — Minimal + ryoku-graphics-demo (does not replace serial Minimal package).
+            let mut init: Option<PathBuf> = None;
+            let mut console: Option<PathBuf> = None;
+            let mut demo: Option<PathBuf> = None;
+            let mut out: Option<PathBuf> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--init" => {
+                        i += 1;
+                        init = args.get(i).map(PathBuf::from);
+                    }
+                    "--console" => {
+                        i += 1;
+                        console = args.get(i).map(PathBuf::from);
+                    }
+                    "--graphics-demo" => {
+                        i += 1;
+                        demo = args.get(i).map(PathBuf::from);
+                    }
+                    "--out" => {
+                        i += 1;
+                        out = args.get(i).map(PathBuf::from);
+                    }
+                    other => {
+                        eprintln!("error: unknown arg `{other}`");
+                        return ExitCode::from(2);
+                    }
+                }
+                i += 1;
+            }
+            let (Some(init), Some(console), Some(demo), Some(out)) = (init, console, demo, out)
+            else {
+                eprintln!(
+                    "usage: ryoku-virtlab pack-ryoku-graphics-cpio --init <bin> --console <bin> --graphics-demo <bin> --out <file.cpio>"
+                );
+                return ExitCode::from(2);
+            };
+            for (label, path) in [
+                ("init", &init),
+                ("console", &console),
+                ("graphics-demo", &demo),
+            ] {
+                if let Err(err) = prove_static_x86_64_elf(path) {
+                    eprintln!("REFUSE pack: {label} not proven static x86_64: {err}");
+                    return ExitCode::from(1);
+                }
+            }
+            match pack_ryoku_graphics_from_paths(
+                &init,
+                &console,
+                &demo,
+                RYOKU_GRAPHICS_RELEASE_TEXT,
+            ) {
+                Ok(bytes) => match fs::File::create(&out).and_then(|mut f| f.write_all(&bytes)) {
+                    Ok(()) => {
+                        println!(
+                            "OK: wrote {} ({} bytes newc graphics preview)",
+                            out.display(),
+                            bytes.len()
+                        );
+                        ExitCode::SUCCESS
+                    }
+                    Err(err) => {
+                        eprintln!("error writing {}: {err}", out.display());
+                        ExitCode::from(1)
+                    }
+                },
                 Err(err) => {
                     eprintln!("error: {err}");
                     ExitCode::from(1)

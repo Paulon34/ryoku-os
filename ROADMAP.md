@@ -87,11 +87,12 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Guest 013 **`PASS_MANUAL`** (2026-11-07; tip `649b850`; ≠ CI)
 - [ ] First pixels / gráfico (Missão 014) — **NOT_RUN**
 
-## Fase 2.9 — First Pixels (Missão 014) — planejado / em curso
+## Fase 2.9 — First Pixels (Missão 014)
 
-- [ ] Inspeção DRM/KMS/fb/virtio-gpu no lab kernel (sem assumir driver só por PCI)
-- [ ] `hw graphics` + perfil QEMU gráfico separado (serial intacto; dual gate)
-- [ ] `ryoku-graphics-demo` protótipo estático; FIRST_PIXELS só após teste visual real
+- [x] Inspeção/documentação DRM/KMS/fb/virtio-gpu (sem claim de driver; sem modules host)
+- [x] `hw graphics` + PCI class/bound-driver honesty; perfil QEMU gráfico separado
+- [x] `ryoku-graphics-demo` + package workflow separado; FIRST_PIXELS=**NOT_RUN**
+- [ ] Boot gráfico guest + pixels visuais (evidência manual futura)
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 
