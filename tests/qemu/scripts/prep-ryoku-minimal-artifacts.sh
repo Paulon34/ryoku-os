@@ -63,6 +63,14 @@ RYOKU_MINIMAL_INITRAMFS_EXECUTE=1 "$ROOT/tests/qemu/scripts/build-ryoku-minimal-
   fi
 } | tee "$SUMS"
 
+# Short-name SUMS next to blobs for repo-mode launcher / ZIP parity.
+if [[ -f "$KERNEL" && -f "$INITRD" ]]; then
+  (
+    cd "$LAB/run"
+    sha256sum ryoku-boot-seed-vmlinuz ryoku-minimal.cpio.gz | tee SHA256SUMS.txt
+  )
+fi
+
 cp -f "$ROOT/tests/qemu/README-VM.md" "$README_VM" 2>/dev/null \
   || cp -f "$ROOT/docs/testing/ryoku-minimal.md" "$README_VM"
 
