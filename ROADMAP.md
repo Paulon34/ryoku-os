@@ -92,7 +92,8 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Inspeção/documentação DRM/KMS/fb/virtio-gpu (sem claim de driver; sem modules host)
 - [x] `hw graphics` + PCI class/bound-driver honesty; perfil QEMU gráfico separado
 - [x] `ryoku-graphics-demo` + package workflow separado; FIRST_PIXELS=**NOT_RUN**
-- [x] 014.1: Alpine virt DRM modules pin + pack + PID1 controlled load/demo start (FIRST_PIXELS still **NOT_RUN** until visual confirm)
+- [x] 014.1: Alpine virt DRM modules pin + pack + PID1 controlled load/demo start
+- [x] 014.2: fb0 explicit-length mmap + ioctl geometry (014.1 attempt was **FAIL_MANUAL**; FIRST_PIXELS still **NOT_RUN** until visual confirm)
 - [ ] Boot gráfico guest + pixels visuais (evidência **PASS_MANUAL** futura)
 
 ## Fase 3 — Primeiros serviços Zaquion Core

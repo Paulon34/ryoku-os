@@ -1,11 +1,15 @@
-//! Ryoku graphics demo — First Pixels prototype (Mission 014 / 014.1).
+//! Ryoku graphics demo — First Pixels prototype (Mission 014 / 014.1 / 014.2).
 //!
 //! Builds an in-memory RGB24 framebuffer with a static title, then blits into a
 //! caller-provided `/dev/fb0` mapping when a real framebuffer node exists.
 //! Prefers fbdev. DRM-only (card without fb0) is reported honestly — no dumb-buffer
 //! modeset/3D in this mission (isolated for a later step).
 //!
+//! Mission 014.2: geometry validation + **explicit** mmap length (never file-size
+//! mmap of `/dev/fb0`, which is typically a 0-length char device).
+//!
 //! **`FIRST_PIXELS` is never auto-claimed PASS** — requires human visual confirmation.
+//! Creating a software buffer alone is **not** a present.
 
 #![forbid(unsafe_code)]
 
@@ -17,6 +21,9 @@ pub const DEMO_IDENTITY: &str = "ryoku-graphics-demo";
 
 /// Lines drawn into the software buffer (and onto fb0 when present).
 pub const TITLE_LINES: &[&str] = &["RYOKU OS", "Minimal Developer Preview", "Rust Userland"];
+
+/// Absolute upper bound on a single fb map (guard against absurd ioctl/sysfs values).
+pub const MAX_FB_MAP_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RgbBuffer {
@@ -143,12 +150,105 @@ pub fn render_title(buf: &mut RgbBuffer) {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FbGeometry {
     pub width: u32,
     pub height: u32,
     pub bpp: u32,
     pub stride: u32,
+}
+
+/// Validated map plan derived from geometry (+ optional `smem_len` from fixinfo).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FbMapPlan {
+    pub geom: FbGeometry,
+    /// Bytes required for visible scanout (`stride * height`).
+    pub visible_bytes: usize,
+    /// Length to request from `mmap` (≥ `visible_bytes`; may be `smem_len`).
+    pub map_len: usize,
+    pub source: &'static str,
+}
+
+/// Bytes per pixel for supported formats.
+pub fn bytes_per_pixel(bpp: u32) -> Result<u32, String> {
+    match bpp {
+        24 | 32 => Ok(bpp / 8),
+        _ => Err(format!(
+            "{DEMO_IDENTITY}: unsupported bits_per_pixel={bpp} (need 24 or 32)"
+        )),
+    }
+}
+
+/// Compute `stride * height` with overflow checks.
+pub fn checked_visible_bytes(stride: u32, height: u32) -> Result<usize, String> {
+    let stride_us = stride as usize;
+    let height_us = height as usize;
+    stride_us.checked_mul(height_us).ok_or_else(|| {
+        format!("{DEMO_IDENTITY}: stride*height overflow (stride={stride} height={height})")
+    })
+}
+
+/// Validate width/height/bpp/stride and produce an mmap plan.
+///
+/// `smem_len_hint`: from `FBIOGET_FSCREENINFO.smem_len` when available.
+pub fn validate_fb_geometry(
+    geom: FbGeometry,
+    smem_len_hint: Option<u32>,
+    source: &'static str,
+) -> Result<FbMapPlan, String> {
+    if geom.width == 0 || geom.height == 0 {
+        return Err(format!(
+            "{DEMO_IDENTITY}: invalid geometry — zero width/height ({}x{})",
+            geom.width, geom.height
+        ));
+    }
+    let bpp_bytes = bytes_per_pixel(geom.bpp)?;
+    let min_stride = geom
+        .width
+        .checked_mul(bpp_bytes)
+        .ok_or_else(|| format!("{DEMO_IDENTITY}: width*bpp overflow"))?;
+    if geom.stride < min_stride {
+        return Err(format!(
+            "{DEMO_IDENTITY}: stride {} < min {} (width={} bpp={})",
+            geom.stride, min_stride, geom.width, geom.bpp
+        ));
+    }
+    let visible = checked_visible_bytes(geom.stride, geom.height)?;
+    if visible == 0 {
+        return Err(format!("{DEMO_IDENTITY}: visible capacity is zero"));
+    }
+    if visible > MAX_FB_MAP_BYTES {
+        return Err(format!(
+            "{DEMO_IDENTITY}: visible capacity {visible} exceeds MAX_FB_MAP_BYTES={MAX_FB_MAP_BYTES}"
+        ));
+    }
+
+    let map_len = match smem_len_hint {
+        Some(smem) => {
+            let smem_us = smem as usize;
+            if smem_us < visible {
+                return Err(format!(
+                    "{DEMO_IDENTITY}: smem_len={smem} < visible capacity={visible} \
+                     (geom {}x{} bpp={} stride={})",
+                    geom.width, geom.height, geom.bpp, geom.stride
+                ));
+            }
+            if smem_us > MAX_FB_MAP_BYTES {
+                return Err(format!(
+                    "{DEMO_IDENTITY}: smem_len={smem} exceeds MAX_FB_MAP_BYTES={MAX_FB_MAP_BYTES}"
+                ));
+            }
+            smem_us
+        }
+        None => visible,
+    };
+
+    Ok(FbMapPlan {
+        geom,
+        visible_bytes: visible,
+        map_len,
+        source,
+    })
 }
 
 /// Read fb0 geometry from sysfs under `root` (guest `/` or fixture).
@@ -186,34 +286,54 @@ pub fn read_fb0_geometry(root: &Path) -> io::Result<FbGeometry> {
 }
 
 /// Blit RGB888 software buffer into an fb mmap (32bpp XRGB little-endian or 24bpp BGR).
+///
+/// Writes at most `min(src, geom)` pixels; never past `visible` capacity. Source may be
+/// smaller than the FB (title buffer vs odd QEMU modes like 941×474).
 pub fn blit_rgb_to_fb(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> io::Result<()> {
-    if geom.width == 0 || geom.height == 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "zero geometry"));
-    }
-    let need = geom.stride as usize * geom.height as usize;
-    if map.len() < need {
+    let plan = validate_fb_geometry(geom.clone(), None, "blit")
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    if map.len() < plan.visible_bytes {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
-            "mmap shorter than stride*height",
+            format!(
+                "mmap shorter than stride*height: map_len={} visible={} \
+                 (geom {}x{} bpp={} stride={})",
+                map.len(),
+                plan.visible_bytes,
+                geom.width,
+                geom.height,
+                geom.bpp,
+                geom.stride
+            ),
         ));
-    }
-    for b in map.iter_mut().take(need) {
-        *b = 0;
     }
     let bpp = geom.bpp;
-    if bpp != 32 && bpp != 24 {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            format!("unsupported bits_per_pixel={bpp} (need 24 or 32)"),
-        ));
+    let bpp_bytes = (bpp / 8) as usize;
+    // Clear only the visible region (not beyond reported capacity).
+    for b in map.iter_mut().take(plan.visible_bytes) {
+        *b = 0;
     }
-    for y in 0..geom.height.min(src.height) {
-        for x in 0..geom.width.min(src.width) {
+    let copy_w = geom.width.min(src.width);
+    let copy_h = geom.height.min(src.height);
+    for y in 0..copy_h {
+        for x in 0..copy_w {
             let si = ((y as usize) * (src.width as usize) + (x as usize)) * 3;
+            if si + 2 >= src.pixels.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "source buffer truncated",
+                ));
+            }
             let r = src.pixels[si];
             let g = src.pixels[si + 1];
             let b = src.pixels[si + 2];
-            let di = (y as usize) * (geom.stride as usize) + (x as usize) * (bpp as usize / 8);
+            let di = (y as usize) * (geom.stride as usize) + (x as usize) * bpp_bytes;
+            if di + bpp_bytes > plan.visible_bytes {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("OOB dest pixel x={x} y={y} di={di} bpp_bytes={bpp_bytes}"),
+                ));
+            }
             if bpp == 32 {
                 map[di] = b;
                 map[di + 1] = g;
@@ -311,7 +431,7 @@ pub fn probe_fb0(root: &Path) -> Result<(PathBuf, FbGeometry), String> {
         if surfaces.dri_card0 || surfaces.sysfs_drm {
             return Err(format!(
                 "{DEMO_IDENTITY}: DRM visible without /dev/fb0 — refusing unpresented buffer \
-                 (dumb-buffer/modeset not enabled in 014.1; prefer fbdev path). \
+                 (dumb-buffer/modeset not enabled; prefer fbdev path). \
                  dri_card0={} sysfs_drm={}",
                 yes_no(surfaces.dri_card0),
                 yes_no(surfaces.sysfs_drm)
@@ -329,6 +449,8 @@ pub fn probe_fb0(root: &Path) -> Result<(PathBuf, FbGeometry), String> {
             root.display()
         )
     })?;
+    // Validate early so callers see clear errors before mmap.
+    let _ = validate_fb_geometry(geom.clone(), None, "sysfs")?;
     Ok((fb_path, geom))
 }
 
@@ -429,6 +551,13 @@ mod tests {
         });
         assert!(s.contains("NOT auto-PASS") || s.contains("confirmation"));
         assert!(!s.contains("FIRST_PIXELS=PASS"));
+        // Software-only must not claim present.
+        let soft = format_outcome(&PresentOutcome::SoftwareOnly {
+            width: 640,
+            height: 480,
+        });
+        assert!(soft.contains("NOT_RUN"));
+        assert!(soft.contains("no present"));
     }
 
     #[test]
@@ -467,5 +596,163 @@ mod tests {
         assert_eq!(TITLE_LINES[0], "RYOKU OS");
         assert_eq!(TITLE_LINES[1], "Minimal Developer Preview");
         assert_eq!(TITLE_LINES[2], "Rust Userland");
+    }
+
+    #[test]
+    fn valid_paulo_dims_941x474() {
+        // Paulo NixOS FAIL_MANUAL case: 941×474 32bpp stride 3764.
+        let geom = FbGeometry {
+            width: 941,
+            height: 474,
+            bpp: 32,
+            stride: 3764,
+        };
+        let plan = validate_fb_geometry(geom.clone(), None, "test").unwrap();
+        assert_eq!(plan.visible_bytes, 3764 * 474);
+        assert_eq!(plan.map_len, plan.visible_bytes);
+        let with_smem =
+            validate_fb_geometry(geom, Some(plan.visible_bytes as u32), "ioctl").unwrap();
+        assert_eq!(with_smem.map_len, with_smem.visible_bytes);
+    }
+
+    #[test]
+    fn padded_stride_is_accepted() {
+        let geom = FbGeometry {
+            width: 100,
+            height: 50,
+            bpp: 32,
+            stride: 512, // > 100*4
+        };
+        let plan = validate_fb_geometry(geom.clone(), None, "test").unwrap();
+        assert_eq!(plan.visible_bytes, 512 * 50);
+        let mut map = vec![0u8; plan.map_len];
+        let src = RgbBuffer::new(64, 32, (1, 2, 3));
+        blit_rgb_to_fb(&mut map, &geom, &src).unwrap();
+    }
+
+    #[test]
+    fn short_map_fails_with_sizes() {
+        let geom = FbGeometry {
+            width: 10,
+            height: 10,
+            bpp: 32,
+            stride: 40,
+        };
+        let mut map = vec![0u8; 40]; // only one row
+        let src = RgbBuffer::new(10, 10, (0, 0, 0));
+        let err = blit_rgb_to_fb(&mut map, &geom, &src).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("mmap shorter"));
+        assert!(msg.contains("map_len=40"));
+        assert!(msg.contains("visible=400"));
+    }
+
+    #[test]
+    fn absurd_capacity_rejected() {
+        // Two u32s always fit in usize on 64-bit; MAX_FB_MAP_BYTES is the guard.
+        let err = validate_fb_geometry(
+            FbGeometry {
+                width: 1,
+                height: u32::MAX,
+                bpp: 32,
+                stride: u32::MAX,
+            },
+            None,
+            "test",
+        )
+        .unwrap_err();
+        assert!(err.contains("MAX_FB_MAP_BYTES"), "{err}");
+        // checked_visible_bytes still uses checked_mul (defensive on 32-bit).
+        assert!(checked_visible_bytes(64, 48).unwrap() == 64 * 48);
+    }
+
+    #[test]
+    fn invalid_zero_geometry_rejected() {
+        let err = validate_fb_geometry(
+            FbGeometry {
+                width: 0,
+                height: 480,
+                bpp: 32,
+                stride: 1920,
+            },
+            None,
+            "test",
+        )
+        .unwrap_err();
+        assert!(err.contains("zero"));
+    }
+
+    #[test]
+    fn unsupported_bpp_rejected() {
+        let err = validate_fb_geometry(
+            FbGeometry {
+                width: 100,
+                height: 100,
+                bpp: 16,
+                stride: 200,
+            },
+            None,
+            "test",
+        )
+        .unwrap_err();
+        assert!(err.contains("unsupported bits_per_pixel=16"));
+    }
+
+    #[test]
+    fn image_smaller_than_fb_blits_without_oob() {
+        let geom = FbGeometry {
+            width: 941,
+            height: 474,
+            bpp: 32,
+            stride: 3764,
+        };
+        let plan = validate_fb_geometry(geom.clone(), None, "test").unwrap();
+        let mut map = vec![0u8; plan.map_len];
+        let mut src = RgbBuffer::new(320, 200, (0, 0, 0));
+        render_title(&mut src);
+        blit_rgb_to_fb(&mut map, &geom, &src).unwrap();
+        // A title pixel should land somewhere in the first 320×200 region.
+        assert!(map.iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn map_size_calc_prefers_smem_when_larger() {
+        let geom = FbGeometry {
+            width: 8,
+            height: 8,
+            bpp: 32,
+            stride: 32,
+        };
+        let plan = validate_fb_geometry(geom, Some(4096), "ioctl").unwrap();
+        assert_eq!(plan.visible_bytes, 32 * 8);
+        assert_eq!(plan.map_len, 4096);
+    }
+
+    #[test]
+    fn smem_shorter_than_visible_rejected() {
+        let geom = FbGeometry {
+            width: 8,
+            height: 8,
+            bpp: 32,
+            stride: 32,
+        };
+        let err = validate_fb_geometry(geom, Some(16), "ioctl").unwrap_err();
+        assert!(err.contains("smem_len"));
+    }
+
+    #[test]
+    fn stride_too_small_rejected() {
+        let err = validate_fb_geometry(
+            FbGeometry {
+                width: 100,
+                height: 10,
+                bpp: 32,
+                stride: 100, // need >= 400
+            },
+            None,
+            "test",
+        )
+        .unwrap_err();
+        assert!(err.contains("stride"));
     }
 }

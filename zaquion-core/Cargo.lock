@@ -67,6 +67,7 @@ version = "0.1.0"
 name = "ryoku-graphics-demo"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "memmap2",
 ]
 

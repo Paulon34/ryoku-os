@@ -1,4 +1,4 @@
-# Ryoku Minimal — graphics preview package (Mission 014 / 014.1)
+# Ryoku Minimal — graphics preview package (Mission 014 / 014.1 / 014.2)
 
 **Separate from** the serial Minimal VM zip (`README-VM.md` / `ryoku-minimal-package`).
 
@@ -10,9 +10,10 @@
 | Pinned Alpine virt DRM modules (12 allowlisted `.ko`) | CI package (checksum + vermagic gated) |
 | `ryoku-graphics.cpio.gz` + SHA256SUMS (+ module provenance) | CI package |
 | Lab kernel (Alpine virt 6.12.114-0-virt, ADR-0002) | Same verified extract channel |
-| Graphics driver inspection (`hw graphics`) | Host fixtures **PASS**; guest **`PASS_MANUAL`** on tip `8355f68` (PCI only; DRM absent) |
-| First graphical boot | **`NOT_RUN`** |
-| `FIRST_PIXELS` visual proof | **`NOT_RUN`** (never auto-PASS) |
+| Graphics driver / fb0 (tip `08baa45`) | **`PASS_MANUAL`** (modules + dri/fb0) |
+| `FIRST_PIXELS` on tip `08baa45` | **`FAIL_MANUAL`** — file-size mmap of fb0 too short |
+| 014.2 mmap fix | explicit validated `MmapOptions::len` + ioctl geometry |
+| `FIRST_PIXELS` after 014.2 | **`NOT_RUN`** until human visual confirm (never auto-PASS) |
 | Product Desktop / 3D | **Not** claimed |
 | Serial 013 package | **Unchanged** / not replaced |
 

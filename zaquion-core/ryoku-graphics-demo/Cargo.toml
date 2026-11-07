@@ -11,11 +11,12 @@ keywords = ["ryoku", "framebuffer", "graphics"]
 categories = ["os"]
 
 [dependencies]
+libc = "0.2"
 memmap2 = "0.9"
-# memmap2 encapsulates mmap; this crate stays #![forbid(unsafe_code)].
+# Unsafe isolated in fb_mmap.rs (ioctl + explicit-length mmap). lib.rs forbids unsafe.
 
 [lints.rust]
-# main.rs needs one mmap via memmap2; lib.rs stays forbid(unsafe_code).
+# main.rs / fb_mmap.rs need ioctl+mmap; lib.rs stays forbid(unsafe_code).
 unsafe_code = "allow"
 
 [lints.clippy]
