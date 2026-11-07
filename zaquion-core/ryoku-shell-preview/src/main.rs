@@ -1,8 +1,12 @@
-//! Guest entry for `ryoku-shell-preview` (Mission 015 / 015.2 / **015.2.1**).
+//! Guest entry for `ryoku-shell-preview` (Mission 015 / 015.2 / **016** / **016.1**).
 //!
 //! 015.2.1: no visible fb clear; scanline/dirty blit; coalesce motion; keep all
-//! keyboards; configurable FPS; render metrics. `EVENTS RECEIVED` is a fact
-//! indicator only — not a claim of functional click/nav.
+//! keyboards; configurable FPS. `EVENTS RECEIVED` is a fact indicator only.
+//!
+//! 016.1: compose/present instrumentation; selected vs effective profile;
+//! band compose for cursor dirty; skip flush on partial blit; optional perf
+//! overlay (`RYOKU_SHELL_PERF_OVERLAY=1`, off by default). QEMU TCG ≠ hardware.
+//! Never invent guest timings or `PASS_MANUAL`.
 
 #![allow(unsafe_code)]
 
@@ -19,8 +23,10 @@ use ryoku_graphics_demo::{
     classify_no_fb_reason, format_outcome, graphics_root_from_env, open_fb_rw, probe_fb0,
 };
 use ryoku_shell_preview::{
-    compose_shell_interactive, dirty_band_for_cursor, merge_dirty, present_shell,
-    present_shell_rows, AdaptiveProfile, InputFact, InteractiveState, ShellLayout, SHELL_IDENTITY,
+    compose_shell_band, compose_shell_interactive, dirty_band_for_cursor, draw_perf_overlay,
+    merge_dirty, present_shell, present_shell_rows, ultra_slowdown_investigation, AdaptiveProfile,
+    FrameAccumulator, FrameSample, InputFact, InteractiveState, PerfOverlayPolicy, ShellLayout,
+    SHELL_IDENTITY,
 };
 
 use crate::input::{
@@ -29,40 +35,35 @@ use crate::input::{
     KEY_SPACE, KEY_TAB, KEY_UP,
 };
 
-#[derive(Debug, Default)]
-struct RenderMetrics {
-    frames: u64,
-    compose_ns: u128,
-    blit_ns: u128,
-    scratch_bytes: usize,
+struct PerfReporter {
+    window: FrameAccumulator,
     last_report: Option<Instant>,
+    last_line: String,
+    overlay: PerfOverlayPolicy,
 }
 
-impl RenderMetrics {
-    fn note(&mut self, compose: Duration, blit: Duration, scratch_bytes: usize) {
-        self.frames = self.frames.saturating_add(1);
-        self.compose_ns = self.compose_ns.saturating_add(compose.as_nanos());
-        self.blit_ns = self.blit_ns.saturating_add(blit.as_nanos());
-        self.scratch_bytes = scratch_bytes;
+impl PerfReporter {
+    fn new(overlay: PerfOverlayPolicy) -> Self {
+        Self {
+            window: FrameAccumulator::default(),
+            last_report: None,
+            last_line: String::new(),
+            overlay,
+        }
+    }
+
+    fn note(&mut self, sample: FrameSample) {
+        self.window.note(sample);
         let now = Instant::now();
         let due = match self.last_report {
             None => true,
             Some(t) => now.duration_since(t) >= Duration::from_secs(5),
         };
-        if due && self.frames > 0 {
-            let avg_c = self.compose_ns / u128::from(self.frames);
-            let avg_b = self.blit_ns / u128::from(self.frames);
-            eprintln!(
-                "{SHELL_IDENTITY}: metrics frames={} avg_compose_us={} avg_blit_us={} scratch_kib={}",
-                self.frames,
-                avg_c / 1000,
-                avg_b / 1000,
-                self.scratch_bytes / 1024
-            );
+        if due && self.window.frames > 0 {
+            self.last_line = self.window.summary_line();
+            eprintln!("{SHELL_IDENTITY}: {}", self.last_line);
             self.last_report = Some(now);
-            self.frames = 0;
-            self.compose_ns = 0;
-            self.blit_ns = 0;
+            self.window.reset_window();
         }
     }
 }
@@ -85,6 +86,19 @@ fn profile_from_env() -> AdaptiveProfile {
 fn input_diag() -> bool {
     matches!(
         env::var("RYOKU_SHELL_INPUT_DIAG").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE")
+    )
+}
+
+fn perf_overlay_policy() -> PerfOverlayPolicy {
+    PerfOverlayPolicy::from_env_flag(env::var("RYOKU_SHELL_PERF_OVERLAY").ok().as_deref())
+}
+
+/// Skip mmap flush on partial (band) presents — flush is costly under TCG and
+/// not vblank. Full frames still flush once.
+fn flush_on_partial() -> bool {
+    matches!(
+        env::var("RYOKU_SHELL_FLUSH_PARTIAL").as_deref(),
         Ok("1") | Ok("true") | Ok("TRUE")
     )
 }
@@ -144,6 +158,9 @@ fn apply_discrete(
                     next.animation_policy(),
                     next.target_fps()
                 );
+                if matches!(next, AdaptiveProfile::Ultra) {
+                    eprintln!("{SHELL_IDENTITY}: {}", ultra_slowdown_investigation());
+                }
                 return (true, true);
             }
             let visual = if ui.launcher_open {
@@ -200,23 +217,55 @@ fn present_dirty(
     ui: &InteractiveState,
     scratch: &mut RgbBuffer,
     dirty: Option<(u32, u32)>,
-    metrics: &mut RenderMetrics,
+    reporter: &mut PerfReporter,
 ) -> Result<(), String> {
+    // Overlay lives on the panel — force full compose when enabled.
+    let band = dirty
+        .filter(|&(y0, y1)| y1 > y0 && (y1 - y0) < layout.height)
+        .filter(|_| !reporter.overlay.enabled);
+    let full_frame = band.is_none();
     let t0 = Instant::now();
-    compose_shell_interactive(scratch, layout, Some(ui));
-    let t1 = Instant::now();
-    match dirty {
-        Some((y0, y1)) if y1 > y0 && (y1 - y0) < layout.height => {
-            present_shell_rows(mmap, geom, scratch, y0, y1)?;
-        }
-        _ => {
-            present_shell(mmap, geom, scratch)?;
+    if let Some((y0, y1)) = band {
+        // Cursor / local dirty: avoid full-frame gradient compose (016.1).
+        compose_shell_band(scratch, layout, ui, y0, y1);
+    } else {
+        compose_shell_interactive(scratch, layout, Some(ui));
+        if reporter.overlay.enabled {
+            let line = if reporter.last_line.is_empty() {
+                "PERF OVERLAY ON"
+            } else {
+                reporter.last_line.as_str()
+            };
+            draw_perf_overlay(scratch, layout, line);
         }
     }
-    // flush is best-effort mmap sync — **not** vblank / pageflip (fbdev).
-    let _ = mmap.flush();
+    let t1 = Instant::now();
+    let (rows, flushed) = match band {
+        Some((y0, y1)) => {
+            present_shell_rows(mmap, geom, scratch, y0, y1)?;
+            let do_flush = flush_on_partial();
+            if do_flush {
+                let _ = mmap.flush();
+            }
+            (y1 - y0, do_flush)
+        }
+        None => {
+            present_shell(mmap, geom, scratch)?;
+            // flush is best-effort mmap sync — **not** vblank / pageflip (fbdev).
+            let _ = mmap.flush();
+            (layout.height, true)
+        }
+    };
     let t2 = Instant::now();
-    metrics.note(t1 - t0, t2 - t1, scratch.pixels.len());
+    reporter.note(FrameSample::from_parts(
+        ui.profile,
+        t1 - t0,
+        t2 - t1,
+        rows,
+        full_frame,
+        flushed,
+        scratch.pixels.len(),
+    ));
     Ok(())
 }
 
@@ -233,7 +282,7 @@ fn event_loop(
     let mut dirty = true;
     let mut full_dirty = true;
     let mut dirty_y = (0u32, layout.height);
-    let mut metrics = RenderMetrics::default();
+    let mut reporter = PerfReporter::new(perf_overlay_policy());
     let fb_w = layout.width as i32;
     let fb_h = layout.height as i32;
     let diag = input_diag();
@@ -243,16 +292,21 @@ fn event_loop(
     let mut prev_hover = ui.hover_dock;
     let mut prev_selected = ui.selected_dock;
     let mut prev_profile = ui.profile;
+    // Reuse action buffer — avoid per-poll alloc (016.1).
+    let mut raw = Vec::with_capacity(64);
 
     eprintln!(
-        "{SHELL_IDENTITY}: event loop 016 adaptive fps={fps} profile={} diag={diag}; \
-         no continuous redraw; EVENTS RECEIVED ≠ click; GUEST_NOT_RUN — fact={:?}",
+        "{SHELL_IDENTITY}: event loop 016.1 adaptive-perf fps={fps} profile={} effective={} \
+         overlay={} diag={diag}; no continuous redraw; EVENTS RECEIVED ≠ click; GUEST_NOT_RUN — fact={:?}",
         ui.profile.name(),
+        ui.profile.effective().name(),
+        reporter.overlay.enabled,
         ui.input_fact
     );
+    eprintln!("{SHELL_IDENTITY}: {}", ultra_slowdown_investigation());
 
     loop {
-        let mut raw = Vec::new();
+        raw.clear();
         for dev in devices.iter_mut() {
             raw.extend(dev.poll_actions(fb_w, fb_h));
         }
@@ -319,7 +373,7 @@ fn event_loop(
         // Never continuous redraw: idle sleeps without present.
         if dirty && gate.allow() {
             let band = if full_dirty { None } else { Some(dirty_y) };
-            if let Err(err) = present_dirty(mmap, geom, layout, ui, scratch, band, &mut metrics) {
+            if let Err(err) = present_dirty(mmap, geom, layout, ui, scratch, band, &mut reporter) {
                 eprintln!("{SHELL_IDENTITY}: WARN redraw failed: {err}");
             }
             dirty = false;
@@ -347,7 +401,7 @@ fn main() -> ExitCode {
     };
 
     eprintln!(
-        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 016)",
+        "{SHELL_IDENTITY}: starting adaptive shell under {} (Mission 016.1)",
         root.display()
     );
 
@@ -388,7 +442,7 @@ fn main() -> ExitCode {
     let mut scratch = RgbBuffer::new(layout.width, layout.height, ryoku_shell_preview::COLOR_NAVY);
 
     eprintln!(
-        "{SHELL_IDENTITY}: layout panel_h={} dock={}x{} at ({},{}) desktop_h={} fb={}x{} stride={} profile={}",
+        "{SHELL_IDENTITY}: layout panel_h={} dock={}x{} at ({},{}) desktop_h={} fb={}x{} stride={} profile={} effective={}",
         layout.panel_h,
         layout.dock_w,
         layout.dock_h,
@@ -398,7 +452,8 @@ fn main() -> ExitCode {
         plan.geom.width,
         plan.geom.height,
         plan.geom.stride,
-        ui.profile.name()
+        ui.profile.name(),
+        ui.profile.effective().name()
     );
 
     let mut mmap = match fb_mmap::map_fb_explicit(&file, &plan) {
@@ -424,7 +479,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let mut metrics = RenderMetrics::default();
+    let mut reporter = PerfReporter::new(perf_overlay_policy());
     if let Err(err) = present_dirty(
         &mut mmap,
         &plan.geom,
@@ -432,13 +487,13 @@ fn main() -> ExitCode {
         &ui,
         &mut scratch,
         None,
-        &mut metrics,
+        &mut reporter,
     ) {
         eprintln!("{err}");
         return ExitCode::from(1);
     }
     println!(
-        "{SHELL_IDENTITY}: presented shell+launcher into /dev/fb0 ({}x{} bpp={}); fact={:?}; staying alive (015.2.1 no-clear blit)",
+        "{SHELL_IDENTITY}: presented shell+launcher into /dev/fb0 ({}x{} bpp={}); fact={:?}; staying alive (016.1 adaptive-perf)",
         plan.geom.width, plan.geom.height, plan.geom.bpp, ui.input_fact
     );
 
