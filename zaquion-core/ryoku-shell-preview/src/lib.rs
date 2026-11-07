@@ -1,13 +1,14 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**019**).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015–**020**).
 //!
-//! Mission **017** WM; **018** allowlisted apps; **019** desktop input / lifecycle
-//! shortcuts (Q/W/M) without conflicting F1–F3 profile keys.
+//! Mission **017** WM; **018** apps; **019** desktop input; **020** display/input
+//! backend abstraction (fbdev default; DRM/KMS study→fb fallback; Wayland arch-only).
 //! QEMU TCG ≠ hardware. This crate **never** invents `PASS_MANUAL` from CI.
 
 #![forbid(unsafe_code)]
 
 mod adaptive;
 mod apps;
+mod backend;
 mod benchmark;
 mod desktop_input;
 mod perf;
@@ -15,6 +16,10 @@ mod window;
 
 pub use adaptive::{AdaptiveProfile, ProfileTheme, RenderPolicy};
 pub use apps::{launcher_allowlist_complete, InternalApp};
+pub use backend::{
+    drm_kms_study_note, wayland_runtime_status, DamageRegion, DisplayBackendKind,
+    DisplayBackendSelection, InputBackendKind,
+};
 pub use benchmark::{
     controlled_band, controlled_benchmark_enabled, controlled_profile_order,
     instrumentation_cost_note, ControlledProfileRun, ControlledSummary, CONTROLLED_BAND_FRAMES,
