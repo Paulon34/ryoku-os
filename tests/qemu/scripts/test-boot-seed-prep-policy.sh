@@ -65,6 +65,41 @@ else
   pass "kernel_blob_not_in_git"
 fi
 
+echo "== extract refuses without SHA/GPG sidecars =="
+# Create a tiny fake ISO under lab/run without sidecars; execute must refuse before mount/tools.
+FAKE_ISO="$ROOT/tests/qemu/run/alpine-virt-3.21.9-x86_64.iso"
+CLEANUP_FAKE=0
+if [[ ! -f "$FAKE_ISO" ]]; then
+  echo 'not-a-real-iso' >"$FAKE_ISO"
+  CLEANUP_FAKE=1
+fi
+set +e
+out="$(RYOKU_KERNEL_EXTRACT_EXECUTE=1 RYOKU_VERIFY_GPG=0 \
+  "$ROOT/tests/qemu/scripts/extract-boot-seed-kernel.sh" 2>&1)"
+rc=$?
+set -e
+if [[ "$CLEANUP_FAKE" == "1" ]]; then rm -f "$FAKE_ISO"; fi
+if [[ "$rc" -ne 0 ]] && echo "$out" | grep -Eqi 'sidecar|GPG|SHA|sha256'; then
+  pass "extract_requires_integrity_sidecars"
+else
+  fail "extract_requires_integrity_sidecars (rc=$rc)"
+  echo "$out" | tail -20
+fi
+
+echo "== harness all excludes T3 =="
+# boot-seed must be gated on boot-seed|t3 only — the "all" disjunct must not appear on that if.
+if grep -E 'if which == "boot-seed" \|\| which == "t3"' \
+  "$ROOT/zaquion-core/ryoku-virtlab/src/main.rs" | grep -q 'all'; then
+  fail "all_excludes_t3 (all leaked into boot-seed if)"
+elif grep -E 'if which == "boot-seed" \|\| which == "t3"' \
+  "$ROOT/zaquion-core/ryoku-virtlab/src/main.rs" >/dev/null \
+  && grep -A1 'if which == "boot-seed" || which == "t3"' \
+    "$ROOT/zaquion-core/ryoku-virtlab/src/main.rs" | grep -q 'run_boot_seed'; then
+  pass "all_excludes_t3"
+else
+  fail "all_excludes_t3"
+fi
+
 echo
 echo "Summary: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

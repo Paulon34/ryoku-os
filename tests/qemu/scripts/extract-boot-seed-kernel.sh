@@ -43,23 +43,86 @@ if [[ ! -f "$ISO" ]]; then
   exit 1
 fi
 
-# Refuse obvious host block devices / absolute escapes in OUT parent.
+# Lab-path only: ISO must live under tests/qemu/run/ (no host disk / escape paths).
+case "$ISO" in
+  "$LAB/run/"*) ;;
+  *)
+    echo "error: ISO path must be under $LAB/run/ (got $ISO)" >&2
+    exit 1
+    ;;
+esac
 case "$OUT" in
-  /dev/*|/proc/*|/sys/*)
-    echo "error: refusing dangerous output path" >&2
+  "$LAB/run/"*) ;;
+  /dev/*|/proc/*|/sys/*|*/../*)
+    echo "error: refusing dangerous output path: $OUT" >&2
+    exit 1
+    ;;
+  *)
+    echo "error: output must be under $LAB/run/ (got $OUT)" >&2
     exit 1
     ;;
 esac
 
-echo "Verifying ISO SHA-256…"
+# Integrity first: require fetch sidecars (SHA listing + detached GPG) before extract.
+SHA_SIDE="$ISO.sha256"
+ASC_SIDE="$ISO.asc"
+if [[ ! -f "$SHA_SIDE" ]]; then
+  echo "error: missing SHA sidecar $SHA_SIDE — run authorized fetch (SHA+GPG) first" >&2
+  exit 1
+fi
+if [[ ! -f "$ASC_SIDE" ]]; then
+  echo "error: missing GPG sidecar $ASC_SIDE — run authorized fetch (SHA+GPG) first" >&2
+  exit 1
+fi
+if ! grep -q "$EXPECTED_SHA256" "$SHA_SIDE"; then
+  echo "error: SHA sidecar does not list pinned digest $EXPECTED_SHA256" >&2
+  exit 1
+fi
+
+echo "Verifying ISO SHA-256 (pin)…"
 got="$(sha256sum "$ISO" | awk '{print $1}')"
 if [[ "$got" != "$EXPECTED_SHA256" ]]; then
   echo "error: ISO sha256 mismatch (got $got expected $EXPECTED_SHA256)" >&2
   exit 1
 fi
-echo "OK: ISO sha256 matches pin"
+echo "OK: ISO sha256 matches pin; SHA+GPG sidecars present from authorized fetch"
 
-mkdir -p "$(dirname "$OUT")"
+# Optional re-verify of detached signature when gpg is available (fail-closed if requested).
+VERIFY_GPG="${RYOKU_VERIFY_GPG:-1}"
+if [[ "$VERIFY_GPG" == "1" ]]; then
+  if ! command -v gpg >/dev/null 2>&1; then
+    echo "error: gpg not found but RYOKU_VERIFY_GPG=1" >&2
+    exit 1
+  fi
+  KEY_ASC="$LAB/run/ncopa.asc"
+  FP="0482D84022F52DF1C4E7CD43293ACD0907D9495A"
+  if [[ ! -f "$KEY_ASC" ]]; then
+    echo "error: missing ncopa key $KEY_ASC from authorized fetch" >&2
+    exit 1
+  fi
+  GNUPGHOME="$(mktemp -d "${TMPDIR:-/tmp}/ryoku-gpg.XXXXXX")"
+  export GNUPGHOME
+  gpg --batch --import "$KEY_ASC" >/dev/null 2>&1 || true
+  gpg_status="$(mktemp "${TMPDIR:-/tmp}/ryoku-gpg-status.XXXXXX")"
+  gpg_rc=0
+  gpg --batch --status-fd 1 --verify "$ASC_SIDE" "$ISO" >"$gpg_status" 2>/dev/null || gpg_rc=$?
+  status="$(cat "$gpg_status" 2>/dev/null || true)"
+  rm -rf "$GNUPGHOME" "$gpg_status"
+  unset GNUPGHOME
+  if [[ "$gpg_rc" -ne 0 ]] || ! grep -q '\[GNUPG:\] GOODSIG' <<<"$status"; then
+    echo "error: GPG verify failed (need exit 0 + GOODSIG)" >&2
+    echo "$status" >&2
+    exit 1
+  fi
+  if ! grep -E "\[GNUPG:\] VALIDSIG ${FP}" <<<"$status" >/dev/null; then
+    echo "error: GPG VALIDSIG fingerprint mismatch (want $FP)" >&2
+    echo "$status" >&2
+    exit 1
+  fi
+  echo "OK: GPG GOODSIG + VALIDSIG fingerprint $FP"
+fi
+
+mkdir -p "$(dirname "$OUT")" "$LAB/results"
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/ryoku-kernel-extract.XXXXXX")"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT

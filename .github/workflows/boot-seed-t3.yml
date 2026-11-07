@@ -137,7 +137,7 @@ jobs:
             exit 1
           fi
 
-      - name: Upload Boot Seed T3 artifacts (logs/hashes only; no ISO/kernel blobs)
+      - name: Upload Boot Seed T3 artifacts (logs/hashes/sidecars only; no ISO/kernel/initrd blobs)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -146,5 +146,8 @@ jobs:
             tests/qemu/results/
             tests/qemu/run/*.sha256
             tests/qemu/run/*.asc
+            !tests/qemu/run/*.iso
+            !tests/qemu/run/*vmlinuz*
+            !tests/qemu/run/*.cpio.gz
           if-no-files-found: warn
           retention-days: 14
