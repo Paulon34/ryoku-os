@@ -103,6 +103,7 @@ jobs:
             docs/testing/ryoku-minimal.md
             docs/testing/ryoku-hardware.md
             docs/testing/splash-prep-014.md
+            docs/testing/ryoku-graphics.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
@@ -126,6 +127,14 @@ jobs:
             tests/qemu/scripts/run-ryoku-minimal-qemu.sh
             tests/qemu/scripts/prep-ryoku-minimal-artifacts.sh
             tests/qemu/scripts/test-ryoku-minimal-vm-zip.sh
+            tests/qemu/scripts/test-ryoku-graphics-vm-zip.sh
+            tests/qemu/scripts/run-ryoku-graphics-qemu.sh
+            tests/qemu/scripts/prep-ryoku-graphics-artifacts.sh
+            tests/qemu/scripts/fetch-virt-drm-modules.sh
+            tests/qemu/scripts/test-virt-drm-modules-policy.sh
+            tests/qemu/fixtures/virt-drm-modules.manifest
+            tests/qemu/README-GRAPHICS.md
+            tests/qemu/configs/console-graphics.rvl.conf
             tests/qemu/README-VM.md
             .github/workflows/boot-seed-t3.yml
             .github/workflows/ryoku-minimal-package.yml

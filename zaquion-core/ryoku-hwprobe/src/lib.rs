@@ -200,8 +200,25 @@ impl HwRoot {
             Err(e) => out.push_str(&format!("tty: ERR {e}\n")),
         }
         match self.driver_names() {
-            Ok(names) => out.push_str(&format!("drivers_listed: {}\n", names.len())),
+            Ok(names) => out.push_str(&format!(
+                "drivers_listed: {} (sysfs names only; not bind count)\n",
+                names.len()
+            )),
             Err(e) => out.push_str(&format!("drivers_listed: ERR {e}\n")),
+        }
+        // Brief graphics presence (Mission 014) — never claims FIRST_PIXELS.
+        let gfx = self.graphics_report();
+        let has_fb = gfx.contains("node /dev/fb0: present");
+        let has_drm_sysfs = gfx.contains("sysfs_drm:") && !gfx.contains("sysfs_drm: ERR");
+        if gfx.contains("pci_display_class: none") && !has_fb && !has_drm_sysfs {
+            out.push_str("graphics: no PCI display class / fb / drm in this inventory\n");
+        } else if has_fb
+            || has_drm_sysfs
+            || gfx.contains("pci_display_class:") && !gfx.contains("pci_display_class: none")
+        {
+            out.push_str("graphics: some display clues seen (inspect `hw graphics`; FIRST_PIXELS not claimed)\n");
+        } else {
+            out.push_str("graphics: no fb/drm nodes reported (see `hw graphics`)\n");
         }
         out.push_str("honesty: missing nodes reported as ERR; never invent success\n");
         out
@@ -263,24 +280,98 @@ impl HwRoot {
 
     pub fn pci_report(&self) -> Result<String, HwError> {
         let names = self.list_dir_names("/sys/bus/pci/devices")?;
-        let mut out = format!("{HWPROBE_IDENTITY}: pci ({} device nodes)\n", names.len());
+        let mut out = format!(
+            "{HWPROBE_IDENTITY}: pci ({} device nodes)\n\
+             note: class from sysfs; driver=bound symlink basename or unbound (not invent)\n",
+            names.len()
+        );
         for name in names.iter().take(64) {
-            let vendor_path = format!("/sys/bus/pci/devices/{name}/vendor");
-            let device_path = format!("/sys/bus/pci/devices/{name}/device");
-            let vendor = self
-                .read_capped(&vendor_path)
-                .map(|s| s.trim().to_string())
-                .unwrap_or_else(|_| "?".into());
-            let device = self
-                .read_capped(&device_path)
-                .map(|s| s.trim().to_string())
-                .unwrap_or_else(|_| "?".into());
-            out.push_str(&format!("{name} vendor={vendor} device={device}\n"));
+            let vendor = self.read_attr_trim(&format!("/sys/bus/pci/devices/{name}/vendor"));
+            let device = self.read_attr_trim(&format!("/sys/bus/pci/devices/{name}/device"));
+            let class_raw = self.read_attr_trim(&format!("/sys/bus/pci/devices/{name}/class"));
+            let class_label = classify_pci_class(&class_raw);
+            let driver = self.pci_bound_driver(name);
+            out.push_str(&format!(
+                "{name} vendor={vendor} device={device} class={class_raw} ({class_label}) driver={driver}\n"
+            ));
         }
         if names.len() > 64 {
             out.push_str(&format!("… truncated ({} more)\n", names.len() - 64));
         }
         Ok(out)
+    }
+
+    fn read_attr_trim(&self, guest_abs: &str) -> String {
+        self.read_capped(guest_abs)
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "?".into())
+    }
+
+    /// Bound driver = basename of `driver` symlink; `unbound` if absent. Never invents a bind.
+    fn pci_bound_driver(&self, pci_name: &str) -> String {
+        let link = self
+            .root
+            .join(format!("sys/bus/pci/devices/{pci_name}/driver"));
+        match fs::read_link(&link) {
+            Ok(target) => target
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "unbound".into()),
+            Err(_) => "unbound".into(),
+        }
+    }
+
+    /// Read-only graphics / DRM / fb inventory (Mission 014). Does not claim drivers work.
+    pub fn graphics_report(&self) -> String {
+        let mut out = format!(
+            "{HWPROBE_IDENTITY}: graphics (inspection only; FIRST_PIXELS not claimed here)\n"
+        );
+
+        match self.list_dir_names("/sys/class/drm") {
+            Ok(names) if names.is_empty() => out.push_str("sysfs_drm: (empty)\n"),
+            Ok(names) => out.push_str(&format!("sysfs_drm: {}\n", names.join(" "))),
+            Err(e) => out.push_str(&format!("sysfs_drm: ERR {e}\n")),
+        }
+        match self.list_dir_names("/sys/class/graphics") {
+            Ok(names) if names.is_empty() => out.push_str("sysfs_graphics: (empty)\n"),
+            Ok(names) => out.push_str(&format!("sysfs_graphics: {}\n", names.join(" "))),
+            Err(e) => out.push_str(&format!("sysfs_graphics: ERR {e}\n")),
+        }
+
+        for node in ["/dev/fb0", "/dev/dri/card0", "/dev/dri/renderD128"] {
+            match self.resolve(node) {
+                Ok(_) => out.push_str(&format!("node {node}: present\n")),
+                Err(e) => out.push_str(&format!("node {node}: ERR {e}\n")),
+            }
+        }
+
+        // PCI display class (0x03xxxx) — presence ≠ working DRM driver.
+        match self.list_dir_names("/sys/bus/pci/devices") {
+            Ok(names) => {
+                let mut display_devs = Vec::new();
+                for name in names {
+                    let class_raw =
+                        self.read_attr_trim(&format!("/sys/bus/pci/devices/{name}/class"));
+                    if classify_pci_class(&class_raw) == "display" {
+                        let driver = self.pci_bound_driver(&name);
+                        display_devs.push(format!("{name} driver={driver}"));
+                    }
+                }
+                if display_devs.is_empty() {
+                    out.push_str(
+                        "pci_display_class: none (serial -nodefaults profile often has no VGA)\n",
+                    );
+                } else {
+                    out.push_str(&format!("pci_display_class: {}\n", display_devs.join("; ")));
+                }
+            }
+            Err(e) => out.push_str(&format!("pci_display_class: ERR {e}\n")),
+        }
+
+        out.push_str(
+            "honesty: listing ≠ loaded DRM/KMS; Alpine virt DRM often modular (not in Minimal cpio)\n",
+        );
+        out
     }
 
     fn pci_count(&self) -> Result<usize, HwError> {
@@ -353,6 +444,25 @@ impl HwRoot {
     }
 }
 
+/// Decode PCI `class` sysfs hex (e.g. `0x060000`) into a coarse label.
+#[must_use]
+pub fn classify_pci_class(class_raw: &str) -> &'static str {
+    let hex = class_raw.trim().trim_start_matches("0x");
+    let Ok(v) = u32::from_str_radix(hex, 16) else {
+        return "unknown";
+    };
+    match (v >> 16) & 0xff {
+        0x01 => "storage",
+        0x02 => "network",
+        0x03 => "display",
+        0x04 => "multimedia",
+        0x06 => "bridge",
+        0x0c => "serial_bus",
+        0x00 => "unclassified",
+        _ => "other",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,7 +498,39 @@ mod tests {
             b"0x0008\n",
         )
         .unwrap();
+        fs::write(
+            root.join("sys/bus/pci/devices/0000:00:00.0/class"),
+            b"0x060000\n",
+        )
+        .unwrap();
         fs::create_dir_all(root.join("sys/bus/pci/drivers/virtio-pci")).unwrap();
+        symlink(
+            "../../drivers/virtio-pci",
+            root.join("sys/bus/pci/devices/0000:00:00.0/driver"),
+        )
+        .unwrap();
+        // Display-class PCI (unbound) for graphics inventory honesty.
+        fs::create_dir_all(root.join("sys/bus/pci/devices/0000:00:02.0")).unwrap();
+        fs::write(
+            root.join("sys/bus/pci/devices/0000:00:02.0/vendor"),
+            b"0x1234\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("sys/bus/pci/devices/0000:00:02.0/device"),
+            b"0x1111\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("sys/bus/pci/devices/0000:00:02.0/class"),
+            b"0x030000\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("sys/class/drm/card0")).unwrap();
+        fs::create_dir_all(root.join("sys/class/graphics/fb0")).unwrap();
+        fs::create_dir_all(root.join("dev/dri")).unwrap();
+        fs::write(root.join("dev/fb0"), b"").unwrap();
+        fs::write(root.join("dev/dri/card0"), b"").unwrap();
         fs::create_dir_all(root.join("sys/class/tty")).unwrap();
         // Legitimate sysfs-style symlink that stays inside root.
         fs::create_dir_all(root.join("sys/devices/platform/serial")).unwrap();
@@ -407,7 +549,7 @@ mod tests {
         let summary = hw.summary();
         assert!(summary.contains("processors=2"), "{summary}");
         assert!(summary.contains("TestCPU Virt"), "{summary}");
-        assert!(summary.contains("pci_devices: 1"), "{summary}");
+        assert!(summary.contains("pci_devices: 2"), "{summary}");
         assert!(summary.contains("tty:"), "{summary}");
         assert!(summary.contains("drivers_listed: 1"), "{summary}");
 
@@ -416,8 +558,19 @@ mod tests {
         let pci = hw.pci_report().unwrap();
         assert!(pci.contains("0000:00:00.0"));
         assert!(pci.contains("0x1b36"));
+        assert!(pci.contains("bridge"), "{pci}");
+        assert!(pci.contains("driver=virtio-pci"), "{pci}");
+        assert!(pci.contains("display"), "{pci}");
+        assert!(pci.contains("driver=unbound"), "{pci}");
         let drv = hw.drivers_report().unwrap();
         assert!(drv.contains("virtio-pci"));
+        let gfx = hw.graphics_report();
+        assert!(gfx.contains("sysfs_drm:"), "{gfx}");
+        assert!(gfx.contains("node /dev/fb0: present"), "{gfx}");
+        assert!(gfx.contains("pci_display_class:"), "{gfx}");
+        assert!(!gfx.to_lowercase().contains("first_pixels=pass"));
+        assert_eq!(classify_pci_class("0x030000"), "display");
+        assert_eq!(classify_pci_class("0x060000"), "bridge");
         let _ = fs::remove_dir_all(&root);
     }
 

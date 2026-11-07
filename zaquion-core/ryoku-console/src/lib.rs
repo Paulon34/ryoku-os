@@ -42,6 +42,7 @@ pub enum HwSubcommand {
     Cpu,
     Pci,
     Drivers,
+    Graphics,
 }
 
 /// Builtins supported in Mission 011–013.
@@ -329,6 +330,7 @@ pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
                 "cpu" => HwSubcommand::Cpu,
                 "pci" => HwSubcommand::Pci,
                 "drivers" => HwSubcommand::Drivers,
+                "graphics" => HwSubcommand::Graphics,
                 other => {
                     return Err(ParseError::UnknownCommand {
                         name: format!("hw {other}"),
@@ -358,7 +360,7 @@ pub fn startup_banner(version: &str) -> String {
 pub fn render(cmd: &Command) -> String {
     match cmd {
         Command::Help => {
-            "ryoku-console builtins:\n  help     — this list\n  version  — console version\n  status   — short honesty / readiness status\n  echo …   — print arguments (no expansion)\n  clear    — clear screen (ANSI)\n  pwd      — print experimental cwd\n  ls [path]— list directory (experimental FS)\n  cat path — read file (experimental FS, capped)\n  hw summary|cpu|pci|drivers — read-only proc/sys probe\n\nLimited parser: no shell metacharacters, no pipes/redirects/substitution.\nNot a product OS login shell. Separate from ryoku-init PID 1.\n"
+            "ryoku-console builtins:\n  help     — this list\n  version  — console version\n  status   — short honesty / readiness status\n  echo …   — print arguments (no expansion)\n  clear    — clear screen (ANSI)\n  pwd      — print experimental cwd\n  ls [path]— list directory (experimental FS)\n  cat path — read file (experimental FS, capped)\n  hw summary|cpu|pci|drivers|graphics — read-only proc/sys probe\n\nLimited parser: no shell metacharacters, no pipes/redirects/substitution.\nNot a product OS login shell. Separate from ryoku-init PID 1.\n"
                 .to_string()
         }
         Command::Version => {
@@ -366,12 +368,13 @@ pub fn render(cmd: &Command) -> String {
         }
         Command::Status => {
             format!(
-                "{CONSOLE_IDENTITY}: Ryoku Minimal interactive (Mission 013)\n\
+                "{CONSOLE_IDENTITY}: Ryoku Minimal interactive (Mission 014 prep)\n\
                  pid1_core: separate (ryoku-init owns guest pid=1 markers)\n\
                  product_os_boot: NOT claimed\n\
+                 first_pixels: NOT_RUN\n\
                  parser: limited builtins only\n\
                  fs: experimental initramfs view (pwd/ls/cat)\n\
-                 hw: ryoku-hwprobe (proc/sys; honest ERR if missing)\n\
+                 hw: ryoku-hwprobe (proc/sys/drm/fb; honest ERR if missing)\n\
                  network: none (lab default)\n"
             )
         }
@@ -416,6 +419,7 @@ pub fn render_in(session: &Session, cmd: &Command) -> Result<String, FsError> {
                 HwSubcommand::Cpu => hw.cpu_report().unwrap_or_else(|e| format!("{e}\n")),
                 HwSubcommand::Pci => hw.pci_report().unwrap_or_else(|e| format!("{e}\n")),
                 HwSubcommand::Drivers => hw.drivers_report().unwrap_or_else(|e| format!("{e}\n")),
+                HwSubcommand::Graphics => hw.graphics_report(),
             };
             Ok(text)
         }

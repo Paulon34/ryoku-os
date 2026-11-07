@@ -24,6 +24,32 @@ pub const REQUIRED_HOME_MEMBER: &str = "./home/ryoku";
 /// Default contents of `./etc/ryoku-release` in Minimal initramfs.
 pub const RYOKU_RELEASE_TEXT: &str = "ryoku-minimal 0.1.0 (Mission 012)\n";
 
+/// Graphics package release text (Mission 014.1) — separate from serial Minimal package.
+pub const RYOKU_GRAPHICS_RELEASE_TEXT: &str =
+    "ryoku-minimal 0.1.0 (Mission 014.1 graphics preview + virt DRM modules)\n";
+
+/// Graphics demo binary member (Mission 014 package only).
+pub const REQUIRED_GRAPHICS_DEMO_MEMBER: &str = "./bin/ryoku-graphics-demo";
+
+/// Guest modules root prefix inside graphics cpio (Mission 014.1).
+pub const GRAPHICS_MODULES_ROOT_MEMBER: &str = "./lib/modules/6.12.114-0-virt";
+
+/// Allowlisted DRM module archive members (Mission 014.1) — relative to archive root.
+pub const REQUIRED_GRAPHICS_MODULE_MEMBERS: &[&str] = &[
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/virtio/virtio_dma_buf.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev/core/syscopyarea.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev/core/sysfillrect.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev/core/sysimgblt.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev/core/fb_sys_fops.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/drm_panel_orientation_quirks.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/i2c/i2c-core.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/drm.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev/core/fb.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/drm_kms_helper.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/drm_shmem_helper.ko",
+    "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/virtio/virtio-gpu.ko",
+];
+
 const S_IFREG: u32 = 0o100_000;
 const S_IFDIR: u32 = 0o040_000;
 const S_IFCHR: u32 = 0o020_000;
@@ -192,6 +218,119 @@ pub fn write_ryoku_minimal_newc(
         &ryoku_minimal_members(init_bytes, console_bytes, release_text),
         out,
     )
+}
+
+/// Ryoku Minimal + graphics demo members (Mission 014). Does not replace T3/Minimal serial pack.
+#[must_use]
+pub fn ryoku_graphics_members(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    graphics_demo_bytes: &[u8],
+    release_text: &str,
+) -> Vec<NewcMember> {
+    let mut members = ryoku_minimal_members(init_bytes, console_bytes, release_text);
+    members.push(NewcMember::file(
+        "./bin/ryoku-graphics-demo",
+        0o755,
+        graphics_demo_bytes.to_vec(),
+    ));
+    members
+}
+
+/// Append allowlisted DRM `.ko` files + parent dirs from a staged modules tree.
+///
+/// `modules_root` is the host directory whose contents map to
+/// `/lib/modules/6.12.114-0-virt/` (i.e. contains `kernel/.../*.ko`).
+pub fn append_graphics_modules(
+    members: &mut Vec<NewcMember>,
+    modules_root: &Path,
+) -> Result<(), String> {
+    if !modules_root.is_dir() {
+        return Err(format!(
+            "graphics modules root missing or not a directory: {}",
+            modules_root.display()
+        ));
+    }
+    // Parent directory chain for the modules root.
+    for dir in [
+        "./lib",
+        "./lib/modules",
+        GRAPHICS_MODULES_ROOT_MEMBER,
+        "./lib/modules/6.12.114-0-virt/kernel",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/virtio",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/video",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/video/fbdev/core",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/gpu/drm/virtio",
+        "./lib/modules/6.12.114-0-virt/kernel/drivers/i2c",
+    ] {
+        if !members.iter().any(|m| m.name == dir) {
+            members.push(NewcMember::dir(dir, 0o755));
+        }
+    }
+
+    for member in REQUIRED_GRAPHICS_MODULE_MEMBERS {
+        let rel = member
+            .strip_prefix("./lib/modules/6.12.114-0-virt/")
+            .ok_or_else(|| format!("internal: bad module member {member}"))?;
+        // Path safety: refuse `..` / absolute.
+        assert_safe_member_name(member)?;
+        let host = modules_root.join(rel);
+        if !host.is_file() {
+            return Err(format!(
+                "missing allowlisted module at {} (expected for {member})",
+                host.display()
+            ));
+        }
+        // Refuse reading outside modules_root.
+        let host_canon = host
+            .canonicalize()
+            .map_err(|e| format!("canon {rel}: {e}"))?;
+        let root_canon = modules_root
+            .canonicalize()
+            .map_err(|e| format!("canon modules_root: {e}"))?;
+        if !host_canon.starts_with(&root_canon) {
+            return Err(format!("module path escaped modules_root: {rel}"));
+        }
+        let data = fs::read(&host_canon).map_err(|e| format!("read {rel}: {e}"))?;
+        if data.is_empty() {
+            return Err(format!("empty module file: {rel}"));
+        }
+        members.push(NewcMember::file(member, 0o644, data));
+    }
+    Ok(())
+}
+
+/// Write graphics-preview newc archive (uncompressed).
+pub fn write_ryoku_graphics_newc(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    graphics_demo_bytes: &[u8],
+    release_text: &str,
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    write_newc_archive(
+        &ryoku_graphics_members(init_bytes, console_bytes, graphics_demo_bytes, release_text),
+        out,
+    )
+}
+
+/// Write graphics-preview newc including allowlisted DRM modules (Mission 014.1).
+pub fn write_ryoku_graphics_newc_with_modules(
+    init_bytes: &[u8],
+    console_bytes: &[u8],
+    graphics_demo_bytes: &[u8],
+    release_text: &str,
+    modules_root: &Path,
+    out: &mut dyn Write,
+) -> Result<(), String> {
+    let mut members =
+        ryoku_graphics_members(init_bytes, console_bytes, graphics_demo_bytes, release_text);
+    append_graphics_modules(&mut members, modules_root)?;
+    write_newc_archive(&members, out).map_err(|e| e.to_string())
 }
 
 /// Write an arbitrary newc archive then TRAILER.
@@ -508,6 +647,83 @@ pub fn pack_ryoku_minimal_from_paths(
     Ok(out)
 }
 
+/// Validate graphics preview cpio (Minimal layout + graphics demo binary).
+pub fn validate_ryoku_graphics_cpio(data: &[u8]) -> Result<(), String> {
+    validate_ryoku_minimal_cpio(data)?;
+    let members = list_newc_members(data)?;
+    if !members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER) {
+        return Err(format!("missing {REQUIRED_GRAPHICS_DEMO_MEMBER}"));
+    }
+    Ok(())
+}
+
+/// Validate graphics cpio that includes the allowlisted DRM module set (014.1).
+pub fn validate_ryoku_graphics_cpio_with_modules(data: &[u8]) -> Result<(), String> {
+    validate_ryoku_graphics_cpio(data)?;
+    let members = list_newc_members(data)?;
+    for req in REQUIRED_GRAPHICS_MODULE_MEMBERS {
+        if !members.iter().any(|m| m == req) {
+            return Err(format!("missing graphics module member {req}"));
+        }
+    }
+    // Boot-seed / serial Minimal must remain free of these modules when validated separately.
+    Ok(())
+}
+
+/// Pack graphics preview initramfs from init + console + graphics-demo static binaries.
+///
+/// When `modules_root` is `Some`, packs the allowlisted Alpine virt DRM modules (014.1).
+pub fn pack_ryoku_graphics_from_paths(
+    init_path: &Path,
+    console_path: &Path,
+    graphics_demo_path: &Path,
+    release_text: &str,
+) -> Result<Vec<u8>, String> {
+    pack_ryoku_graphics_from_paths_with_modules(
+        init_path,
+        console_path,
+        graphics_demo_path,
+        release_text,
+        None,
+    )
+}
+
+/// Pack graphics preview; optionally include DRM modules from `modules_root`.
+pub fn pack_ryoku_graphics_from_paths_with_modules(
+    init_path: &Path,
+    console_path: &Path,
+    graphics_demo_path: &Path,
+    release_text: &str,
+    modules_root: Option<&Path>,
+) -> Result<Vec<u8>, String> {
+    let init = fs::read(init_path).map_err(|e| format!("read init: {e}"))?;
+    let console = fs::read(console_path).map_err(|e| format!("read console: {e}"))?;
+    let demo = fs::read(graphics_demo_path).map_err(|e| format!("read graphics-demo: {e}"))?;
+    if init.is_empty() || console.is_empty() || demo.is_empty() {
+        return Err("init/console/graphics-demo binary empty".into());
+    }
+    let mut out = Vec::new();
+    match modules_root {
+        Some(root) => {
+            write_ryoku_graphics_newc_with_modules(
+                &init,
+                &console,
+                &demo,
+                release_text,
+                root,
+                &mut out,
+            )?;
+            validate_ryoku_graphics_cpio_with_modules(&out)?;
+        }
+        None => {
+            write_ryoku_graphics_newc(&init, &console, &demo, release_text, &mut out)
+                .map_err(|e| e.to_string())?;
+            validate_ryoku_graphics_cpio(&out)?;
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,6 +789,77 @@ mod tests {
         assert!(validate_boot_seed_cpio(&buf)
             .unwrap_err()
             .contains("ryoku-console"));
+    }
+
+    #[test]
+    fn ryoku_graphics_has_demo_binary() {
+        let mut buf = Vec::new();
+        write_ryoku_graphics_newc(
+            b"INIT",
+            b"CONSOLE",
+            b"GFXDEMO",
+            RYOKU_GRAPHICS_RELEASE_TEXT,
+            &mut buf,
+        )
+        .unwrap();
+        validate_ryoku_graphics_cpio(&buf).unwrap();
+        let members = list_newc_members(&buf).unwrap();
+        assert!(members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER));
+        // Still validates as Minimal layout too.
+        validate_ryoku_minimal_cpio(&buf).unwrap();
+        // Without modules_root, DRM kos are absent (014.0 layout still valid).
+        assert!(validate_ryoku_graphics_cpio_with_modules(&buf).is_err());
+    }
+
+    #[test]
+    fn ryoku_graphics_with_modules_packs_allowlist() {
+        let dir = env::temp_dir().join(format!(
+            "ryoku-gfx-mods-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        for member in REQUIRED_GRAPHICS_MODULE_MEMBERS {
+            let rel = member
+                .strip_prefix("./lib/modules/6.12.114-0-virt/")
+                .unwrap();
+            let path = dir.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, format!("FAKE_KO:{rel}")).unwrap();
+        }
+        let mut buf = Vec::new();
+        write_ryoku_graphics_newc_with_modules(
+            b"INIT",
+            b"CONSOLE",
+            b"GFXDEMO",
+            RYOKU_GRAPHICS_RELEASE_TEXT,
+            &dir,
+            &mut buf,
+        )
+        .unwrap();
+        validate_ryoku_graphics_cpio_with_modules(&buf).unwrap();
+        let members = list_newc_members(&buf).unwrap();
+        assert!(members.iter().any(|m| m == REQUIRED_GRAPHICS_DEMO_MEMBER));
+        for req in REQUIRED_GRAPHICS_MODULE_MEMBERS {
+            assert!(members.iter().any(|m| m == req), "missing {req}");
+        }
+        // Serial Minimal validator still OK (extra members allowed for Minimal check).
+        validate_ryoku_minimal_cpio(&buf).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_modules_rejects_missing_allowlist_file() {
+        let dir = env::temp_dir().join(format!("ryoku-gfx-mods-empty-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mut members = Vec::new();
+        let err = append_graphics_modules(&mut members, &dir).unwrap_err();
+        assert!(err.contains("missing allowlisted"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

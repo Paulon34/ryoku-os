@@ -1,4 +1,4 @@
-# `ryoku-init` — Ryoku Boot Seed / Minimal PID 1 (Mission 008 / 012 / 013)
+# `ryoku-init` — Ryoku Boot Seed / Minimal PID 1 (Mission 008 / 012 / 013 / 014.1)
 
 Minimal **PID 1** prototype for early QEMU smoke tests. Emits
 `RYOKU_BOOT_SEED_READY` **only when `pid == 1`**. Non-PID-1 invocations print a
@@ -13,14 +13,18 @@ to avoid READY×3 when stdout/stderr/console share a UART.
 
 After READY, if `/bin/ryoku-console` exists (Ryoku Minimal initramfs), PID 1:
 
-1. Mounts `proc` → `/proc` and `sysfs` → `/sys` (WARN on failure; does not abort)
+1. Mounts `proc` → `/proc`, `sysfs` → `/sys`, and `devtmpfs` → `/dev` (WARN on failure; does not abort)
 2. Prints a plain ASCII honesty banner
-3. Spawns the console **once** with stdin/stdout/stderr on `/dev/console`
-4. Reaps the child, then idles forever
+3. **Graphics profile (014.1):** if `/bin/ryoku-graphics-demo` exists, load allowlisted
+   Alpine virt DRM modules via `finit_module`, then start the demo **once**
+   (WARN + continue on failure; never duplicates READY; never claims `FIRST_PIXELS=PASS`)
+4. Spawns the console **once** with stdin/stdout/stderr on `/dev/console`
+5. Reaps the child, then idles forever
 
 Original Boot Seed initramfs lacks the console binary → **exact** prior T3
-idle-after-READY behavior (**no** mounts, **no** banner). Console exit/EOF/failure
-must **not** kill PID 1; there is **no** uncontrolled restart loop.
+idle-after-READY behavior (**no** mounts, **no** banner). Serial Minimal omits the
+graphics demo → no module load. Console/demo exit/EOF/failure must **not** kill
+PID 1; there is **no** uncontrolled restart loop.
 
 ## Build (dev / tests)
 

@@ -24,10 +24,12 @@ Do **not** treat the ASCII banner as a product boot splash. T3 Boot Seed path
 must remain free of decorative banners that could confuse evidence logs (013
 prints the banner only on the Minimal interactive path).
 
-## Status after Mission 013 closeout
+## Status after Mission 013 closeout / 014.1 path
 
 | Item | Status |
 |------|--------|
 | ASCII banner in guest | **PASS_MANUAL** (013) |
-| Graphical DRM/fb path | **NOT_RUN** (Mission 014) |
-| `FIRST_PIXELS` | **NOT_RUN** until a real visual test is recorded |
+| Graphical DRM/fb path | modules + PID1 demo path implemented (014.1); guest visual **NOT_RUN** |
+| `FIRST_PIXELS` | **NOT_RUN** until a human confirms real pixels (not SeaBIOS) |
+
+See [ryoku-graphics.md](ryoku-graphics.md) for the 014.1 activation path and manual evidence.
