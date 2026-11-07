@@ -3,6 +3,12 @@
 //! Not PID 1. Exit cleanly on EOF (Ctrl-D). Guest stdin/stdout are usually
 //! `/dev/console` (wired by `ryoku-init`). Line I/O uses capped
 //! [`ryoku_console::read_limited_line`] (fill_buf/consume).
+//!
+//! # Host vs guest FS
+//!
+//! - **Guest Minimal:** `ryoku-init` sets `RYOKU_CONSOLE_ROOT=/` before spawn.
+//! - **Host:** FS builtins require an explicit, validated `RYOKU_CONSOLE_ROOT`.
+//!   Without it, `pwd`/`ls`/`cat` refuse (help/version/status/echo/clear still work).
 
 #![forbid(unsafe_code)]
 
@@ -16,11 +22,23 @@ use ryoku_console::{
 };
 
 fn session_from_env() -> Session {
-    if let Ok(root) = env::var("RYOKU_CONSOLE_ROOT") {
-        return Session::with_root(PathBuf::from(root));
+    match env::var_os("RYOKU_CONSOLE_ROOT") {
+        Some(raw) => {
+            let path = PathBuf::from(raw);
+            match Session::with_root(path) {
+                Ok(session) => session,
+                Err(err) => {
+                    let _ = writeln!(
+                        io::stderr(),
+                        "ryoku-console: invalid RYOKU_CONSOLE_ROOT ({err}); FS builtins disabled"
+                    );
+                    Session::without_fs()
+                }
+            }
+        }
+        // Host default: do NOT fall back to `/` (would touch the real host root).
+        None => Session::without_fs(),
     }
-    // Guest Minimal: experimental FS is the initramfs root.
-    Session::guest_default()
 }
 
 fn main() -> ExitCode {

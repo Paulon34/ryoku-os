@@ -45,16 +45,25 @@ pub enum Command {
     Cat(String),
 }
 
-/// REPL session holding the confined FS cursor.
+/// REPL session holding an optional confined FS cursor.
+///
+/// Host without `RYOKU_CONSOLE_ROOT` → [`Session::without_fs`] (`pwd`/`ls`/`cat`
+/// refuse). Guest Minimal gets `RYOKU_CONSOLE_ROOT=/` from `ryoku-init`.
 #[derive(Debug, Clone)]
 pub struct Session {
-    pub fs: GuestFs,
+    pub fs: Option<GuestFs>,
 }
 
 impl Session {
     #[must_use]
     pub fn new(fs: GuestFs) -> Self {
-        Self { fs }
+        Self { fs: Some(fs) }
+    }
+
+    /// Host REPL without experimental FS (help/version/status/echo/clear only).
+    #[must_use]
+    pub fn without_fs() -> Self {
+        Self { fs: None }
     }
 
     /// Guest default: root `/`, cwd `/home/ryoku` when present.
@@ -63,10 +72,9 @@ impl Session {
         Self::new(GuestFs::guest_root())
     }
 
-    /// Host/test session rooted at `root`.
-    #[must_use]
-    pub fn with_root(root: PathBuf) -> Self {
-        Self::new(GuestFs::new(root))
+    /// Host/test session rooted at `root` (validates: plain dir, not symlink).
+    pub fn with_root(root: PathBuf) -> Result<Self, FsError> {
+        Ok(Self::new(GuestFs::validated_root(root)?))
     }
 }
 
@@ -348,9 +356,17 @@ pub fn render(cmd: &Command) -> String {
 /// Eval FS-aware command against a [`Session`].
 pub fn render_in(session: &Session, cmd: &Command) -> Result<String, FsError> {
     match cmd {
-        Command::Pwd => Ok(session.fs.pwd()),
-        Command::Ls(path) => session.fs.ls(path.as_deref()),
-        Command::Cat(path) => session.fs.cat(path),
+        Command::Pwd | Command::Ls(_) | Command::Cat(_) => {
+            let Some(fs) = session.fs.as_ref() else {
+                return Err(FsError::RootRequired);
+            };
+            match cmd {
+                Command::Pwd => Ok(fs.pwd()),
+                Command::Ls(path) => fs.ls(path.as_deref()),
+                Command::Cat(path) => fs.cat(path),
+                _ => unreachable!(),
+            }
+        }
         other => Ok(render(other)),
     }
 }
@@ -517,7 +533,7 @@ mod tests {
         std::fs::create_dir_all(root.join("etc")).unwrap();
         std::fs::write(root.join("etc/ryoku-release"), b"ryoku-minimal\n").unwrap();
         std::fs::write(root.join("home/ryoku/note.txt"), b"hi\n").unwrap();
-        let session = Session::with_root(root.clone());
+        let session = Session::with_root(root.clone()).unwrap();
         assert_eq!(eval_line_in(&session, "pwd").unwrap(), "/home/ryoku\n");
         assert!(eval_line_in(&session, "ls").unwrap().contains("note.txt"));
         assert_eq!(
@@ -528,6 +544,30 @@ mod tests {
             .unwrap_err()
             .contains("escape"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn host_without_fs_root_keeps_non_fs_builtins() {
+        let session = Session::without_fs();
+        assert!(eval_line_in(&session, "help").unwrap().contains("help"));
+        assert!(eval_line_in(&session, "version")
+            .unwrap()
+            .starts_with("ryoku-console "));
+        assert!(eval_line_in(&session, "status")
+            .unwrap()
+            .contains("Mission"));
+        assert_eq!(eval_line_in(&session, "echo hi").unwrap(), "hi\n");
+        assert!(eval_line_in(&session, "clear")
+            .unwrap()
+            .contains("\u{001b}[2J"));
+        for cmd in ["pwd", "ls", "ls /", "cat /etc/passwd"] {
+            let err = eval_line_in(&session, cmd).unwrap_err();
+            assert!(
+                err.contains("RYOKU_CONSOLE_ROOT"),
+                "expected RootRequired for {cmd}, got {err}"
+            );
+            assert!(!err.contains("EXTERNAL"));
+        }
     }
 
     #[test]
@@ -670,7 +710,7 @@ mod tests {
         std::fs::create_dir_all(root.join("home/ryoku")).unwrap();
         std::fs::create_dir_all(root.join("etc")).unwrap();
         std::fs::write(root.join("etc/ryoku-release"), b"ryoku-minimal 0.1.0\n").unwrap();
-        let session = Session::with_root(root.clone());
+        let session = Session::with_root(root.clone()).unwrap();
         let script = ["help", "pwd", "ls /etc", "cat /etc/ryoku-release", "status"];
         let mut out = String::new();
         for line in script {

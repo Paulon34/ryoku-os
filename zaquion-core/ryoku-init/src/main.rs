@@ -83,7 +83,10 @@ fn run_interactive_console_once() {
         }
     };
 
+    // Guest Minimal: explicit root `/` so host REPLs without RYOKU_CONSOLE_ROOT
+    // never fall back to touching the real host filesystem.
     let child = Command::new(CONSOLE_BIN_PATH)
+        .env("RYOKU_CONSOLE_ROOT", "/")
         .stdin(Stdio::from(stdin))
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))

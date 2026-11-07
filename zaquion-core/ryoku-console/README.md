@@ -45,9 +45,14 @@ See [docs/testing/console.md](../../docs/testing/console.md) and
 ```bash
 cd zaquion-core
 cargo run -q -p ryoku-console
-# optional: RYOKU_CONSOLE_ROOT=/path/to/staging cargo run -q -p ryoku-console
+# Host FS builtins require an explicit staging root (never falls back to /):
+# RYOKU_CONSOLE_ROOT=/path/to/staging cargo run -q -p ryoku-console
 cargo test -p ryoku-console
 ```
+
+Guest Minimal: `ryoku-init` sets `RYOKU_CONSOLE_ROOT=/` when spawning. Symlinks are
+rejected; `cat` reads are capped at 64 KiB. Residual TOCTOU after lstat is documented
+in `src/fs.rs`.
 
 Static musl guest binary (authorized builder):
 
