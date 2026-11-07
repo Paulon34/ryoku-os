@@ -24,8 +24,10 @@ OUT="$WORKDIR/out.txt"
 RYOKU_SHELL_QEMU_EXECUTE=0 "$PKG/run-ryoku-shell-qemu.sh" >"$OUT" 2>&1
 grep -q 'mode:     standalone' "$OUT"
 grep -q 'OK: SHA256SUMS verified' "$OUT"
-grep -q 'shell graphical guest=NOT_RUN' "$OUT"
+grep -q 'LAUNCHER_GUEST=NOT_RUN' "$OUT"
 grep -q 'virtio-vga' "$OUT"
+grep -q 'virtio-keyboard-pci' "$OUT"
+grep -q 'virtio-tablet-pci' "$OUT"
 echo "pass: shell_standalone_plan"
 
 echo "== execute without CONFIRM must fail =="
