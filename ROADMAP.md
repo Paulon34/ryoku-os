@@ -112,8 +112,8 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.12 — Interactive Launcher (Missão 015.2)
 
-- [ ] Ryoku Launcher panel (title/categories/focus/close/adaptive)
-- [ ] ABS axis from device caps; fact-based input indicators (never auto PASS_MANUAL)
+- [x] Ryoku Launcher panel (title/categories/focus/close/adaptive) — code
+- [x] ABS axis from device caps; device filter; fact-based indicators (never auto PASS_MANUAL)
 - [ ] Guest results **NOT_RUN** until manual confirm
 
 ## Fase 3 — Primeiros serviços Zaquion Core

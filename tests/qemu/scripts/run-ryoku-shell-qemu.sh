@@ -50,7 +50,7 @@ case "$DISPLAY_BACKEND" in
   *) fail "RYOKU_SHELL_DISPLAY must be gtk|sdl|none (got $DISPLAY_BACKEND)" ;;
 esac
 
-echo "Ryoku Minimal SHELL QEMU helper (Mission 015.1 interactive)"
+echo "Ryoku Minimal SHELL QEMU helper (Mission 015.2 launcher)"
 echo "  mode:     $MODE"
 echo "  package:  $PKG"
 echo "  kernel:   $KERNEL"
@@ -58,8 +58,8 @@ echo "  initrd:   $INITRD"
 echo "  sums:     $SUMS"
 echo "  display:  $DISPLAY_BACKEND"
 echo "  execute:  $EXECUTE (0=plan/validate; 1 needs CONFIRM=RUN)"
-echo "  note:     INPUT_GUEST=NOT_RUN MOUSE_INTERACTION=NOT_RUN KEYBOARD_INTERACTION=NOT_RUN until human"
-echo "  note:     shell graphical guest=NOT_RUN unless SHELL_PREVIEW already PASS_MANUAL on 015 tip"
+echo "  note:     LAUNCHER_GUEST=NOT_RUN INPUT_FACT=NOT_RUN MOUSE/KEYBOARD=NOT_RUN until human"
+echo "  note:     panel facts are UNAVAILABLE/DETECTED/EVENTS RECEIVED — never auto PASS_MANUAL"
 
 [[ -f "$SUMS" ]] || fail "missing SHA256SUMS at $SUMS"
 [[ -f "$KERNEL" ]] || fail "missing lab kernel $KERNEL"

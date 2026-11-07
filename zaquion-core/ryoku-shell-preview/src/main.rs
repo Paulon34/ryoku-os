@@ -1,8 +1,8 @@
-//! Guest entry for `ryoku-shell-preview` (Mission 015 / 015.1).
+//! Guest entry for `ryoku-shell-preview` (Mission 015 / 015.1 / 015.2).
 //!
-//! Reuses Mission 014.2 explicit fb0 mmap. Mission 015.1 keeps the shell alive
-//! with a guest-evdev event loop (mouse + keyboard). Guest interaction statuses
-//! stay **NOT_RUN** until human confirm — never invented from host CI.
+//! Reuses Mission 014.2 explicit fb0 mmap. Keeps the shell alive with a
+//! guest-evdev event loop. Mission 015.2: ABS caps, device selection, Ryoku
+//! Launcher, fact-based input indicators (never auto PASS_MANUAL).
 
 #![allow(unsafe_code)]
 
@@ -18,7 +18,8 @@ use ryoku_graphics_demo::{
     classify_no_fb_reason, format_outcome, graphics_root_from_env, open_fb_rw, probe_fb0,
 };
 use ryoku_shell_preview::{
-    compose_shell_interactive, present_shell, InteractiveState, ShellLayout, SHELL_IDENTITY,
+    compose_shell_interactive, present_shell, InputFact, InteractiveState, ShellLayout,
+    SHELL_IDENTITY,
 };
 
 use crate::input::{
@@ -27,7 +28,7 @@ use crate::input::{
 };
 
 fn apply_action(layout: &ShellLayout, ui: &mut InteractiveState, action: InputAction) -> bool {
-    match action {
+    let changed = match action {
         InputAction::AbsSample { x, y } => {
             let nx = x.unwrap_or(ui.cursor_x);
             let ny = y.unwrap_or(ui.cursor_y);
@@ -58,35 +59,61 @@ fn apply_action(layout: &ShellLayout, ui: &mut InteractiveState, action: InputAc
             if !pressed {
                 return false;
             }
-            match code {
-                KEY_ESC => {
-                    ui.close_launcher();
-                    true
+            if ui.launcher_open {
+                match code {
+                    KEY_ESC => {
+                        ui.close_launcher();
+                        true
+                    }
+                    KEY_UP | KEY_LEFT => {
+                        ui.nav_launcher(-1);
+                        true
+                    }
+                    KEY_DOWN | KEY_RIGHT | KEY_TAB => {
+                        ui.nav_launcher(1);
+                        true
+                    }
+                    KEY_ENTER | KEY_SPACE => {
+                        ui.activate_selected();
+                        true
+                    }
+                    _ => false,
                 }
-                KEY_LEFT => {
-                    ui.nav_dock(layout, -1);
-                    true
+            } else {
+                match code {
+                    KEY_ESC => {
+                        ui.close_launcher();
+                        true
+                    }
+                    KEY_LEFT => {
+                        ui.nav_dock(layout, -1);
+                        true
+                    }
+                    KEY_RIGHT | KEY_TAB => {
+                        ui.nav_dock(layout, 1);
+                        true
+                    }
+                    KEY_UP => {
+                        ui.nav_dock(layout, -1);
+                        true
+                    }
+                    KEY_DOWN => {
+                        ui.nav_dock(layout, 1);
+                        true
+                    }
+                    KEY_ENTER | KEY_SPACE => {
+                        ui.activate_selected();
+                        true
+                    }
+                    _ => false,
                 }
-                KEY_RIGHT | KEY_TAB => {
-                    ui.nav_dock(layout, 1);
-                    true
-                }
-                KEY_UP => {
-                    ui.nav_dock(layout, -1);
-                    true
-                }
-                KEY_DOWN => {
-                    ui.nav_dock(layout, 1);
-                    true
-                }
-                KEY_ENTER | KEY_SPACE => {
-                    ui.activate_selected();
-                    true
-                }
-                _ => false,
             }
         }
+    };
+    if changed {
+        ui.input_fact.note_event();
     }
+    changed
 }
 
 fn present_ui(
@@ -116,8 +143,9 @@ fn event_loop(
     let fb_h = layout.height as i32;
 
     eprintln!(
-        "{SHELL_IDENTITY}: event loop running (guest evdev); \
-         INPUT_GUEST/MOUSE_INTERACTION/KEYBOARD_INTERACTION=NOT_RUN until manual"
+        "{SHELL_IDENTITY}: event loop running (015.2 launcher); \
+         guest results NOT_RUN until manual — fact={:?}",
+        ui.input_fact
     );
 
     loop {
@@ -138,7 +166,7 @@ fn event_loop(
             }
             dirty = false;
         }
-        // No busy-loop: sleep even when idle.
+        // Low CPU: sleep every tick (no busy-loop).
         thread::sleep(Duration::from_millis(8));
     }
 }
@@ -153,7 +181,7 @@ fn main() -> ExitCode {
     };
 
     eprintln!(
-        "{SHELL_IDENTITY}: starting interactive shell under {} (Mission 015.1)",
+        "{SHELL_IDENTITY}: starting interactive shell+launcher under {} (Mission 015.2)",
         root.display()
     );
 
@@ -210,28 +238,30 @@ fn main() -> ExitCode {
         }
     };
 
+    let mut devices = match scan_evdev_devices(&root) {
+        Ok((d, fact)) => {
+            ui.input_fact = fact;
+            d
+        }
+        Err(warn) => {
+            eprintln!("{warn}");
+            eprintln!(
+                "{SHELL_IDENTITY}: WARN continuing without guest input — serial console still OK"
+            );
+            ui.input_fact = InputFact::Unavailable;
+            Vec::new()
+        }
+    };
+
     if let Err(err) = present_ui(&mut mmap, &plan.geom, &layout, &ui, &mut scratch) {
         eprintln!("{err}");
         return ExitCode::from(1);
     }
     println!(
-        "{SHELL_IDENTITY}: presented shell layout into /dev/fb0 ({}x{} bpp={}); staying alive",
-        plan.geom.width, plan.geom.height, plan.geom.bpp
+        "{SHELL_IDENTITY}: presented shell+launcher into /dev/fb0 ({}x{} bpp={}); fact={:?}; staying alive",
+        plan.geom.width, plan.geom.height, plan.geom.bpp, ui.input_fact
     );
 
-    let mut devices = match scan_evdev_devices(&root) {
-        Ok(d) => d,
-        Err(warn) => {
-            // Fallback: WARN + serial honesty; shell stays alive on FB without input.
-            eprintln!("{warn}");
-            eprintln!(
-                "{SHELL_IDENTITY}: WARN continuing without guest input — serial console still OK"
-            );
-            Vec::new()
-        }
-    };
-
-    // Lives forever: PID1 runs serial console in parallel (015.1).
     event_loop(
         &mut mmap,
         &plan.geom,

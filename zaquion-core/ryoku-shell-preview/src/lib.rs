@@ -1,12 +1,12 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.1).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.1 / 015.2).
 //!
 //! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
 //! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
 //! (`ryoku-graphics-demo`).
 //!
-//! Mission **015.1** adds guest-evdev interactive state (cursor, dock hit-test,
-//! launcher panel). Guest interaction statuses remain **NOT_RUN** until manual
-//! confirm — this crate never invents PASS from host unit tests.
+//! Mission **015.2** adds the Ryoku Launcher panel (categories/focus/close) and
+//! fact-based input indicators (`UNAVAILABLE` / `DETECTED` / `EVENTS RECEIVED`).
+//! This crate **never** invents `PASS_MANUAL` from host unit tests or CI.
 
 #![forbid(unsafe_code)]
 
@@ -16,6 +16,36 @@ pub const SHELL_IDENTITY: &str = "ryoku-shell-preview";
 
 /// Dock icon slot count (first icon opens Launcher).
 pub const DOCK_SLOTS: usize = 5;
+
+/// Illustrative launcher categories (no app exec).
+pub const LAUNCHER_CATEGORIES: &[&str] = &["SYSTEM", "DEV TOOLS", "FILES", "SETTINGS"];
+
+/// Fact-based guest input indicator (Mission 015.2). Never `PASS_MANUAL`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputFact {
+    #[default]
+    Unavailable,
+    Detected,
+    EventsReceived,
+}
+
+impl InputFact {
+    /// Short status label for the top panel (ASCII glyphs available).
+    #[must_use]
+    pub fn panel_label(self) -> &'static str {
+        match self {
+            Self::Unavailable => "INPUT UNAVAILABLE",
+            Self::Detected => "INPUT DETECTED",
+            Self::EventsReceived => "EVENTS RECEIVED",
+        }
+    }
+
+    pub fn note_event(&mut self) {
+        if matches!(self, Self::Detected | Self::EventsReceived) {
+            *self = Self::EventsReceived;
+        }
+    }
+}
 
 /// Brand / chrome colors (navy + teal).
 pub const COLOR_NAVY: (u8, u8, u8) = (0x0a, 0x16, 0x2e);
@@ -97,7 +127,74 @@ impl ShellLayout {
     }
 }
 
-/// Interactive UI state (Mission 015.1). Host tests may drive this; guest PASS is manual.
+/// Adaptive launcher geometry for the current FB.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LauncherLayout {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub close_x: i32,
+    pub close_y: i32,
+    pub close_s: i32,
+    pub row_y0: i32,
+    pub row_h: i32,
+}
+
+impl LauncherLayout {
+    #[must_use]
+    pub fn for_shell(layout: &ShellLayout) -> Self {
+        let w = (layout.width as i32 * 42 / 100).clamp(220, 400);
+        let h = (layout.desktop_h as i32 * 70 / 100).clamp(160, 320);
+        let x = 20;
+        let y = layout.desktop_y as i32 + 12;
+        let close_s = 18;
+        let close_x = x + w - close_s - 10;
+        let close_y = y + 10;
+        let row_y0 = y + 44;
+        let row_h = 28;
+        Self {
+            x,
+            y,
+            w,
+            h,
+            close_x,
+            close_y,
+            close_s,
+            row_y0,
+            row_h,
+        }
+    }
+
+    #[must_use]
+    pub fn contains(&self, px: i32, py: i32) -> bool {
+        px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
+    }
+
+    #[must_use]
+    pub fn hit_close(&self, px: i32, py: i32) -> bool {
+        px >= self.close_x
+            && px < self.close_x + self.close_s
+            && py >= self.close_y
+            && py < self.close_y + self.close_s
+    }
+
+    #[must_use]
+    pub fn hit_category(&self, px: i32, py: i32) -> Option<usize> {
+        if !self.contains(px, py) {
+            return None;
+        }
+        for i in 0..LAUNCHER_CATEGORIES.len() {
+            let ry = self.row_y0 + (i as i32) * self.row_h;
+            if py >= ry && py < ry + self.row_h - 4 {
+                return Some(i);
+            }
+        }
+        None
+    }
+}
+
+/// Interactive UI state (Mission 015.1 / 015.2). Guest PASS is manual only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InteractiveState {
     pub cursor_x: i32,
@@ -105,7 +202,9 @@ pub struct InteractiveState {
     pub hover_dock: Option<usize>,
     pub selected_dock: Option<usize>,
     pub launcher_open: bool,
+    pub launcher_focus: usize,
     pub left_down: bool,
+    pub input_fact: InputFact,
 }
 
 impl InteractiveState {
@@ -117,7 +216,9 @@ impl InteractiveState {
             hover_dock: None,
             selected_dock: None,
             launcher_open: false,
+            launcher_focus: 0,
             left_down: false,
+            input_fact: InputFact::Unavailable,
         }
     }
 
@@ -149,15 +250,42 @@ impl InteractiveState {
 
     pub fn refresh_hover(&mut self, layout: &ShellLayout) {
         self.hover_dock = hit_test_dock(layout, self.cursor_x, self.cursor_y);
+        if self.launcher_open {
+            let ll = LauncherLayout::for_shell(layout);
+            if let Some(c) = ll.hit_category(self.cursor_x, self.cursor_y) {
+                self.launcher_focus = c;
+            }
+        }
     }
 
-    /// Primary click (press). First dock icon opens Launcher; no arbitrary exec.
+    /// Primary click (press). First dock icon toggles Launcher; close button / Esc.
     pub fn on_primary_press(&mut self, layout: &ShellLayout) {
         self.left_down = true;
+        let ll = LauncherLayout::for_shell(layout);
+        if self.launcher_open {
+            if ll.hit_close(self.cursor_x, self.cursor_y) {
+                self.close_launcher();
+                return;
+            }
+            if let Some(c) = ll.hit_category(self.cursor_x, self.cursor_y) {
+                self.launcher_focus = c;
+                // Illustrative select only — no app exec.
+                return;
+            }
+            if !ll.contains(self.cursor_x, self.cursor_y) {
+                // Click outside launcher closes it (unless on dock icon 0 toggle).
+                if hit_test_dock(layout, self.cursor_x, self.cursor_y) != Some(0) {
+                    self.close_launcher();
+                }
+            }
+        }
         if let Some(idx) = hit_test_dock(layout, self.cursor_x, self.cursor_y) {
             self.selected_dock = Some(idx);
             if idx == 0 {
-                self.launcher_open = true;
+                self.launcher_open = !self.launcher_open;
+                if self.launcher_open {
+                    self.launcher_focus = 0;
+                }
             }
         }
     }
@@ -166,12 +294,17 @@ impl InteractiveState {
         self.left_down = false;
     }
 
-    /// Close launcher (Esc).
+    /// Close launcher (Esc / close control).
     pub fn close_launcher(&mut self) {
         self.launcher_open = false;
     }
 
-    /// Keyboard dock navigation (Left/Right/Tab). Enter activates selection.
+    pub fn open_launcher(&mut self) {
+        self.launcher_open = true;
+        self.launcher_focus = 0;
+    }
+
+    /// Keyboard dock navigation when launcher closed.
     pub fn nav_dock(&mut self, layout: &ShellLayout, delta: i32) {
         let cur = self.selected_dock.or(self.hover_dock).unwrap_or(0) as i32;
         let next = (cur + delta).rem_euclid(DOCK_SLOTS as i32) as usize;
@@ -183,9 +316,20 @@ impl InteractiveState {
         }
     }
 
+    /// Keyboard category navigation when launcher open.
+    pub fn nav_launcher(&mut self, delta: i32) {
+        let n = LAUNCHER_CATEGORIES.len() as i32;
+        let cur = self.launcher_focus as i32;
+        self.launcher_focus = (cur + delta).rem_euclid(n) as usize;
+    }
+
     pub fn activate_selected(&mut self) {
+        if self.launcher_open {
+            // Focus stays; illustrative — no exec.
+            return;
+        }
         if self.selected_dock == Some(0) {
-            self.launcher_open = true;
+            self.open_launcher();
         }
     }
 }
@@ -418,20 +562,23 @@ pub fn compose_shell_interactive(
         text_scale,
         COLOR_TEXT,
     );
-    // Status (right) — honesty: guest input still NOT_RUN until manual.
-    let status = "INPUT NOT_RUN";
-    let status_w = status.len() as i32 * 6 * text_scale;
+    // Status (right) — fact-based indicator only (never auto PASS_MANUAL).
+    let status = ui
+        .map(|u| u.input_fact.panel_label())
+        .unwrap_or("INPUT UNAVAILABLE");
+    let status_scale = if layout.width >= 900 { text_scale } else { 1 };
+    let status_w = status.len() as i32 * 6 * status_scale;
     draw_text(
         buf,
         layout.width as i32 - status_w - 12,
         8,
         status,
-        text_scale,
+        status_scale,
         COLOR_MUTED,
     );
 
-    // Desktop hint card (illustrative)
-    if layout.desktop_h > 80 {
+    // Desktop hint card (illustrative) — hidden while launcher open.
+    if layout.desktop_h > 80 && !ui.is_some_and(|u| u.launcher_open) {
         let card_w = (layout.width as i32 * 45 / 100).clamp(220, 420);
         let card_h = (layout.desktop_h as i32 / 3).clamp(70, 120);
         let card_x = (layout.width as i32 - card_w) / 2;
@@ -449,37 +596,67 @@ pub fn compose_shell_interactive(
             buf,
             card_x + 16,
             card_y + 18 + 10 * text_scale + 8,
-            "GUEST EVDEV 015.1",
+            "LAUNCHER 015.2",
             text_scale,
             COLOR_MUTED,
         );
     }
 
-    // Launcher panel (first dock icon) — illustrative; no app exec.
-    if ui.is_some_and(|u| u.launcher_open) {
-        let lw = (layout.width as i32 * 40 / 100).clamp(200, 360);
-        let lh = (layout.desktop_h as i32 * 55 / 100).clamp(120, 280);
-        let lx = 24;
-        let ly = layout.desktop_y as i32 + 16;
-        fill_rounded(buf, lx, ly, lw, lh, 12, COLOR_PANEL);
-        fill_rect(buf, lx, ly, lw, 3, COLOR_TEAL);
-        draw_text(buf, lx + 16, ly + 16, "LAUNCHER", text_scale, COLOR_TEAL);
+    // Ryoku Launcher panel — title / categories / focus / close (adaptive).
+    if let Some(u) = ui.filter(|u| u.launcher_open) {
+        let ll = LauncherLayout::for_shell(layout);
+        fill_rounded(buf, ll.x, ll.y, ll.w, ll.h, 12, COLOR_PANEL);
+        fill_rect(buf, ll.x, ll.y, ll.w, 3, COLOR_TEAL);
         draw_text(
             buf,
-            lx + 16,
-            ly + 16 + 12 * text_scale,
-            "ILLUSTRATIVE - ESC CLOSES",
+            ll.x + 14,
+            ll.y + 12,
+            "RYOKU LAUNCHER",
             text_scale,
-            COLOR_MUTED,
+            COLOR_TEAL,
         );
+        // Close control
+        fill_rounded(
+            buf,
+            ll.close_x,
+            ll.close_y,
+            ll.close_s,
+            ll.close_s,
+            4,
+            COLOR_TEAL_DIM,
+        );
+        draw_text(buf, ll.close_x + 4, ll.close_y + 4, "X", 1, COLOR_TEXT);
         draw_text(
             buf,
-            lx + 16,
-            ly + 16 + 24 * text_scale,
-            "NO APP EXEC",
-            text_scale,
+            ll.x + 14,
+            ll.y + 12 + 10 * text_scale + 4,
+            "NO APP EXEC - ESC CLOSES",
+            1,
             COLOR_MUTED,
         );
+        for (i, cat) in LAUNCHER_CATEGORIES.iter().enumerate() {
+            let ry = ll.row_y0 + (i as i32) * ll.row_h;
+            let focused = u.launcher_focus == i;
+            if focused {
+                fill_rounded(
+                    buf,
+                    ll.x + 10,
+                    ry - 2,
+                    ll.w - 20,
+                    ll.row_h - 4,
+                    6,
+                    COLOR_TEAL_DIM,
+                );
+            }
+            draw_text(
+                buf,
+                ll.x + 18,
+                ry + 4,
+                cat,
+                1,
+                if focused { COLOR_TEXT } else { COLOR_MUTED },
+            );
+        }
     }
 
     // Dock
@@ -616,6 +793,43 @@ mod tests {
         assert!(ui.launcher_open);
         ui.close_launcher();
         assert!(!ui.launcher_open);
+    }
+
+    #[test]
+    fn launcher_close_button_hits() {
+        let l = ShellLayout::for_fb(941, 474).unwrap();
+        let mut ui = InteractiveState::new(&l);
+        ui.open_launcher();
+        let ll = LauncherLayout::for_shell(&l);
+        ui.move_abs(&l, ll.close_x + 2, ll.close_y + 2);
+        ui.on_primary_press(&l);
+        assert!(!ui.launcher_open);
+    }
+
+    #[test]
+    fn launcher_category_nav_wraps() {
+        let l = ShellLayout::for_fb(941, 474).unwrap();
+        let mut ui = InteractiveState::new(&l);
+        ui.open_launcher();
+        ui.nav_launcher(-1);
+        assert_eq!(ui.launcher_focus, LAUNCHER_CATEGORIES.len() - 1);
+        ui.nav_launcher(1);
+        assert_eq!(ui.launcher_focus, 0);
+    }
+
+    #[test]
+    fn input_fact_never_claims_pass_manual() {
+        for f in [
+            InputFact::Unavailable,
+            InputFact::Detected,
+            InputFact::EventsReceived,
+        ] {
+            assert!(!f.panel_label().contains("PASS"));
+            assert!(!f.panel_label().contains("NOT_RUN"));
+        }
+        let mut f = InputFact::Detected;
+        f.note_event();
+        assert_eq!(f, InputFact::EventsReceived);
     }
 
     #[test]

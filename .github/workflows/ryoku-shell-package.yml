@@ -1,4 +1,4 @@
-# Mission 015.1 — Ryoku Shell Preview + guest input package.
+# Mission 015.2 — Ryoku Shell + Interactive Launcher package.
 #
 # Builds musl init+console+shell-preview, packs ryoku-shell.cpio.gz
 # (+ DRM + evdev/virtio_input modules). Does NOT run QEMU.
@@ -7,10 +7,14 @@ name: ryoku-shell-package
 
 on:
   push:
-    branches: ["cursor/ryoku-shell-015*", "cursor/ryoku-shell-input-0151*"]
+    branches:
+      - "cursor/ryoku-shell-015*"
+      - "cursor/ryoku-shell-input-0151*"
+      - "cursor/ryoku-launcher-0152*"
   pull_request:
     branches:
       - main
+      - "cursor/ryoku-shell-input-0151*"
       - "cursor/ryoku-shell-015*"
       - "cursor/ryoku-graphics-014*"
       - "cursor/ryoku-hardware-013*"
@@ -97,11 +101,11 @@ jobs:
             exit 1
           fi
           echo "shell_package_build=PASS" | tee tests/qemu/results/ryoku-shell-status.txt
-          echo "shell_graphical_guest=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
-          echo "INPUT_GUEST=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
+          echo "LAUNCHER_GUEST=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
+          echo "INPUT_FACT=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "MOUSE_INTERACTION=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
           echo "KEYBOARD_INTERACTION=NOT_RUN" | tee -a tests/qemu/results/ryoku-shell-status.txt
-          # Cpio must include guest input modules (015.1).
+          # Cpio must include guest input modules (015.1/015.2).
           gzip -dc tests/qemu/run/ryoku-shell.cpio.gz | cpio -t 2>/dev/null \
             | grep -q 'kernel/drivers/input/evdev.ko'
           gzip -dc tests/qemu/run/ryoku-shell.cpio.gz | cpio -t 2>/dev/null \
@@ -119,7 +123,7 @@ jobs:
           set -euo pipefail
           tests/qemu/scripts/run-ryoku-shell-qemu.sh | tee tests/qemu/results/ryoku-shell-qemu-plan.txt
           grep -q 'OK: SHA256SUMS verified' tests/qemu/results/ryoku-shell-qemu-plan.txt
-          grep -q 'INPUT_GUEST=NOT_RUN' tests/qemu/results/ryoku-shell-qemu-plan.txt
+          grep -q 'LAUNCHER_GUEST=NOT_RUN' tests/qemu/results/ryoku-shell-qemu-plan.txt
           grep -q 'virtio-keyboard-pci' tests/qemu/results/ryoku-shell-qemu-plan.txt
           grep -q 'virtio-tablet-pci' tests/qemu/results/ryoku-shell-qemu-plan.txt
           if grep -q 'AUTHORIZED: starting QEMU' tests/qemu/results/ryoku-shell-qemu-plan.txt; then
@@ -127,7 +131,7 @@ jobs:
             exit 1
           fi
 
-      - name: Stage downloadable shell VM package
+      - name: Stage downloadable shell launcher VM package
         run: |
           set -euo pipefail
           PKG=tests/qemu/results/ryoku-shell-vm-package
@@ -135,12 +139,12 @@ jobs:
           mkdir -p "$PKG/bin-musl"
           cp -a tests/qemu/run/ryoku-boot-seed-vmlinuz "$PKG/"
           cp -a tests/qemu/run/ryoku-shell.cpio.gz "$PKG/"
-          cp -a tests/qemu/README-SHELL-INPUT.md "$PKG/"
+          cp -a tests/qemu/README-SHELL-LAUNCHER.md "$PKG/"
           cp -a tests/qemu/scripts/run-ryoku-shell-qemu.sh "$PKG/"
           cp -a tests/qemu/configs/console-shell.rvl.conf "$PKG/"
           cp -a tests/qemu/fixtures/virt-drm-modules.manifest "$PKG/"
           cp -a tests/qemu/run/virt-drm-modules/PROVENANCE.txt "$PKG/DRM-MODULES-PROVENANCE.txt"
-          cp -a docs/testing/ryoku-shell-input.md "$PKG/"
+          cp -a docs/testing/ryoku-shell-launcher.md "$PKG/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console "$PKG/bin-musl/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-shell-preview "$PKG/bin-musl/"
@@ -153,12 +157,12 @@ jobs:
           ( cd "$PKG" && RYOKU_SHELL_QEMU_EXECUTE=0 ./run-ryoku-shell-qemu.sh ) \
             | tee tests/qemu/results/ryoku-shell-staged-zip-plan.txt
           grep -q 'mode:     standalone' tests/qemu/results/ryoku-shell-staged-zip-plan.txt
-          grep -q 'INPUT_GUEST=NOT_RUN' tests/qemu/results/ryoku-shell-staged-zip-plan.txt
+          grep -q 'LAUNCHER_GUEST=NOT_RUN' tests/qemu/results/ryoku-shell-staged-zip-plan.txt
 
-      - name: Upload Ryoku shell+input VM artifacts
+      - name: Upload Ryoku shell launcher VM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ryoku-shell-input-vm-${{ github.sha }}
+          name: ryoku-shell-launcher-vm-${{ github.sha }}
           path: tests/qemu/results/ryoku-shell-vm-package/
           if-no-files-found: error
           retention-days: 30

@@ -1,19 +1,19 @@
-# `ryoku-shell-preview` — Mission 015 / 015.1
+# `ryoku-shell-preview` — Mission 015 / 015.1 / 015.2
 
-Illustrative **desktop layout** drawn to a real `/dev/fb0` using the Mission
-014.2 framebuffer mmap/ioctl path. Mission **015.1** keeps the process alive
-with a guest-evdev event loop (cursor, dock hit-test, launcher panel).
+Illustrative **desktop layout** + **Ryoku Launcher** on `/dev/fb0` (Mission 014.2
+mmap/ioctl). Guest-evdev event loop with ABS caps, device filter, and
+fact-based input indicators.
 
-Not a product Desktop. Not Wayland. Not Bash / Hyprland.
+Not a product Desktop. Not Wayland. Not Bash / Hyprland. No app exec.
 
 ## Honesty
 
 | Claim | Status |
 |-------|--------|
-| Software layout + present to fb0 when surface exists | Host unit / package |
-| Guest shell preview visual | Mission **015** — **`SHELL_PREVIEW=PASS_MANUAL`** (closeout) |
-| Guest input (`INPUT_GUEST` / mouse / keyboard) | Mission **015.1** — **`NOT_RUN`** until human |
-| Product shell / compositor / app exec | **Not** claimed |
+| Software layout + launcher + present to fb0 | Host unit / package |
+| Fact indicators (`UNAVAILABLE` / `DETECTED` / `EVENTS RECEIVED`) | Runtime facts only |
+| Guest launcher / mouse / keyboard confirm | **`NOT_RUN`** until human |
+| Auto `PASS_MANUAL` from CI | **Never** |
 
 ## Build
 
