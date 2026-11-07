@@ -107,6 +107,7 @@ jobs:
             docs/testing/ryoku-shell.md
             docs/testing/ryoku-shell-input.md
             docs/testing/ryoku-shell-launcher.md
+            docs/testing/ryoku-shell-launcher-0152-1.md
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md

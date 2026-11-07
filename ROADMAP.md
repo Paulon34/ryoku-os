@@ -110,11 +110,12 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Manual (tip `f5cc1c4`; ≠ CI): **`SHELL_RENDER=PASS_MANUAL`**, **`DOCK_VISUAL_FEEDBACK=PASS_MANUAL`**, **`GUEST_INPUT=PARTIAL_PASS_MANUAL`**
 - [ ] **`LAUNCHER_OPEN` / `KEYBOARD_INTERACTION` / `CURSOR_MOVEMENT` = `NOT_CONFIRMED`** → Mission 015.2
 
-## Fase 2.12 — Interactive Launcher (Missão 015.2)
+## Fase 2.12 — Interactive Launcher (Missão 015.2 / 015.2.1)
 
 - [x] Ryoku Launcher panel (title/categories/focus/close/adaptive) — code
 - [x] ABS axis from device caps; device filter; fact-based indicators (never auto PASS_MANUAL)
-- [ ] Guest results **NOT_RUN** until manual confirm
+- [x] 015.2.1: no visible fb clear; dirty/scanline blit; keep all keyboards; `vt.global_cursor_default=0` (shell QEMU)
+- [ ] Guest: prior tip `052c84c` **`GRAPHICS_FLICKER=FAIL_MANUAL`**; re-test after 015.2.1 (no auto PASS)
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

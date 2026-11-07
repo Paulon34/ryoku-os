@@ -10,7 +10,7 @@
 
 #![forbid(unsafe_code)]
 
-use ryoku_graphics_demo::{blit_rgb_to_fb, FbGeometry, RgbBuffer};
+use ryoku_graphics_demo::{blit_rgb_to_fb, blit_rgb_to_fb_rows, FbGeometry, RgbBuffer};
 
 pub const SHELL_IDENTITY: &str = "ryoku-shell-preview";
 
@@ -715,9 +715,41 @@ pub fn render_shell_interactive(
     Ok((buf, layout))
 }
 
-/// Present shell buffer into an fb mmap (reuses 014.2 blit).
+/// Present shell buffer into an fb mmap (015.2.1: no visible clear; scanline copy).
 pub fn present_shell(map: &mut [u8], geom: &FbGeometry, src: &RgbBuffer) -> Result<(), String> {
     blit_rgb_to_fb(map, geom, src).map_err(|e| format!("{SHELL_IDENTITY}: blit failed: {e}"))
+}
+
+/// Present only rows `[y0, y1)` (dirty region). Never clears; never past map.
+pub fn present_shell_rows(
+    map: &mut [u8],
+    geom: &FbGeometry,
+    src: &RgbBuffer,
+    y0: u32,
+    y1: u32,
+) -> Result<(), String> {
+    blit_rgb_to_fb_rows(map, geom, src, y0, y1)
+        .map_err(|e| format!("{SHELL_IDENTITY}: blit rows failed: {e}"))
+}
+
+/// Expand a dirty Y band to cover a cursor-sized rect (11×15) plus padding.
+#[must_use]
+pub fn dirty_band_for_cursor(y: i32, height: u32) -> (u32, u32) {
+    let y0 = (y - 2).max(0) as u32;
+    let y1 = ((y + 17).max(0) as u32).min(height);
+    (y0, y1.min(height).max(y0))
+}
+
+/// Merge two half-open Y bands.
+#[must_use]
+pub fn merge_dirty(a: (u32, u32), b: (u32, u32)) -> (u32, u32) {
+    if a.0 >= a.1 {
+        return b;
+    }
+    if b.0 >= b.1 {
+        return a;
+    }
+    (a.0.min(b.0), a.1.max(b.1))
 }
 
 #[cfg(test)]
@@ -848,5 +880,24 @@ mod tests {
         ui.move_by(&l, 10_000, 10_000);
         assert!(ui.cursor_x < 320);
         assert!(ui.cursor_y < 240);
+    }
+
+    #[test]
+    fn dirty_band_merge_and_cursor() {
+        let a = dirty_band_for_cursor(100, 993);
+        assert!(a.0 < a.1);
+        assert!(a.1 <= 993);
+        let b = dirty_band_for_cursor(200, 993);
+        let m = merge_dirty(a, b);
+        assert_eq!(m.0, a.0);
+        assert_eq!(m.1, b.1);
+        assert_eq!(merge_dirty((0, 0), a), a);
+    }
+
+    #[test]
+    fn layout_paulo_941x993() {
+        let l = ShellLayout::for_fb(941, 993).unwrap();
+        assert_eq!(l.width, 941);
+        assert!(l.dock_y + l.dock_h <= l.height);
     }
 }

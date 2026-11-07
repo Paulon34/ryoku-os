@@ -145,6 +145,7 @@ jobs:
           cp -a tests/qemu/fixtures/virt-drm-modules.manifest "$PKG/"
           cp -a tests/qemu/run/virt-drm-modules/PROVENANCE.txt "$PKG/DRM-MODULES-PROVENANCE.txt"
           cp -a docs/testing/ryoku-shell-launcher.md "$PKG/"
+          cp -a docs/testing/ryoku-shell-launcher-0152-1.md "$PKG/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-init "$PKG/bin-musl/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-console "$PKG/bin-musl/"
           cp -a zaquion-core/target/x86_64-unknown-linux-musl/release/ryoku-shell-preview "$PKG/bin-musl/"
@@ -162,7 +163,7 @@ jobs:
       - name: Upload Ryoku shell launcher VM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ryoku-shell-launcher-vm-${{ github.sha }}
+          name: ryoku-shell-launcher-0152-1-vm-${{ github.sha }}
           path: tests/qemu/results/ryoku-shell-vm-package/
           if-no-files-found: error
           retention-days: 30
