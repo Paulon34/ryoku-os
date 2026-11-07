@@ -1,6 +1,6 @@
 //! Safe QEMU argv construction — never a shell string.
 
-use crate::config::{AccelMode, NetworkMode, VmConfig};
+use crate::config::{AccelMode, NetworkMode, ShutdownMode, VmConfig};
 use crate::tools::AccelChoice;
 
 /// Built argv ready for `Command::new(&argv[0]).args(&argv[1..])`.
@@ -25,9 +25,9 @@ impl QemuArgv {
 /// Build a disposable, isolated QEMU argv from a validated config + accel decision.
 ///
 /// Defaults:
-/// - no host network (`-netdev none` is not portable everywhere; we use `-nic none`)
-/// - no default devices that pull host peripherals (`-nodefaults` + explicit virtio when disk set)
+/// - no host network (`-nic none`)
 /// - display none / nographic for headless lab
+/// - serial to a lab `results/` file when configured; monitor on stdio for quit
 pub fn build_qemu_argv(
     qemu_bin: &str,
     cfg: &VmConfig,
@@ -38,7 +38,6 @@ pub fn build_qemu_argv(
             return Err("config requires KVM but only TCG is available".to_string());
         }
         (AccelMode::Tcg, AccelChoice::Kvm) => {
-            // Caller should have selected TCG; refuse inconsistent pairing.
             return Err("internal: TCG config paired with KVM accel choice".to_string());
         }
         _ => {}
@@ -64,7 +63,6 @@ pub fn build_qemu_argv(
     args.push("-nographic".into());
     args.push("-nodefaults".into());
 
-    // No host network by default.
     match cfg.network {
         NetworkMode::None => {
             args.push("-nic".into());
@@ -72,7 +70,6 @@ pub fn build_qemu_argv(
         }
     }
 
-    // No physical CDROM/USB; only optional disposable disk/kernel under lab dirs.
     if let Some(disk) = &cfg.disk {
         args.push("-drive".into());
         args.push(format!(
@@ -86,12 +83,33 @@ pub fn build_qemu_argv(
         args.push(kernel.display().to_string());
     }
 
-    // Emulator-only smoke: machine with no bootable medium. QEMU may exit or wait;
-    // the executor applies timeout. We still never claim OS boot for this mode.
+    if let Some(iso) = &cfg.iso {
+        // IDE CD for broad QEMU compatibility with ISO boot.
+        args.push("-drive".into());
+        args.push(format!(
+            "file={},media=cdrom,readonly=on,if=ide",
+            iso.display()
+        ));
+        args.push("-boot".into());
+        args.push("order=d".into());
+    }
+
+    if let Some(serial) = &cfg.serial_log {
+        args.push("-serial".into());
+        args.push(format!("file:{}", serial.display()));
+    }
+
     if cfg.is_emulator_only() {
         args.push("-machine".into());
         args.push("type=none".into());
-        // Monitor for a clean quit path if the process stays up; T1 may send "quit\n".
+    } else {
+        // Explicit PC machine for ISO/disk boots (TCG/KVM).
+        args.push("-machine".into());
+        args.push("type=pc".into());
+    }
+
+    // Monitor on stdio enables controlled shutdown via `quit` without a shell wrapper.
+    if matches!(cfg.shutdown, ShutdownMode::MonitorQuit) || cfg.is_emulator_only() {
         args.push("-monitor".into());
         args.push("stdio".into());
     }
@@ -118,7 +136,7 @@ fn sanitize_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AccelMode, NetworkMode, VmConfig};
+    use crate::config::{AccelMode, NetworkMode, ShutdownMode, VmConfig};
     use std::path::PathBuf;
 
     fn base_cfg() -> VmConfig {
@@ -131,6 +149,11 @@ mod tests {
             network: NetworkMode::None,
             disk: None,
             kernel: None,
+            iso: None,
+            serial_log: None,
+            boot_sentinel: None,
+            boot_markers: Vec::new(),
+            shutdown: ShutdownMode::MonitorQuit,
         }
     }
 
@@ -142,7 +165,6 @@ mod tests {
         assert!(argv.args.iter().any(|a| a == "tcg"));
         assert!(argv.args.iter().any(|a| a == "-nic"));
         assert!(argv.args.iter().any(|a| a == "none"));
-        // Never a single shell string — each flag is its own element.
         assert!(!argv
             .args
             .iter()
@@ -158,16 +180,16 @@ mod tests {
     }
 
     #[test]
-    fn disk_path_is_separate_arg_value() {
+    fn iso_boot_uses_cdrom_and_serial_file() {
         let mut cfg = base_cfg();
-        cfg.disk = Some(PathBuf::from("/workspace/tests/qemu/run/disk.qcow2"));
-        cfg.kernel = None;
-        // Not emulator-only anymore — skip machine none
+        cfg.iso = Some(PathBuf::from("/workspace/tests/qemu/run/alpine.iso"));
+        cfg.serial_log = Some(PathBuf::from("/workspace/tests/qemu/results/serial-t2.log"));
         let argv = build_qemu_argv("qemu-system-x86_64", &cfg, AccelChoice::Tcg).unwrap();
-        assert!(argv
-            .args
-            .iter()
-            .any(|a| a.contains("/workspace/tests/qemu/run/disk.qcow2")));
-        assert!(!argv.args.iter().any(|a| a == "type=none"));
+        let joined = argv.as_command_line_parts().join(" ");
+        assert!(joined.contains("media=cdrom"));
+        assert!(joined.contains("order=d"));
+        assert!(joined.contains("file:/workspace/tests/qemu/results/serial-t2.log"));
+        assert!(!joined.contains("type=none"));
+        assert!(joined.contains("type=pc"));
     }
 }

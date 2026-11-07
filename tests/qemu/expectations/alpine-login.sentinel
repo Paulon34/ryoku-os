@@ -1,0 +1,3 @@
+# Serial text that indicates a reference Alpine console reached login.
+# Matching this sentinel means reference Linux console progress — NOT Ryoku OS.
+login:

@@ -7,6 +7,10 @@ use std::path::{Component, Path, PathBuf};
 pub enum PathRole {
     Disk,
     Kernel,
+    /// CD/DVD ISO under fixtures/ or run/ only.
+    Iso,
+    /// Serial log path under results/ only.
+    SerialLog,
 }
 
 impl PathRole {
@@ -15,6 +19,8 @@ impl PathRole {
         match self {
             Self::Disk => "disk",
             Self::Kernel => "kernel",
+            Self::Iso => "iso",
+            Self::SerialLog => "serial_log",
         }
     }
 }
@@ -81,10 +87,12 @@ pub fn is_blocked_physical_device(path: &str) -> bool {
 
 /// Validate a relative lab asset path and resolve it under `lab_root`.
 ///
-/// Allowed roots (after join + normalize): `lab_root/fixtures` and `lab_root/run`.
+/// Allowed roots (after join + normalize):
+/// - Disk / Kernel / Iso → `fixtures/` or `run/`
+/// - SerialLog → `results/` only
 pub fn validate_optional_path(
     raw: &str,
-    _role: PathRole,
+    role: PathRole,
     lab_root: &Path,
 ) -> Result<PathBuf, SecurityError> {
     let raw = raw.trim();
@@ -114,10 +122,15 @@ pub fn validate_optional_path(
     let joined = lab_root.join(candidate);
     let normalized = normalize_lexically(&joined);
 
-    let fixtures = normalize_lexically(&lab_root.join("fixtures"));
-    let run = normalize_lexically(&lab_root.join("run"));
+    let allowed = match role {
+        PathRole::SerialLog => vec![normalize_lexically(&lab_root.join("results"))],
+        PathRole::Disk | PathRole::Kernel | PathRole::Iso => vec![
+            normalize_lexically(&lab_root.join("fixtures")),
+            normalize_lexically(&lab_root.join("run")),
+        ],
+    };
 
-    if !(is_under(&normalized, &fixtures) || is_under(&normalized, &run)) {
+    if !allowed.iter().any(|root| is_under(&normalized, root)) {
         return Err(SecurityError::OutsideLab {
             path: normalized.display().to_string(),
             lab_root: lab_root.display().to_string(),
@@ -189,5 +202,13 @@ mod tests {
     fn rejects_path_outside_fixtures_run() {
         let err = validate_optional_path("expectations/x.img", PathRole::Disk, &lab()).unwrap_err();
         assert!(matches!(err, SecurityError::OutsideLab { .. }));
+    }
+
+    #[test]
+    fn serial_log_must_be_under_results() {
+        let ok = validate_optional_path("results/serial.log", PathRole::SerialLog, &lab());
+        assert!(ok.is_ok());
+        let bad = validate_optional_path("run/serial.log", PathRole::SerialLog, &lab());
+        assert!(matches!(bad, Err(SecurityError::OutsideLab { .. })));
     }
 }

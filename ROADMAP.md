@@ -33,17 +33,20 @@ Documento vivo. Atualizar a cada missão concluída. Idiomas: seções principai
 - [ ] Política de submódulos / referência ao tree do kernel (pin de versão, sem vendorar fonte completa se evitável)
 - [ ] Link-check Markdown completo (além da existência de paths)
 
-## Fase 2 — Harness QEMU (sem ISO ainda) — T0/T1 base na Missão 003
+## Fase 2 — Harness QEMU — T0/T1 (003) + First Boot Lab (005)
 
 - [x] Virtual Lab + `ryoku-virtlab` T0 (validação sem QEMU)
 - [x] T1 opcional: SKIPPED sem QEMU; sem claim de boot Ryoku
 - [x] Doctor: QEMU / qemu-img / KVM / TCG
-- [ ] Disponibilizar QEMU no host/CI **com autorização** (sem install automático no repo)
-- [ ] Boot de imagem de referência autorizada (serial logs + expectations)
-- [ ] Smoke: boot → login/ssh → shutdown
-- [ ] Artefatos de log como fixtures de expectativa (texto pequeno no git)
+- [x] Manifesto Alpine virt 3.21.9 + script fetch **dry-run** + first-boot harness (Missão 005)
+- [x] Workflow `first-boot.yml` — `workflow_dispatch` + `confirm=RUN` (Missão 006; sem `if: false`)
+- [x] Fetch script: allowlist CDN + SHA-256 pin + GPG ncopa (Missão 006)
+- [x] Marcadores seriais Alpine (`Alpine|login:`) + evidence JSON (Missão 006)
+- [ ] Push/PR + run Actions real → artefatos seriais (ainda **NOT_RUN** até publish)
+- [ ] Smoke: boot → login/ssh → shutdown em imagem autorizada
+- [ ] Artefatos de expectativa extras (texto pequeno no git)
 
-Ver [docs/testing/qemu-strategy.md](docs/testing/qemu-strategy.md) e [docs/testing/virtual-lab.md](docs/testing/virtual-lab.md).
+Ver [docs/testing/reference-linux.md](docs/testing/reference-linux.md), [virtual-lab.md](docs/testing/virtual-lab.md).
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 
@@ -82,6 +85,4 @@ Ver [docs/testing/qemu-strategy.md](docs/testing/qemu-strategy.md) e [docs/testi
 
 ## Sugestão de próxima missão
 
-**Após autorização de push (Missão 004 prep):** executar first-push para `Paulon34/ryoku-os` conforme `docs/publishing/first-push.md`, habilitar branch protection e confirmar CI.
-
-**Missão 005 (produto):** (A) authorized disposable reference guest + serial expectations; ou (B) pin LTS do kernel + inventário de licença do Ryoku Desktop — ainda sem ISO Ryoku / sem install automático de pacotes pelo harness.
+**Missão 006 (após review 005):** autorizar install QEMU + `RYOKU_FETCH_EXECUTE=1`, capturar serial evidence de Alpine reference boot; **ou** pin LTS do kernel + inventário de licença do Ryoku Desktop. Continuar sem ISO Ryoku. Branch protection / Advisories no GitHub se ainda pendentes.

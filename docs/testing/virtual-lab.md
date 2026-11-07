@@ -35,9 +35,18 @@ ryoku-virtlab
 |-----------|---------------------|--------------|
 | QEMU absent | **SKIPPED** | **NOT_RUN** |
 | QEMU present, emulator-only config | **PASS**/**FAIL** (spawn/timeout) | **NOT_RUN** (no guest image) |
-| Future: authorized disposable guest | spawn + serial sentinels | **PASS**/**FAIL** on boot criteria |
 
-**Never** claim Ryoku OS booted without a bootable kernel/system under test.
+### First-boot / T2 — reference Linux (Missions 005–006)
+
+| Situation | `t2.reference_linux_boot` | `t2.ryoku_os_boot` |
+|-----------|---------------------------|--------------------|
+| QEMU absent | **SKIPPED** / **NOT_RUN** | **NOT_RUN** |
+| QEMU present, ISO missing | **NOT_RUN** | **NOT_RUN** |
+| QEMU + Alpine ISO + **all** `boot_markers` | **PASS**/**FAIL** with serial evidence JSON | **Always NOT_RUN** |
+
+**Reference Linux boot ≠ Ryoku OS boot.** QEMU start ≠ Linux boot. See [reference-linux.md](reference-linux.md).
+
+**Never** claim Ryoku OS booted without a bootable Ryoku kernel/system under test.
 
 ## Current environment limits (foundation host)
 

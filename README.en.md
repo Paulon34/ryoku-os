@@ -39,9 +39,9 @@ Layout decision: [docs/architecture/layout.md](docs/architecture/layout.md) · A
 
 ## Current status
 
-- Documentary foundation + Zaquion (`ryoku-doctor`) + **Virtual Lab** (`ryoku-virtlab` T0/T1)
-- T1 **SKIPPED** without QEMU on typical hosts; **no** Ryoku boot claims; **no** ISO/kernel downloads in this repo
-- Intended public repository: [github.com/Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os)
+- Published at [github.com/Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os) (`main` @ `c2b637e`, CI green in Mission 004)
+- Foundation + Zaquion (`ryoku-doctor`) + **Virtual Lab** T0/T1 + **First Boot Lab** (Alpine reference, Mission 005)
+- T1/first-boot **SKIPPED/NOT_RUN** without QEMU/ISO; **reference Linux ≠ Ryoku OS**; **no** Ryoku ISO
 
 ### Zaquion / Virtual Lab
 
@@ -63,6 +63,8 @@ See [zaquion-core/README.md](zaquion-core/README.md) and [docs/testing/virtual-l
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
 | [docs/architecture/](docs/architecture/) | Overview and ADRs |
 | [docs/testing/qemu-strategy.md](docs/testing/qemu-strategy.md) | QEMU test strategy |
+| [docs/testing/virtual-lab.md](docs/testing/virtual-lab.md) | Virtual Lab T0/T1 |
+| [docs/testing/reference-linux.md](docs/testing/reference-linux.md) | Alpine reference (≠ Ryoku) |
 | [docs/licensing/strategy.md](docs/licensing/strategy.md) | Licensing strategy |
 | [docs/performance/targets.md](docs/performance/targets.md) | Preliminary performance targets |
 | [docs/compatibility/](docs/compatibility/) | Nix / Debian / Arch |

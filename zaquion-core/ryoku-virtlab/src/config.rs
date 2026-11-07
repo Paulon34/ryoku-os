@@ -71,6 +71,16 @@ pub struct VmConfig {
     pub disk: Option<PathBuf>,
     /// Guest kernel path, or `None`.
     pub kernel: Option<PathBuf>,
+    /// Optional ISO/CD image under `run/` or `fixtures/` (reference Linux).
+    pub iso: Option<PathBuf>,
+    /// Optional serial log file under `results/`.
+    pub serial_log: Option<PathBuf>,
+    /// Substring that must appear in serial output to claim reference guest console progress.
+    pub boot_sentinel: Option<String>,
+    /// Additional required serial substrings (Alpine-specific markers). All must match for PASS.
+    /// Configured as a single `|`-separated line: `boot_markers = Alpine|login:`
+    pub boot_markers: Vec<String>,
+    pub shutdown: ShutdownMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,10 +122,41 @@ impl From<SecurityError> for ConfigError {
     }
 }
 
+/// How to request a clean guest/emulator stop after the run window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShutdownMode {
+    /// Send QEMU monitor `quit` on stdin (works with `-monitor stdio`).
+    MonitorQuit,
+    /// Rely on timeout kill only (no monitor input).
+    None,
+}
+
+impl ShutdownMode {
+    fn parse(raw: &str) -> Result<Self, ConfigError> {
+        match raw {
+            "monitor_quit" => Ok(Self::MonitorQuit),
+            "none" => Ok(Self::None),
+            other => Err(ConfigError::InvalidValue {
+                key: "shutdown",
+                value: other.to_string(),
+            }),
+        }
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MonitorQuit => "monitor_quit",
+            Self::None => "none",
+        }
+    }
+}
+
 /// Default hard caps (CPU / RAM / time) for disposable lab VMs.
 pub const MAX_MEMORY_MB: u32 = 2048;
 pub const MAX_CPUS: u32 = 4;
-pub const MAX_TIMEOUT_SECS: u64 = 120;
+/// First-boot TCG guests may need several minutes; still capped.
+pub const MAX_TIMEOUT_SECS: u64 = 600;
 pub const MIN_MEMORY_MB: u32 = 64;
 pub const MIN_CPUS: u32 = 1;
 pub const MIN_TIMEOUT_SECS: u64 = 1;
@@ -138,6 +179,11 @@ impl VmConfig {
         let mut network = NetworkMode::None;
         let mut disk_raw: Option<String> = None;
         let mut kernel_raw: Option<String> = None;
+        let mut iso_raw: Option<String> = None;
+        let mut serial_raw: Option<String> = None;
+        let mut boot_sentinel: Option<String> = None;
+        let mut boot_markers: Vec<String> = Vec::new();
+        let mut shutdown = ShutdownMode::MonitorQuit;
 
         for (lineno, raw_line) in text.lines().enumerate() {
             let line = raw_line.trim();
@@ -171,6 +217,18 @@ impl VmConfig {
                 "network" => network = NetworkMode::parse(value)?,
                 "disk" => disk_raw = Some(value.to_string()),
                 "kernel" => kernel_raw = Some(value.to_string()),
+                "iso" => iso_raw = Some(value.to_string()),
+                "serial_log" => serial_raw = Some(value.to_string()),
+                "boot_sentinel" => boot_sentinel = Some(value.to_string()),
+                "boot_markers" => {
+                    boot_markers = value
+                        .split('|')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                }
+                "shutdown" => shutdown = ShutdownMode::parse(value)?,
                 other => {
                     return Err(ConfigError::Parse(format!(
                         "line {}: unknown key `{other}`",
@@ -189,6 +247,9 @@ impl VmConfig {
 
         let disk = parse_optional_asset(disk_raw.as_deref(), PathRole::Disk, lab_root)?;
         let kernel = parse_optional_asset(kernel_raw.as_deref(), PathRole::Kernel, lab_root)?;
+        let iso = parse_optional_asset(iso_raw.as_deref(), PathRole::Iso, lab_root)?;
+        let serial_log =
+            parse_optional_asset(serial_raw.as_deref(), PathRole::SerialLog, lab_root)?;
 
         Ok(Self {
             name,
@@ -199,13 +260,34 @@ impl VmConfig {
             network,
             disk,
             kernel,
+            iso,
+            serial_log,
+            boot_sentinel,
+            boot_markers,
+            shutdown,
         })
     }
 
-    /// True when this config cannot claim an OS boot (no disk and no kernel).
+    /// Markers that must all appear in serial text for a verified reference boot PASS.
+    /// Prefer `boot_markers` when set; otherwise fall back to a single `boot_sentinel`.
+    #[must_use]
+    pub fn required_boot_markers(&self) -> Vec<String> {
+        if !self.boot_markers.is_empty() {
+            return self.boot_markers.clone();
+        }
+        self.boot_sentinel.iter().cloned().collect()
+    }
+
+    /// True when this config cannot claim a guest OS boot (no disk/kernel/iso).
     #[must_use]
     pub fn is_emulator_only(&self) -> bool {
-        self.disk.is_none() && self.kernel.is_none()
+        self.disk.is_none() && self.kernel.is_none() && self.iso.is_none()
+    }
+
+    /// True when a reference/guest boot medium is configured (file may still be missing).
+    #[must_use]
+    pub fn has_boot_medium(&self) -> bool {
+        self.disk.is_some() || self.kernel.is_some() || self.iso.is_some()
     }
 }
 
@@ -314,5 +396,34 @@ timeout_secs = 10
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_boot_markers_pipe_list() {
+        let text = "\
+name = alpine
+memory_mb = 512
+cpus = 1
+timeout_secs = 180
+accel = tcg
+network = none
+disk = none
+kernel = none
+iso = run/alpine-virt-3.21.9-x86_64.iso
+serial_log = results/serial-t2-reference-alpine.log
+boot_sentinel = login:
+boot_markers = Alpine|login:
+shutdown = monitor_quit
+";
+        let cfg = VmConfig::parse(text, lab()).unwrap();
+        assert_eq!(
+            cfg.boot_markers,
+            vec!["Alpine".to_string(), "login:".to_string()]
+        );
+        assert_eq!(
+            cfg.required_boot_markers(),
+            vec!["Alpine".to_string(), "login:".to_string()]
+        );
+        assert_eq!(cfg.accel, AccelMode::Tcg);
     }
 }

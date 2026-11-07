@@ -1,0 +1,105 @@
+# Mission 006 — Verified Linux First Boot (reference Alpine ≠ Ryoku OS)
+#
+# Manual gate only: workflow_dispatch with confirm=RUN.
+# Does NOT run on push/pull_request.
+# QEMU apt install + Alpine ISO download happen ONLY on the disposable
+# ubuntu-24.04 GitHub Actions runner — never on Cursor host / personal servers.
+name: first-boot
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type RUN to install qemu-system-x86 from Ubuntu apt and download Alpine 3.21.9 on this disposable runner"
+        required: true
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  verified-reference-linux-boot:
+    name: verified-reference-linux-boot
+    if: github.event.inputs.confirm == 'RUN'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_TERM_COLOR: always
+      # Force TCG on the runner (do not require KVM).
+      RYOKU_FETCH_EXECUTE: "1"
+      RYOKU_VERIFY_GPG: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install QEMU (Ubuntu packages only) + gnupg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            qemu-system-x86 \
+            qemu-utils \
+            gnupg \
+            ca-certificates \
+            curl
+          qemu-system-x86_64 --version
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.83.0"
+          components: rustfmt, clippy
+
+      - name: Rust fmt / check / test / clippy (preserve suite)
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace
+          cargo test --workspace
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Fetch + verify Alpine virt 3.21.9 (official CDN only)
+        run: |
+          set -euo pipefail
+          mkdir -p tests/qemu/results
+          tests/qemu/scripts/fetch-reference-image.sh
+          # Record digest for the artifact summary
+          sha256sum tests/qemu/run/alpine-virt-3.21.9-x86_64.iso | tee tests/qemu/results/iso-sha256.txt
+
+      - name: Run Virtual Lab T0 then first-boot (TCG)
+        working-directory: zaquion-core
+        run: |
+          set -euo pipefail
+          mkdir -p ../tests/qemu/results
+          cargo run -p ryoku-virtlab -- t0
+          cargo run -p ryoku-virtlab -- first-boot | tee ../tests/qemu/results/first-boot-ci-console.txt
+          # Fail the job unless evidence JSON records PASS (serial markers matched).
+          if ! grep -q '"verdict": "PASS"' ../tests/qemu/results/verified-boot-evidence.json; then
+            echo "Reference Linux boot did not PASS — see serial log / evidence JSON"
+            ls -la ../tests/qemu/results/ || true
+            echo "---- evidence (if any) ----"
+            cat ../tests/qemu/results/verified-boot-evidence.json 2>/dev/null || true
+            echo "---- serial tail ----"
+            tail -n 80 ../tests/qemu/results/serial-t2-reference-alpine.log 2>/dev/null || true
+            exit 1
+          fi
+          # Honesty: Ryoku OS boot must remain NOT_RUN
+          if grep -E 't2\.ryoku_os_boot' ../tests/qemu/results/first-boot-*.txt ../tests/qemu/results/first-boot-ci-console.txt \
+            | grep -q 'PASS'; then
+            echo "Honesty violation: Ryoku OS boot must not PASS"
+            exit 1
+          fi
+
+      - name: Upload first-boot artifacts (logs only; no secrets)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-boot-logs
+          path: |
+            tests/qemu/results/
+            tests/qemu/run/*.sha256
+            tests/qemu/run/*.asc
+          if-no-files-found: warn
+          retention-days: 14
