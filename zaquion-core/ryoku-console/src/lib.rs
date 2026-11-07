@@ -181,7 +181,11 @@ fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
         if is_forbidden_char(ch) {
             return Err(ParseError::ForbiddenChar { ch });
         }
-        if !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/' | '=' | '+')) {
+        // Allow `!` as a literal (e.g. echo Ryoku funcionando!) — not a shell
+        // metacharacter in this limited parser (no history expansion / bang cmds).
+        if !(ch.is_ascii_alphanumeric()
+            || matches!(ch, '-' | '_' | '.' | ':' | '/' | '=' | '+' | '!'))
+        {
             return Err(ParseError::ForbiddenChar { ch });
         }
         cur.push(ch);
@@ -504,6 +508,23 @@ mod tests {
         );
         assert!(render(&Command::Clear).contains("\u{001b}[2J"));
         assert!(render(&Command::Version).starts_with("ryoku-console "));
+    }
+
+    #[test]
+    fn echo_allows_literal_bang() {
+        assert_eq!(
+            parse_line("echo Ryoku funcionando!").unwrap(),
+            Command::Echo(vec!["Ryoku".into(), "funcionando!".into()])
+        );
+        assert_eq!(
+            eval_line("echo Ryoku funcionando!").unwrap(),
+            "Ryoku funcionando!\n"
+        );
+        // Bang alone as a command name is still unknown (not a shell bang).
+        assert!(matches!(
+            parse_line("!").unwrap_err(),
+            ParseError::UnknownCommand { .. }
+        ));
     }
 
     #[test]

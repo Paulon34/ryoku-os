@@ -74,7 +74,9 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 - [x] Initramfs experimental separado do T3 (`ryoku-minimal.cpio.gz`)
 - [x] Builtins `pwd` / `ls` / `cat` + testes sem QEMU
 - [x] Perfil interativo + planos de harness (EXECUTE recusado)
-- [ ] Sessão QEMU guest autorizada / harness automatizado real
+- [x] Hardening FS (symlinks/cap/host root) + `!` em echo
+- [x] Pacote VM (musl + cpio + lab kernel) via workflow `ryoku-minimal-package`
+- [ ] Sessão QEMU guest autorizada (script pronto; boot = NOT_RUN neste publish)
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

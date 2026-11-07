@@ -31,11 +31,15 @@ cargo run -p ryoku-virtlab -- all          # T0+T1+T2 only
 # tests/qemu/scripts/extract-boot-seed-kernel.sh
 # tests/qemu/scripts/prep-boot-seed-artifacts.sh
 # tests/qemu/scripts/test-boot-seed-prep-policy.sh
-# Console / Minimal interactive prep (Mission 012; no guest boot):
+# Console / Minimal interactive prep (Mission 012 FINAL; no guest boot here):
 # tests/qemu/scripts/build-ryoku-minimal-initramfs.sh
+# tests/qemu/scripts/prep-ryoku-minimal-artifacts.sh
+# tests/qemu/scripts/run-ryoku-minimal-qemu.sh   # plan+validate; QEMU gated
 # tests/qemu/scripts/prep-console-interactive.sh
 # tests/qemu/scripts/plan-minimal-guest-console-test.sh
 # cargo test -p ryoku-console
+# VM package README: tests/qemu/README-VM.md
+# Workflow: .github/workflows/ryoku-minimal-package.yml (not T3)
 ```
 
 Reference Alpine fetch (default **dry-run**, no download):

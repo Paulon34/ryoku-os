@@ -121,7 +121,11 @@ jobs:
             tests/qemu/scripts/test-boot-seed-prep-policy.sh
             tests/qemu/scripts/prep-console-interactive.sh
             tests/qemu/scripts/plan-minimal-guest-console-test.sh
+            tests/qemu/scripts/run-ryoku-minimal-qemu.sh
+            tests/qemu/scripts/prep-ryoku-minimal-artifacts.sh
+            tests/qemu/README-VM.md
             .github/workflows/boot-seed-t3.yml
+            .github/workflows/ryoku-minimal-package.yml
             zaquion-core/README.md
 
             zaquion-core/LICENSE-MIT
