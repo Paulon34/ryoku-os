@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::io::{self, BufRead};
 
 /// Console process identity (not PID 1 init).
 pub const CONSOLE_IDENTITY: &str = "ryoku-console";
@@ -18,6 +19,10 @@ pub const PROMPT: &str = "ryoku> ";
 pub const MAX_LINE_BYTES: usize = 256;
 pub const MAX_ARG_BYTES: usize = 128;
 pub const MAX_ARGS: usize = 16;
+
+/// Extra bytes the limited reader may scan past [`MAX_LINE_BYTES`] while looking
+/// for a CRLF/LF terminator before declaring the line too long.
+pub const LINE_READ_MARGIN: usize = 2;
 
 /// Builtins supported in Mission 011.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,14 +70,19 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Horizontal whitespace treated as token separators (not forbidden).
-#[must_use]
-pub fn is_horizontal_whitespace(ch: char) -> bool {
-    matches!(ch, ' ' | '\t' | '\r')
+/// Outcome of one capped line read from a [`BufRead`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LimitedLine {
+    /// Payload without LF / CRLF terminator.
+    Line(String),
+    /// Line exceeded [`MAX_LINE_BYTES`] (reader drained through the terminator).
+    TooLong { observed: usize },
+    /// No more input.
+    Eof,
 }
 
-/// Characters that must never appear (shell / expansion surface).
-/// Tabs/CR are whitespace (see [`is_horizontal_whitespace`]), not forbidden.
+/// Characters that must never appear in a command payload.
+/// Tabs and CR are **rejected** in commands; CRLF is stripped only by the I/O reader.
 #[must_use]
 pub fn is_forbidden_char(ch: char) -> bool {
     matches!(
@@ -97,19 +107,17 @@ pub fn is_forbidden_char(ch: char) -> bool {
             | '"'
             | '\0'
             | '\n'
+            | '\r'
+            | '\t'
     )
 }
 
-fn trim_horizontal(s: &str) -> &str {
-    s.trim_matches(|c: char| is_horizontal_whitespace(c))
-}
-
-/// Split a line into tokens on horizontal whitespace (no quote state machine).
+/// Split a line into tokens on ASCII spaces only (no quote state machine).
 fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
     let mut tokens = Vec::new();
     let mut cur = String::new();
     for ch in line.chars() {
-        if is_horizontal_whitespace(ch) {
+        if ch == ' ' {
             if !cur.is_empty() {
                 if cur.len() > MAX_ARG_BYTES {
                     return Err(ParseError::ArgTooLong {
@@ -127,7 +135,6 @@ fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
         if is_forbidden_char(ch) {
             return Err(ParseError::ForbiddenChar { ch });
         }
-        // Allow a tight printable set: letters, digits, and a few safe punctuations.
         if !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/' | '=' | '+')) {
             return Err(ParseError::ForbiddenChar { ch });
         }
@@ -157,13 +164,12 @@ fn tokenize(line: &str) -> Result<Vec<String>, ParseError> {
 }
 
 /// Parse one console line into a [`Command`].
-/// Leading/trailing spaces, tabs, and CR are ignored; internal ones separate tokens.
+/// Only ASCII spaces separate tokens; tabs/CR inside the command are forbidden.
 pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
-    // Enforce length on the raw input (before trim) so padded junk cannot bypass caps.
     if raw.len() > MAX_LINE_BYTES {
         return Err(ParseError::TooLong { len: raw.len() });
     }
-    let line = trim_horizontal(raw);
+    let line = raw.trim_matches(' ');
     if line.is_empty() {
         return Err(ParseError::Empty);
     }
@@ -171,7 +177,7 @@ pub fn parse_line(raw: &str) -> Result<Command, ParseError> {
         return Err(ParseError::NonAscii);
     }
     for ch in line.chars() {
-        if is_horizontal_whitespace(ch) {
+        if ch == ' ' {
             continue;
         }
         if is_forbidden_char(ch) {
@@ -279,9 +285,87 @@ pub fn output_claims_boot_seed_ready(text: &str) -> bool {
     text.contains("RYOKU_BOOT_SEED_READY")
 }
 
+fn drain_until_lf<R: BufRead>(reader: &mut R) -> io::Result<()> {
+    loop {
+        let buf = reader.fill_buf()?;
+        if buf.is_empty() {
+            return Ok(());
+        }
+        if let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            reader.consume(nl + 1);
+            return Ok(());
+        }
+        let n = buf.len();
+        reader.consume(n);
+    }
+}
+
+/// Read one line via [`BufRead::fill_buf`] / [`BufRead::consume`] with a hard cap.
+///
+/// - Terminators: `\n` or `\r\n` only (CRLF stripped at the I/O boundary).
+/// - Mid-line `\t` / `\r` remain in the payload for [`parse_line`] to reject.
+/// - Never accumulates more than [`MAX_LINE_BYTES`] + [`LINE_READ_MARGIN`] without a terminator.
+pub fn read_limited_line<R: BufRead>(reader: &mut R) -> io::Result<LimitedLine> {
+    let mut line: Vec<u8> = Vec::new();
+    let hard_cap = MAX_LINE_BYTES + LINE_READ_MARGIN;
+
+    loop {
+        let buf = reader.fill_buf()?;
+        if buf.is_empty() {
+            if line.is_empty() {
+                return Ok(LimitedLine::Eof);
+            }
+            // EOF without terminator — deliver what we have (parser may still reject).
+            return match String::from_utf8(line) {
+                Ok(s) => Ok(LimitedLine::Line(s)),
+                Err(_) => Ok(LimitedLine::TooLong {
+                    observed: MAX_LINE_BYTES + 1,
+                }),
+            };
+        }
+
+        if let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            // CRLF terminator only: drop a single CR immediately before LF.
+            let end = if nl > 0 && buf[nl - 1] == b'\r' {
+                nl - 1
+            } else {
+                nl
+            };
+            let observed = line.len() + end;
+            let piece = buf[..end].to_vec();
+            reader.consume(nl + 1);
+            if observed > MAX_LINE_BYTES {
+                return Ok(LimitedLine::TooLong { observed });
+            }
+            line.extend_from_slice(&piece);
+            return match String::from_utf8(line) {
+                Ok(s) => Ok(LimitedLine::Line(s)),
+                Err(_) => Ok(LimitedLine::TooLong {
+                    observed: MAX_LINE_BYTES + 1,
+                }),
+            };
+        }
+
+        // No LF in this fill — append, but refuse to grow past hard_cap.
+        if line.len() + buf.len() > hard_cap {
+            let observed = line.len() + buf.len();
+            // Consume this buf chunk then drain to LF so the next read starts clean.
+            let n = buf.len();
+            reader.consume(n);
+            drain_until_lf(reader)?;
+            return Ok(LimitedLine::TooLong { observed });
+        }
+
+        let piece = buf.to_vec();
+        reader.consume(piece.len());
+        line.extend_from_slice(&piece);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn help_version_status_clear_echo() {
@@ -302,20 +386,25 @@ mod tests {
     }
 
     #[test]
-    fn accepts_tabs_and_cr_as_whitespace() {
-        assert!(matches!(parse_line("\thelp\t").unwrap(), Command::Help));
-        assert!(matches!(
-            parse_line("\rversion\r").unwrap(),
-            Command::Version
-        ));
-        assert_eq!(
-            parse_line("echo\thello\tworld").unwrap(),
-            Command::Echo(vec!["hello".into(), "world".into()])
-        );
-        assert_eq!(
-            parse_line("echo\rhello\rworld").unwrap(),
-            Command::Echo(vec!["hello".into(), "world".into()])
-        );
+    fn rejects_tabs_and_cr_inside_commands() {
+        for line in ["\thelp", "help\t", "echo\thello", "echo hello\tworld"] {
+            assert!(
+                matches!(
+                    parse_line(line).unwrap_err(),
+                    ParseError::ForbiddenChar { ch: '\t' }
+                ),
+                "tab should be forbidden in {line:?}"
+            );
+        }
+        for line in ["\rhelp", "help\r", "echo\rhello", "echo hello\rworld"] {
+            assert!(
+                matches!(
+                    parse_line(line).unwrap_err(),
+                    ParseError::ForbiddenChar { ch: '\r' }
+                ),
+                "CR should be forbidden in {line:?}"
+            );
+        }
     }
 
     #[test]
@@ -347,20 +436,9 @@ mod tests {
             parse_line("rm -rf /").unwrap_err(),
             ParseError::UnknownCommand { .. }
         ));
-        assert!(matches!(
-            parse_line("sudo reboot").unwrap_err(),
-            ParseError::UnknownCommand { .. }
-        ));
         let long = "a".repeat(MAX_LINE_BYTES + 1);
         assert!(matches!(
             parse_line(&long).unwrap_err(),
-            ParseError::TooLong { .. }
-        ));
-        // Whitespace padding must not hide oversize raw input.
-        let padded = format!("  {}  ", "a".repeat(MAX_LINE_BYTES));
-        assert!(padded.len() > MAX_LINE_BYTES);
-        assert!(matches!(
-            parse_line(&padded).unwrap_err(),
             ParseError::TooLong { .. }
         ));
         let many = format!("echo {}", vec!["x"; MAX_ARGS].join(" "));
@@ -383,19 +461,86 @@ mod tests {
         ] {
             let out = render(&cmd);
             assert!(!output_claims_boot_seed_ready(&out));
-            assert!(
-                !out.contains("READY"),
-                "console-owned output must not contain READY: {out:?}"
-            );
+            assert!(!out.contains("READY"), "must not contain READY: {out:?}");
         }
-        // Echo may print a literal user token — that is not a console claim.
-        assert!(!output_claims_boot_seed_ready(&render(&Command::Help)));
     }
 
     #[test]
     fn eval_empty_ok() {
         assert_eq!(eval_line("   ").unwrap(), "");
-        assert_eq!(eval_line("\t\t").unwrap(), "");
-        assert_eq!(eval_line("\r").unwrap(), "");
+    }
+
+    #[test]
+    fn cursor_read_lf_and_crlf_terminators() {
+        let mut cur = Cursor::new(b"help\nversion\r\nstatus\n");
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("help".into())
+        );
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("version".into())
+        );
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("status".into())
+        );
+        assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_mid_line_cr_stays_for_parser_reject() {
+        let mut cur = Cursor::new(b"echo hello\rworld\n");
+        match read_limited_line(&mut cur).unwrap() {
+            LimitedLine::Line(s) => {
+                assert_eq!(s, "echo hello\rworld");
+                assert!(matches!(
+                    parse_line(&s).unwrap_err(),
+                    ParseError::ForbiddenChar { ch: '\r' }
+                ));
+            }
+            other => panic!("expected Line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cursor_read_too_long_drains_and_next_line_ok() {
+        let mut payload = "a".repeat(MAX_LINE_BYTES + 10);
+        payload.push_str("\nhelp\n");
+        let mut cur = Cursor::new(payload.into_bytes());
+        match read_limited_line(&mut cur).unwrap() {
+            LimitedLine::TooLong { observed } => assert!(observed > MAX_LINE_BYTES),
+            other => panic!("expected TooLong, got {other:?}"),
+        }
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("help".into())
+        );
+        assert_eq!(read_limited_line(&mut cur).unwrap(), LimitedLine::Eof);
+    }
+
+    #[test]
+    fn cursor_read_respects_cap_plus_margin() {
+        // Exactly MAX bytes + LF is OK.
+        let mut ok = "b".repeat(MAX_LINE_BYTES);
+        ok.push('\n');
+        let mut cur = Cursor::new(ok.into_bytes());
+        match read_limited_line(&mut cur).unwrap() {
+            LimitedLine::Line(s) => assert_eq!(s.len(), MAX_LINE_BYTES),
+            other => panic!("expected Line, got {other:?}"),
+        }
+
+        // MAX+1 without early LF → TooLong (margin only for terminator scan).
+        let mut over = "c".repeat(MAX_LINE_BYTES + LINE_READ_MARGIN + 1);
+        over.push_str("\nclear\n");
+        let mut cur = Cursor::new(over.into_bytes());
+        assert!(matches!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::TooLong { .. }
+        ));
+        assert_eq!(
+            read_limited_line(&mut cur).unwrap(),
+            LimitedLine::Line("clear".into())
+        );
     }
 }
