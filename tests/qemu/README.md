@@ -29,9 +29,12 @@ Reference Alpine fetch (default **dry-run**, no download):
 
 ```bash
 tests/qemu/scripts/fetch-reference-image.sh
+# Policy mocks (no network ISO): GPG fail-closed + redirect hop allowlist
+tests/qemu/scripts/test-fetch-policy.sh
 ```
 
-Authorized execute belongs on a **disposable** ubuntu-24.04 Actions runner (Mission 006), not the Cursor host.
+Authorized execute belongs on a **disposable** ubuntu-24.04 Actions runner (Mission 006), not the Cursor host.  
+Downloads never use `curl -L`; every redirect hop must stay on the allowlisted HTTPS host. GPG verify is **fail-closed** (exit 0 + GOODSIG + VALIDSIG fingerprint).
 
 See [docs/testing/reference-linux.md](../../docs/testing/reference-linux.md). **Reference Linux ≠ Ryoku OS.**
 
