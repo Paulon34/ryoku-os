@@ -121,9 +121,10 @@ Ver [docs/testing/console.md](docs/testing/console.md), [ryoku-minimal.md](docs/
 
 ## Fase 2.13 — Adaptive Desktop Foundation (Missão 016)
 
-- [ ] Perfis Lite / Balanced / Ultra (tema, layout, animação, políticas de render)
-- [ ] Troca de perfil na sessão; fallback Lite; métricas; sem fingir blur/3D/Wayland
-- [ ] Guest results **NOT_RUN** until manual
+- [x] Perfis Lite / Balanced / Ultra (tema, layout, animação, políticas de render) — code
+- [x] Troca de perfil na sessão (F1/F2/F3); Ultra → fallback Balanced; métricas compose/blit/mem
+- [x] Sem fingir blur/transparência/3D/compositor/Wayland completo; sem redraw contínuo; sem clear visível
+- [ ] Guest results **`GUEST_NOT_RUN`** until manual
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

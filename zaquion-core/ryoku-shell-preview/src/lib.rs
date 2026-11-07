@@ -1,14 +1,18 @@
-//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.1 / 015.2).
+//! Ryoku Shell Preview — illustrative desktop layout (Mission 015 / 015.2 / **016**).
 //!
 //! Draws a navy/teal top panel, desktop area, dock, and status into an RGB888
 //! software buffer. Presentation to `/dev/fb0` reuses Mission 014.2 validation
 //! (`ryoku-graphics-demo`).
 //!
-//! Mission **015.2** adds the Ryoku Launcher panel (categories/focus/close) and
-//! fact-based input indicators (`UNAVAILABLE` / `DETECTED` / `EVENTS RECEIVED`).
-//! This crate **never** invents `PASS_MANUAL` from host unit tests or CI.
+//! Mission **016** adds Adaptive Desktop Foundation profiles (Lite / Balanced /
+//! Ultra). Ultra is architecture-only (paint falls back to Balanced). This crate
+//! **never** invents `PASS_MANUAL` from host unit tests or CI.
 
 #![forbid(unsafe_code)]
+
+mod adaptive;
+
+pub use adaptive::{AdaptiveProfile, ProfileTheme, RenderPolicy};
 
 use ryoku_graphics_demo::{blit_rgb_to_fb, blit_rgb_to_fb_rows, FbGeometry, RgbBuffer};
 
@@ -194,7 +198,7 @@ impl LauncherLayout {
     }
 }
 
-/// Interactive UI state (Mission 015.1 / 015.2). Guest PASS is manual only.
+/// Interactive UI state (Mission 015.1 / 015.2 / 016). Guest PASS is manual only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InteractiveState {
     pub cursor_x: i32,
@@ -205,6 +209,8 @@ pub struct InteractiveState {
     pub launcher_focus: usize,
     pub left_down: bool,
     pub input_fact: InputFact,
+    /// Mission 016 adaptive profile (session-switchable).
+    pub profile: AdaptiveProfile,
 }
 
 impl InteractiveState {
@@ -219,7 +225,12 @@ impl InteractiveState {
             launcher_focus: 0,
             left_down: false,
             input_fact: InputFact::Unavailable,
+            profile: AdaptiveProfile::Balanced,
         }
+    }
+
+    pub fn set_profile(&mut self, profile: AdaptiveProfile) {
+        self.profile = profile;
     }
 
     /// Clamp cursor into FB bounds.
@@ -357,7 +368,14 @@ fn glyph(ch: char) -> Option<[u8; 7]> {
         '0' => Some([0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E]),
         '1' => Some([0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E]),
         '2' => Some([0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F]),
+        '3' => Some([0x1F, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1F]),
+        '4' => Some([0x11, 0x11, 0x11, 0x1F, 0x01, 0x01, 0x01]),
         '5' => Some([0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E]),
+        '6' => Some([0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E]),
+        '7' => Some([0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08]),
+        '8' => Some([0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E]),
+        '9' => Some([0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E]),
+        '=' => Some([0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00, 0x00]),
         'A' => Some([0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11]),
         'B' => Some([0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E]),
         'C' => Some([0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E]),
@@ -518,20 +536,34 @@ pub fn compose_shell_interactive(
     layout: &ShellLayout,
     ui: Option<&InteractiveState>,
 ) {
-    // Desktop wallpaper (vertical navy→deep gradient).
-    for y in 0..buf.height {
-        let t = y * 255 / buf.height.max(1);
-        let r = COLOR_NAVY.0 as u32
-            + (COLOR_NAVY_DEEP.0 as u32).saturating_sub(COLOR_NAVY.0 as u32) * t / 255;
-        let g = COLOR_NAVY.1 as u32 * (255 - t) / 255 + COLOR_NAVY_DEEP.1 as u32 * t / 255;
-        let b = COLOR_NAVY.2 as u32 * (255 - t) / 255 + COLOR_TEAL_DIM.2 as u32 * t / 400;
+    let profile = ui.map(|u| u.profile).unwrap_or_default();
+    let theme = profile.theme();
+
+    // Desktop wallpaper — Lite solid; Balanced/Ultra-effective gradient (no blur).
+    if profile.use_gradient_wallpaper() {
+        for y in 0..buf.height {
+            let t = y * 255 / buf.height.max(1);
+            let r = theme.navy.0 as u32
+                + (theme.navy_deep.0 as u32).saturating_sub(theme.navy.0 as u32) * t / 255;
+            let g = theme.navy.1 as u32 * (255 - t) / 255 + theme.navy_deep.1 as u32 * t / 255;
+            let b = theme.navy.2 as u32 * (255 - t) / 255 + theme.teal_dim.2 as u32 * t / 400;
+            fill_rect(
+                buf,
+                0,
+                y as i32,
+                buf.width as i32,
+                1,
+                (r as u8, g as u8, b.min(255) as u8),
+            );
+        }
+    } else {
         fill_rect(
             buf,
             0,
-            y as i32,
-            buf.width as i32,
-            1,
-            (r as u8, g as u8, b.min(255) as u8),
+            0,
+            layout.width as i32,
+            layout.height as i32,
+            theme.navy,
         );
     }
 
@@ -542,7 +574,7 @@ pub fn compose_shell_interactive(
         0,
         layout.width as i32,
         layout.panel_h as i32,
-        COLOR_PANEL,
+        theme.panel,
     );
     fill_rect(
         buf,
@@ -550,18 +582,26 @@ pub fn compose_shell_interactive(
         layout.panel_h as i32 - 2,
         layout.width as i32,
         2,
-        COLOR_TEAL_DIM,
+        theme.teal_dim,
     );
     let text_scale = if layout.width >= 800 { 2 } else { 1 };
-    draw_text(buf, 12, 8, "RYOKU", text_scale, COLOR_TEAL);
+    draw_text(buf, 12, 8, "RYOKU", text_scale, theme.teal);
+    let title = if matches!(profile, AdaptiveProfile::Ultra) {
+        "ULTRA ARCH"
+    } else {
+        "SHELL PREVIEW"
+    };
     draw_text(
         buf,
         12 + 6 * 5 * text_scale + 8,
         8,
-        "SHELL PREVIEW",
+        title,
         text_scale,
-        COLOR_TEXT,
+        theme.text,
     );
+    // Left-mid: profile tag (Mission 016).
+    let ptag = profile.panel_tag();
+    draw_text(buf, 12 + 6 * 18 * text_scale + 16, 8, ptag, 1, theme.muted);
     // Status (right) — fact-based indicator only (never auto PASS_MANUAL).
     let status = ui
         .map(|u| u.input_fact.panel_label())
@@ -574,48 +614,59 @@ pub fn compose_shell_interactive(
         8,
         status,
         status_scale,
-        COLOR_MUTED,
+        theme.muted,
     );
 
-    // Desktop hint card (illustrative) — hidden while launcher open.
-    if layout.desktop_h > 80 && !ui.is_some_and(|u| u.launcher_open) {
+    // Desktop hint card — Balanced only; hidden while launcher open.
+    if profile.show_hint_card() && layout.desktop_h > 80 && !ui.is_some_and(|u| u.launcher_open) {
         let card_w = (layout.width as i32 * 45 / 100).clamp(220, 420);
         let card_h = (layout.desktop_h as i32 / 3).clamp(70, 120);
         let card_x = (layout.width as i32 - card_w) / 2;
         let card_y = layout.desktop_y as i32 + (layout.desktop_h as i32 - card_h) / 3;
-        fill_rounded(buf, card_x, card_y, card_w, card_h, 10, COLOR_PANEL);
+        fill_rounded(buf, card_x, card_y, card_w, card_h, 10, theme.panel);
         draw_text(
             buf,
             card_x + 16,
             card_y + 18,
             "MINIMAL DEVELOPER PREVIEW",
             text_scale,
-            COLOR_TEXT,
+            theme.text,
         );
         draw_text(
             buf,
             card_x + 16,
             card_y + 18 + 10 * text_scale + 8,
-            "LAUNCHER 015.2",
+            "ADAPTIVE 016 F1-F3",
             text_scale,
-            COLOR_MUTED,
+            theme.muted,
         );
     }
 
-    // Ryoku Launcher panel — title / categories / focus / close (adaptive).
+    // Ultra honesty strip (architecture only — paint is Balanced fallback).
+    if matches!(profile, AdaptiveProfile::Ultra) && !ui.is_some_and(|u| u.launcher_open) {
+        draw_text(
+            buf,
+            16,
+            layout.desktop_y as i32 + 8,
+            "ULTRA = ARCH ONLY - FALLBACK BALANCED - NO BLUR/3D/WAYLAND",
+            1,
+            theme.muted,
+        );
+    }
+
+    // Ryoku Launcher panel — title / categories / focus / close.
     if let Some(u) = ui.filter(|u| u.launcher_open) {
         let ll = LauncherLayout::for_shell(layout);
-        fill_rounded(buf, ll.x, ll.y, ll.w, ll.h, 12, COLOR_PANEL);
-        fill_rect(buf, ll.x, ll.y, ll.w, 3, COLOR_TEAL);
+        fill_rounded(buf, ll.x, ll.y, ll.w, ll.h, 12, theme.panel);
+        fill_rect(buf, ll.x, ll.y, ll.w, 3, theme.teal);
         draw_text(
             buf,
             ll.x + 14,
             ll.y + 12,
             "RYOKU LAUNCHER",
             text_scale,
-            COLOR_TEAL,
+            theme.teal,
         );
-        // Close control
         fill_rounded(
             buf,
             ll.close_x,
@@ -623,16 +674,16 @@ pub fn compose_shell_interactive(
             ll.close_s,
             ll.close_s,
             4,
-            COLOR_TEAL_DIM,
+            theme.teal_dim,
         );
-        draw_text(buf, ll.close_x + 4, ll.close_y + 4, "X", 1, COLOR_TEXT);
+        draw_text(buf, ll.close_x + 4, ll.close_y + 4, "X", 1, theme.text);
         draw_text(
             buf,
             ll.x + 14,
             ll.y + 12 + 10 * text_scale + 4,
             "NO APP EXEC - ESC CLOSES",
             1,
-            COLOR_MUTED,
+            theme.muted,
         );
         for (i, cat) in LAUNCHER_CATEGORIES.iter().enumerate() {
             let ry = ll.row_y0 + (i as i32) * ll.row_h;
@@ -645,7 +696,7 @@ pub fn compose_shell_interactive(
                     ll.w - 20,
                     ll.row_h - 4,
                     6,
-                    COLOR_TEAL_DIM,
+                    theme.teal_dim,
                 );
             }
             draw_text(
@@ -654,7 +705,7 @@ pub fn compose_shell_interactive(
                 ry + 4,
                 cat,
                 1,
-                if focused { COLOR_TEXT } else { COLOR_MUTED },
+                if focused { theme.text } else { theme.muted },
             );
         }
     }
@@ -667,7 +718,7 @@ pub fn compose_shell_interactive(
         layout.dock_w as i32,
         layout.dock_h as i32,
         12,
-        COLOR_DOCK,
+        theme.dock,
     );
     for i in 0..DOCK_SLOTS {
         let Some((ix, iy, icon, _)) = layout.dock_icon_rect(i) else {
@@ -683,16 +734,36 @@ pub fn compose_shell_interactive(
                 icon + 6,
                 icon + 6,
                 8,
-                if selected { COLOR_TEAL } else { COLOR_TEAL_DIM },
+                if selected { theme.teal } else { theme.teal_dim },
             );
         }
-        let accent = if i == 0 { COLOR_TEAL } else { COLOR_TEAL_DIM };
-        draw_icon(buf, ix, iy, icon, accent);
+        let accent = if i == 0 { theme.teal } else { theme.teal_dim };
+        draw_icon_themed(buf, ix, iy, icon, accent, theme.panel);
     }
 
     if let Some(u) = ui {
         draw_cursor(buf, u.cursor_x, u.cursor_y);
     }
+}
+
+fn draw_icon_themed(
+    buf: &mut RgbBuffer,
+    x: i32,
+    y: i32,
+    size: i32,
+    accent: (u8, u8, u8),
+    panel: (u8, u8, u8),
+) {
+    fill_rounded(buf, x, y, size, size, size / 5, panel);
+    fill_rounded(
+        buf,
+        x + size / 5,
+        y + size / 5,
+        size - 2 * (size / 5),
+        size - 2 * (size / 5),
+        size / 8,
+        accent,
+    );
 }
 
 /// Build an RGB software buffer with the shell layout for the given FB size.
@@ -899,5 +970,18 @@ mod tests {
         let l = ShellLayout::for_fb(941, 993).unwrap();
         assert_eq!(l.width, 941);
         assert!(l.dock_y + l.dock_h <= l.height);
+    }
+
+    #[test]
+    fn adaptive_profile_switch_redraws_theme() {
+        let l = ShellLayout::for_fb(941, 474).unwrap();
+        let mut ui = InteractiveState::new(&l);
+        ui.set_profile(AdaptiveProfile::Lite);
+        let (buf_lite, _) = render_shell_interactive(941, 474, &ui).unwrap();
+        ui.set_profile(AdaptiveProfile::Ultra);
+        let (buf_ultra, _) = render_shell_interactive(941, 474, &ui).unwrap();
+        // Different session labels / wallpaper policy → buffers differ.
+        assert_ne!(buf_lite.pixels, buf_ultra.pixels);
+        assert_eq!(ui.profile.effective(), AdaptiveProfile::Balanced);
     }
 }
