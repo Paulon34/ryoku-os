@@ -77,8 +77,11 @@ pub struct VmConfig {
     pub append: Option<String>,
     /// Optional ISO/CD image under `run/` or `fixtures/` (reference Linux).
     pub iso: Option<PathBuf>,
-    /// Optional serial log file under `results/`.
+    /// Optional serial log file under `results/` (T2/T3 evidence). Mutually exclusive with [`Self::serial_stdio`].
     pub serial_log: Option<PathBuf>,
+    /// When true, QEMU uses `-serial stdio` for interactive prep (Mission 011).
+    /// Must not replace T3 file-serial evidence profiles.
+    pub serial_stdio: bool,
     /// Substring that must appear in serial output to claim reference guest console progress.
     pub boot_sentinel: Option<String>,
     /// Additional required serial substrings. All must match for PASS.
@@ -257,8 +260,26 @@ impl VmConfig {
         let kernel = parse_optional_asset(kernel_raw.as_deref(), PathRole::Kernel, lab_root)?;
         let initrd = parse_optional_asset(initrd_raw.as_deref(), PathRole::Kernel, lab_root)?;
         let iso = parse_optional_asset(iso_raw.as_deref(), PathRole::Iso, lab_root)?;
-        let serial_log =
-            parse_optional_asset(serial_raw.as_deref(), PathRole::SerialLog, lab_root)?;
+        let (serial_log, serial_stdio) = match serial_raw.as_deref() {
+            None | Some("none") => (None, false),
+            Some("stdio") => (None, true),
+            Some(path) => (
+                Some(validate_optional_path(path, PathRole::SerialLog, lab_root)?),
+                false,
+            ),
+        };
+
+        if serial_stdio && serial_log.is_some() {
+            return Err(ConfigError::Parse(
+                "serial_log cannot combine a path with stdio".into(),
+            ));
+        }
+        // Interactive stdio serial conflicts with monitor-on-stdio quit.
+        if serial_stdio && matches!(shutdown, ShutdownMode::MonitorQuit) {
+            return Err(ConfigError::Parse(
+                "serial_log=stdio requires shutdown=none (avoid monitor+serial stdio clash)".into(),
+            ));
+        }
 
         Ok(Self {
             name,
@@ -273,6 +294,7 @@ impl VmConfig {
             append,
             iso,
             serial_log,
+            serial_stdio,
             boot_sentinel,
             boot_markers,
             shutdown,
@@ -477,6 +499,63 @@ shutdown = monitor_quit
         );
         assert!(cfg.has_boot_medium());
         assert!(!cfg.is_emulator_only());
+    }
+
+    #[test]
+    fn parses_interactive_stdio_serial_requires_shutdown_none() {
+        let text = "\
+name = console-interactive
+memory_mb = 256
+cpus = 1
+timeout_secs = 300
+accel = tcg
+network = none
+disk = none
+kernel = run/ryoku-boot-seed-vmlinuz
+initrd = run/ryoku-boot-seed.cpio.gz
+append = console=ttyS0
+iso = none
+serial_log = stdio
+shutdown = none
+";
+        let cfg = VmConfig::parse(text, lab()).unwrap();
+        assert!(cfg.serial_stdio);
+        assert!(cfg.serial_log.is_none());
+        assert_eq!(cfg.shutdown, ShutdownMode::None);
+    }
+
+    #[test]
+    fn rejects_stdio_serial_with_monitor_quit() {
+        let text = "\
+name = bad
+memory_mb = 256
+cpus = 1
+timeout_secs = 30
+accel = tcg
+network = none
+serial_log = stdio
+shutdown = monitor_quit
+";
+        assert!(VmConfig::parse(text, lab()).is_err());
+    }
+
+    #[test]
+    fn t3_file_serial_not_stdio() {
+        let text = "\
+name = t3-boot-seed
+memory_mb = 256
+cpus = 1
+timeout_secs = 120
+accel = tcg
+network = none
+kernel = run/ryoku-boot-seed-vmlinuz
+initrd = run/ryoku-boot-seed.cpio.gz
+serial_log = results/serial-t3-boot-seed.log
+shutdown = monitor_quit
+";
+        let cfg = VmConfig::parse(text, lab()).unwrap();
+        assert!(!cfg.serial_stdio);
+        assert!(cfg.serial_log.is_some());
     }
 
     #[test]

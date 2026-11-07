@@ -48,14 +48,24 @@ Documento vivo. Atualizar a cada missão concluída. Idiomas: seções principai
 
 Ver [docs/testing/reference-linux.md](docs/testing/reference-linux.md), [virtual-lab.md](docs/testing/virtual-lab.md).
 
-## Fase 2.5 — Boot Seed / T3 (Missões 008–009)
+## Fase 2.5 — Boot Seed / T3 (Missões 008–010)
 
 - [x] ADR-0002 + `ryoku-init` + initramfs + `t3-boot-seed` (Missão 008; merge `4b9305b`)
-- [x] Missão 009 prep: kernel extract plan, musl/hash prep scripts, `boot-seed-t3.yml` (manual), `RYOKU_T3_EXECUTE` guard
-- [ ] Autorização humana + **dispatch** real T3 com evidência serial do guest
+- [x] Missão 009 prep + 009.5 harden/merge (`5a9d67d`)
+- [x] Missão 010: **um** dispatch autorizado `boot-seed-t3` — serial `pid=1` + READY (seed ≠ produto)
 - [ ] Boot de produto Ryoku OS (ainda **não** — seed ≠ produto)
 
 Ver [docs/testing/boot-seed.md](docs/testing/boot-seed.md), [boot-seed-t3.md](docs/testing/boot-seed-t3.md).
+
+## Fase 2.6 — Console interativo (Missão 011) — prep / audit stop
+
+- [x] Crate `ryoku-console` (help/version/status/echo/clear) separado do PID 1
+- [x] Parser limitado (sem shell) + testes de segurança
+- [x] Perfil QEMU `console-interactive` (`serial_log=stdio`) **sem** substituir T3 file-serial
+- [ ] Boot guest interativo real / wiring console após READY (missão futura)
+- [ ] Claim de shell de produto (nunca nesta fase)
+
+Ver [docs/testing/console.md](docs/testing/console.md).
 
 ## Fase 3 — Primeiros serviços Zaquion Core
 

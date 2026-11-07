@@ -66,6 +66,12 @@ Config: `tests/qemu/configs/t3-boot-seed.rvl.conf`
 Guest spawn requires **`RYOKU_T3_EXECUTE=1`**. Without it, `t3.boot_seed` stays
 **NOT_RUN** even if assets exist. `ryoku-virtlab all` never includes T3.
 
+### Interactive console (Mission 011)
+
+A separate profile `console-interactive.rvl.conf` uses `serial_log=stdio` for a
+future interactive session. It **must not** replace this T3 file-serial profile.
+Console code lives in `ryoku-console` (not PID 1). See [console.md](console.md).
+
 ## Authorized T3 procedure (separate mission / human auth)
 
 1. Dispatch `.github/workflows/boot-seed-t3.yml` with `confirm=RUN` on `main` only after review.

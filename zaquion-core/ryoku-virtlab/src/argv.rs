@@ -104,7 +104,11 @@ pub fn build_qemu_argv(
         args.push("order=d".into());
     }
 
-    if let Some(serial) = &cfg.serial_log {
+    if cfg.serial_stdio {
+        // Interactive prep (Mission 011) — does not replace T3 file-serial evidence.
+        args.push("-serial".into());
+        args.push("stdio".into());
+    } else if let Some(serial) = &cfg.serial_log {
         args.push("-serial".into());
         args.push(format!("file:{}", serial.display()));
     }
@@ -119,7 +123,10 @@ pub fn build_qemu_argv(
     }
 
     // Monitor on stdio enables controlled shutdown via `quit` without a shell wrapper.
-    if matches!(cfg.shutdown, ShutdownMode::MonitorQuit) || cfg.is_emulator_only() {
+    // Skip when guest serial already owns stdio (interactive console prep).
+    if !cfg.serial_stdio
+        && (matches!(cfg.shutdown, ShutdownMode::MonitorQuit) || cfg.is_emulator_only())
+    {
         args.push("-monitor".into());
         args.push("stdio".into());
     }
@@ -163,10 +170,30 @@ mod tests {
             append: None,
             iso: None,
             serial_log: None,
+            serial_stdio: false,
             boot_sentinel: None,
             boot_markers: Vec::new(),
             shutdown: ShutdownMode::MonitorQuit,
         }
+    }
+
+    #[test]
+    fn interactive_stdio_serial_no_file_and_no_monitor() {
+        let mut cfg = base_cfg();
+        cfg.kernel = Some(PathBuf::from("/lab/run/vmlinuz"));
+        cfg.initrd = Some(PathBuf::from("/lab/run/seed.cpio.gz"));
+        cfg.append = Some("console=ttyS0".into());
+        cfg.serial_stdio = true;
+        cfg.shutdown = ShutdownMode::None;
+        let argv = build_qemu_argv("qemu-system-x86_64", &cfg, AccelChoice::Tcg).unwrap();
+        let parts = argv.as_command_line_parts();
+        assert!(parts
+            .windows(2)
+            .any(|w| w[0] == "-serial" && w[1] == "stdio"));
+        assert!(!parts.iter().any(|a| a.starts_with("file:")));
+        assert!(!parts
+            .windows(2)
+            .any(|w| w[0] == "-monitor" && w[1] == "stdio"));
     }
 
     #[test]
