@@ -77,6 +77,9 @@ pub struct VmConfig {
     pub serial_log: Option<PathBuf>,
     /// Substring that must appear in serial output to claim reference guest console progress.
     pub boot_sentinel: Option<String>,
+    /// Additional required serial substrings (Alpine-specific markers). All must match for PASS.
+    /// Configured as a single `|`-separated line: `boot_markers = Alpine|login:`
+    pub boot_markers: Vec<String>,
     pub shutdown: ShutdownMode,
 }
 
@@ -179,6 +182,7 @@ impl VmConfig {
         let mut iso_raw: Option<String> = None;
         let mut serial_raw: Option<String> = None;
         let mut boot_sentinel: Option<String> = None;
+        let mut boot_markers: Vec<String> = Vec::new();
         let mut shutdown = ShutdownMode::MonitorQuit;
 
         for (lineno, raw_line) in text.lines().enumerate() {
@@ -216,6 +220,14 @@ impl VmConfig {
                 "iso" => iso_raw = Some(value.to_string()),
                 "serial_log" => serial_raw = Some(value.to_string()),
                 "boot_sentinel" => boot_sentinel = Some(value.to_string()),
+                "boot_markers" => {
+                    boot_markers = value
+                        .split('|')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                }
                 "shutdown" => shutdown = ShutdownMode::parse(value)?,
                 other => {
                     return Err(ConfigError::Parse(format!(
@@ -251,8 +263,19 @@ impl VmConfig {
             iso,
             serial_log,
             boot_sentinel,
+            boot_markers,
             shutdown,
         })
+    }
+
+    /// Markers that must all appear in serial text for a verified reference boot PASS.
+    /// Prefer `boot_markers` when set; otherwise fall back to a single `boot_sentinel`.
+    #[must_use]
+    pub fn required_boot_markers(&self) -> Vec<String> {
+        if !self.boot_markers.is_empty() {
+            return self.boot_markers.clone();
+        }
+        self.boot_sentinel.iter().cloned().collect()
     }
 
     /// True when this config cannot claim a guest OS boot (no disk/kernel/iso).
@@ -373,5 +396,34 @@ timeout_secs = 10
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_boot_markers_pipe_list() {
+        let text = "\
+name = alpine
+memory_mb = 512
+cpus = 1
+timeout_secs = 180
+accel = tcg
+network = none
+disk = none
+kernel = none
+iso = run/alpine-virt-3.21.9-x86_64.iso
+serial_log = results/serial-t2-reference-alpine.log
+boot_sentinel = login:
+boot_markers = Alpine|login:
+shutdown = monitor_quit
+";
+        let cfg = VmConfig::parse(text, lab()).unwrap();
+        assert_eq!(
+            cfg.boot_markers,
+            vec!["Alpine".to_string(), "login:".to_string()]
+        );
+        assert_eq!(
+            cfg.required_boot_markers(),
+            vec!["Alpine".to_string(), "login:".to_string()]
+        );
+        assert_eq!(cfg.accel, AccelMode::Tcg);
     }
 }

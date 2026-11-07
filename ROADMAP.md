@@ -39,9 +39,10 @@ Documento vivo. Atualizar a cada missão concluída. Idiomas: seções principai
 - [x] T1 opcional: SKIPPED sem QEMU; sem claim de boot Ryoku
 - [x] Doctor: QEMU / qemu-img / KVM / TCG
 - [x] Manifesto Alpine virt 3.21.9 + script fetch **dry-run** + first-boot harness (Missão 005)
-- [x] Workflow `first-boot.yml` **gated** (`if: false`) — sem download/install até review
-- [ ] Disponibilizar QEMU no host/CI **com autorização**
-- [ ] `RYOKU_FETCH_EXECUTE=1` + first-boot PASS com logs seriais verificáveis (ainda ≠ Ryoku)
+- [x] Workflow `first-boot.yml` — `workflow_dispatch` + `confirm=RUN` (Missão 006; sem `if: false`)
+- [x] Fetch script: allowlist CDN + SHA-256 pin + GPG ncopa (Missão 006)
+- [x] Marcadores seriais Alpine (`Alpine|login:`) + evidence JSON (Missão 006)
+- [ ] Push/PR + run Actions real → artefatos seriais (ainda **NOT_RUN** até publish)
 - [ ] Smoke: boot → login/ssh → shutdown em imagem autorizada
 - [ ] Artefatos de expectativa extras (texto pequeno no git)
 

@@ -1,10 +1,11 @@
-//! First Boot Lab (Mission 005) — reference guest boot with serial capture.
+//! First Boot Lab (Missions 005–006) — reference guest boot with serial capture.
 //!
 //! # Honesty contract
 //!
-//! - Matching a serial sentinel on **Alpine** (or any third-party image) means
-//!   **reference Linux** console progress — **not** “Ryoku OS booted”.
+//! - Matching Alpine serial markers means **reference Linux** console progress —
+//!   **not** “Ryoku OS booted”.
 //! - Without QEMU → SKIPPED; without the ISO file → NOT_RUN.
+//! - QEMU process start ≠ Linux boot success.
 //! - Never claim PASS without inspecting captured serial text / logs.
 
 use std::fs;
@@ -139,6 +140,8 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
 
     let serial_text = read_serial(&cfg);
     let combined = format!("{}\n{}\n{}", exec.stdout, exec.stderr, serial_text);
+    let markers = cfg.required_boot_markers();
+    let missing = missing_markers(&combined, &markers);
 
     if let Some(err) = &exec.spawn_error {
         results.push(
@@ -149,52 +152,97 @@ pub fn run_first_boot<P: ToolProbe>(lab_root: &Path, probe: &P) -> Vec<CaseResul
             )
             .with_detail(err.clone()),
         );
-    } else if let Some(sentinel) = &cfg.boot_sentinel {
-        if combined.contains(sentinel.as_str()) {
-            results.push(
-                CaseResult::new(
-                    "t2.reference_linux_boot",
-                    Outcome::Pass,
-                    format!("reference Linux serial matched sentinel `{sentinel}` (NOT Ryoku OS)"),
-                )
-                .with_detail(format!(
-                    "accel={} duration_ms={} timed_out={} exit={:?}\nserial_bytes={}",
-                    argv.accel_used.as_str(),
-                    exec.duration_ms,
-                    exec.timed_out,
-                    exec.exit_code,
-                    serial_text.len()
-                )),
-            );
-        } else if exec.spawned() {
-            results.push(
-                CaseResult::new(
-                    "t2.reference_linux_boot",
-                    Outcome::Fail,
-                    format!(
-                        "QEMU ran but serial sentinel `{sentinel}` not observed before stop"
-                    ),
-                )
-                .with_detail(format!(
-                    "accel={} duration_ms={} timed_out={} — refusing to claim boot without evidence\nserial_tail={}",
-                    argv.accel_used.as_str(),
-                    exec.duration_ms,
-                    exec.timed_out,
-                    trim_tail(&serial_text, 500)
-                )),
-            );
-        } else {
-            results.push(CaseResult::new(
+        write_evidence(
+            lab_root,
+            &cfg,
+            argv.accel_used.as_str(),
+            &exec,
+            &serial_text,
+            &markers,
+            &missing,
+            "FAIL",
+            "spawn_error",
+        );
+    } else if markers.is_empty() {
+        results.push(CaseResult::new(
+            "t2.reference_linux_boot",
+            Outcome::Fail,
+            "boot_sentinel / boot_markers missing from config — cannot verify boot",
+        ));
+        write_evidence(
+            lab_root,
+            &cfg,
+            argv.accel_used.as_str(),
+            &exec,
+            &serial_text,
+            &markers,
+            &missing,
+            "FAIL",
+            "no_markers_configured",
+        );
+    } else if missing.is_empty() {
+        results.push(
+            CaseResult::new(
+                "t2.reference_linux_boot",
+                Outcome::Pass,
+                format!(
+                    "reference Linux serial matched markers {:?} (NOT Ryoku OS)",
+                    markers
+                ),
+            )
+            .with_detail(format!(
+                "accel={} duration_ms={} timed_out={} exit={:?}\nserial_bytes={}",
+                argv.accel_used.as_str(),
+                exec.duration_ms,
+                exec.timed_out,
+                exec.exit_code,
+                serial_text.len()
+            )),
+        );
+        write_evidence(
+            lab_root,
+            &cfg,
+            argv.accel_used.as_str(),
+            &exec,
+            &serial_text,
+            &markers,
+            &missing,
+            "PASS",
+            "all_markers_matched",
+        );
+    } else if exec.spawned() {
+        results.push(
+            CaseResult::new(
                 "t2.reference_linux_boot",
                 Outcome::Fail,
-                "unexpected exec state",
-            ));
-        }
+                format!(
+                    "QEMU ran but serial markers missing before stop: {missing:?}"
+                ),
+            )
+            .with_detail(format!(
+                "accel={} duration_ms={} timed_out={} — refusing to claim boot without evidence\nserial_tail={}",
+                argv.accel_used.as_str(),
+                exec.duration_ms,
+                exec.timed_out,
+                trim_tail(&serial_text, 500)
+            )),
+        );
+        write_evidence(
+            lab_root,
+            &cfg,
+            argv.accel_used.as_str(),
+            &exec,
+            &serial_text,
+            &markers,
+            &missing,
+            "FAIL",
+            "markers_incomplete",
+        );
     } else {
         results.push(CaseResult::new(
             "t2.reference_linux_boot",
             Outcome::Fail,
-            "boot_sentinel missing from config — cannot verify boot",
+            "unexpected exec state",
         ));
     }
 
@@ -218,15 +266,21 @@ fn case_reference_not_ryoku() -> CaseResult {
 fn case_config_loads(lab_root: &Path) -> CaseResult {
     let path = lab_root.join(FIRST_BOOT_CONFIG);
     match VmConfig::load_file(&path, lab_root) {
-        Ok(cfg) if cfg.iso.is_some() && cfg.boot_sentinel.is_some() => CaseResult::new(
-            "t2.config",
-            Outcome::Pass,
-            format!("loaded `{}` with iso + boot_sentinel", cfg.name),
-        ),
+        Ok(cfg) if cfg.iso.is_some() && (!cfg.required_boot_markers().is_empty()) => {
+            CaseResult::new(
+                "t2.config",
+                Outcome::Pass,
+                format!(
+                    "loaded `{}` with iso + markers {:?}",
+                    cfg.name,
+                    cfg.required_boot_markers()
+                ),
+            )
+        }
         Ok(_) => CaseResult::new(
             "t2.config",
             Outcome::Fail,
-            "config missing iso or boot_sentinel",
+            "config missing iso or boot markers",
         ),
         Err(err) => CaseResult::new("t2.config", Outcome::Fail, err.to_string()),
     }
@@ -322,14 +376,14 @@ fn run_boot_until_sentinel_or_timeout(
     let mut stdin = child.stdin.take();
     let mut stdout_pipe = child.stdout.take();
     let mut stderr_pipe = child.stderr.take();
-    let sentinel = cfg.boot_sentinel.clone().unwrap_or_default();
+    let markers = cfg.required_boot_markers();
     let mut quit_sent = false;
 
     loop {
-        // Check serial file for sentinel early.
-        if !sentinel.is_empty() {
+        // Check serial file for *all* required markers before requesting quit.
+        if !markers.is_empty() {
             let serial = read_serial(cfg);
-            if serial.contains(sentinel.as_str())
+            if missing_markers(&serial, &markers).is_empty()
                 && !quit_sent
                 && matches!(cfg.shutdown, ShutdownMode::MonitorQuit)
             {
@@ -411,6 +465,87 @@ pub fn serial_matches_sentinel(serial: &str, sentinel: &str) -> bool {
     !sentinel.is_empty() && serial.contains(sentinel)
 }
 
+/// Return markers that are not present in `haystack`.
+#[must_use]
+pub fn missing_markers(haystack: &str, markers: &[String]) -> Vec<String> {
+    markers
+        .iter()
+        .filter(|m| !haystack.contains(m.as_str()))
+        .cloned()
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_evidence(
+    lab_root: &Path,
+    cfg: &VmConfig,
+    accel: &str,
+    exec: &crate::exec::ExecResult,
+    serial_text: &str,
+    markers: &[String],
+    missing: &[String],
+    verdict: &str,
+    reason: &str,
+) {
+    let dir = lab_root.join("results");
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join("verified-boot-evidence.json");
+    // Minimal JSON without a serde dependency (stdlib only).
+    let escaped_serial_tail = json_escape(&trim_tail(serial_text, 800));
+    let markers_json = markers
+        .iter()
+        .map(|m| format!("\"{}\"", json_escape(m)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let missing_json = missing
+        .iter()
+        .map(|m| format!("\"{}\"", json_escape(m)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let body = format!(
+        "{{\n\
+         \"verdict\": \"{verdict}\",\n\
+         \"reason\": \"{reason}\",\n\
+         \"reference_not_ryoku\": true,\n\
+         \"image\": \"alpine-virt-3.21.9\",\n\
+         \"vm\": {{\n\
+         \"name\": \"{}\",\n\
+         \"memory_mb\": {},\n\
+         \"cpus\": {},\n\
+         \"timeout_secs\": {},\n\
+         \"accel\": \"{accel}\",\n\
+         \"network\": \"none\"\n\
+         }},\n\
+         \"duration_ms\": {},\n\
+         \"timed_out\": {},\n\
+         \"exit_code\": {},\n\
+         \"markers_required\": [{markers_json}],\n\
+         \"markers_missing\": [{missing_json}],\n\
+         \"serial_bytes\": {},\n\
+         \"serial_tail\": \"{escaped_serial_tail}\"\n\
+         }}\n",
+        cfg.name,
+        cfg.memory_mb,
+        cfg.cpus,
+        cfg.timeout_secs,
+        exec.duration_ms,
+        exec.timed_out,
+        exec.exit_code
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+        serial_text.len(),
+    );
+    let _ = fs::write(path, body);
+}
+
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +572,20 @@ mod tests {
     fn sentinel_helper() {
         assert!(serial_matches_sentinel("foo\nlogin:\n", "login:"));
         assert!(!serial_matches_sentinel("booting...", "login:"));
+    }
+
+    #[test]
+    fn alpine_markers_require_all() {
+        let markers = vec!["Alpine".to_string(), "login:".to_string()];
+        assert!(missing_markers("Welcome to Alpine\n\nlogin:", &markers).is_empty());
+        assert_eq!(
+            missing_markers("login:", &markers),
+            vec!["Alpine".to_string()]
+        );
+        assert_eq!(
+            missing_markers("Alpine Linux", &markers),
+            vec!["login:".to_string()]
+        );
     }
 
     #[test]

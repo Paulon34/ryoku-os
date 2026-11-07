@@ -152,6 +152,7 @@ mod tests {
             iso: None,
             serial_log: None,
             boot_sentinel: None,
+            boot_markers: Vec::new(),
             shutdown: ShutdownMode::MonitorQuit,
         }
     }
