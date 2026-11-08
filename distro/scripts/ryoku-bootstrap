@@ -541,7 +541,20 @@ configure_nix() {
     return 0
   fi
   require_cmd nix
-  systemctl enable --now nix-daemon.socket || systemctl enable --now nix-daemon.service || warn "nix-daemon enable failed"
+  # Debian's nix-setup-systemd may already start the daemon as a service.
+  # Starting its socket while the service is active fails with
+  # "Socket service nix-daemon.service already active, refusing".
+  if systemctl is-active --quiet nix-daemon.service; then
+    info "nix-daemon.service already active; socket activation not required"
+  elif systemctl is-active --quiet nix-daemon.socket; then
+    info "nix-daemon.socket already active"
+  elif systemctl enable --now nix-daemon.socket; then
+    info "nix-daemon.socket enabled"
+  elif systemctl enable --now nix-daemon.service; then
+    info "nix-daemon.service enabled"
+  else
+    die "neither nix-daemon.service nor nix-daemon.socket could start"
+  fi
   backup_file "$nix_conf"
   mkdir -p "$(dirname "$nix_conf")"
   if [[ -f "$nix_conf" ]] && grep -q 'experimental-features' "$nix_conf"; then
@@ -551,12 +564,14 @@ configure_nix() {
   else
     printf '\n%s\n' 'experimental-features = nix-command flakes' >> "$nix_conf"
   fi
-  if ! getent group nixbld >/dev/null 2>&1; then
-    warn "group nixbld missing — check nix-bin/nix-setup-systemd package state"
+  # Debian's nix-setup-systemd authorizes clients through nix-users.
+  # nixbld is a build-workers group, not the login-user access group.
+  if ! getent group nix-users >/dev/null 2>&1; then
+    die "group nix-users missing: check nix-setup-systemd before Home Manager"
   fi
-  # Ensure desktop user can use nix
   if id "$TARGET_USER" >/dev/null 2>&1; then
-    usermod -a -G nixbld "$TARGET_USER" 2>/dev/null || true
+    usermod -a -G nix-users "$TARGET_USER"
+    info "added $TARGET_USER to nix-users (new login required for interactive SSH)"
   fi
   info "Nix configured (flakes enabled)"
 }
@@ -570,9 +585,15 @@ install_session() {
   desktop_content=$(cat "$SESSION_DESKTOP")
   write_file "$dest_desktop" "$desktop_content"$'\n'
   if [[ "$MODE" == "apply" && "$SYSROOT" == "/" ]]; then
-    run_cmd systemctl enable gdm.service || warn "could not enable gdm"
-    if systemctl get-default 2>/dev/null | grep -q multi-user; then
-      warn "default target is multi-user; not switching to graphical (manual: systemctl set-default graphical.target)"
+    # gdm.service is a static unit on Debian 13; it cannot be enabled directly.
+    # The gdm3 package provides display-manager.service for graphical.target.
+    if systemctl cat display-manager.service >/dev/null 2>&1; then
+      if [[ "$(systemctl get-default)" == "multi-user.target" ]]; then
+        run_cmd systemctl set-default graphical.target
+      fi
+      info "GDM display-manager unit installed; graphical login starts on boot"
+    else
+      warn "display-manager.service missing; inspect GDM before graphical boot"
     fi
   fi
 }
@@ -587,10 +608,10 @@ enable_services() {
     return 0
   fi
   run_cmd systemctl enable --now NetworkManager.service || warn "NetworkManager enable failed"
-  if id "$TARGET_USER" >/dev/null 2>&1; then
-    run_cmd sudo -u "$TARGET_USER" systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service \
-      || warn "PipeWire user units not enabled (may activate on login)"
-  fi
+  # A non-login sudo -u session lacks XDG_RUNTIME_DIR and a user D-Bus bus.
+  # PipeWire/WirePlumber use the systemd user session; do not try to start
+  # them as root via sudo -u during a headless SSH bootstrap.
+  info "PipeWire user units deferred until desktop login (systemd --user)"
 }
 
 write_host_module() {
@@ -611,13 +632,20 @@ write_host_module() {
     return 0
   fi
 
-  mkdir -p "$(dirname "$path")"
-  # Write as the invoking uid when possible so the file is not root-owned in the repo.
-  if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
-    # shellcheck disable=SC2094
-    sudo -u "$SUDO_USER" mkdir -p "$(dirname "$path")"
-    printf '%s\n' "$content" | sudo -u "$SUDO_USER" tee "$path" >/dev/null
+  # Root-created hosts/<user> caused an EACCES when tee subsequently ran
+  # as paulo on the first real Debian VM. Own only the generated host dir/file
+  # as the target desktop user; never chown the whole repository.
+  if [[ "$(id -u)" -eq 0 && "$SYSROOT" == "/" ]]; then
+    local target_group
+    target_group=$(id -gn "$TARGET_USER")
+    install -d -m 0755 -o "$TARGET_USER" -g "$target_group" "$(dirname "$path")"
+    [[ ! -L "$path" ]] || die "refusing symlinked HM host file: $path"
+    if [[ -f "$path" ]]; then
+      chown "$TARGET_USER:$target_group" "$path"
+    fi
+    printf '%s\n' "$content" | sudo -u "$TARGET_USER" tee "$path" >/dev/null
   else
+    mkdir -p "$(dirname "$path")"
     printf '%s\n' "$content" > "$path"
   fi
   info "wrote $path"
@@ -625,8 +653,8 @@ write_host_module() {
   # Flakes only see tracked files — stage without committing.
   if command -v git >/dev/null 2>&1 && [[ -d "$REPO_ROOT/.git" ]]; then
     local rel="distro/flake/hosts/$TARGET_USER/default.nix"
-    if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
-      sudo -u "$SUDO_USER" git -C "$REPO_ROOT" add -- "$rel" \
+    if [[ "$(id -u)" -eq 0 && "$SYSROOT" == "/" ]]; then
+      sudo -u "$TARGET_USER" git -C "$REPO_ROOT" add -- "$rel" \
         || warn "git add $rel failed — flake may not see host until staged"
     else
       git -C "$REPO_ROOT" add -- "$rel" \
