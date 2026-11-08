@@ -86,6 +86,34 @@ EXPECTED="$TEST_BIN/niri --session"
   fail "Niri session didn't invoke nixGLIntel with Niri --session"
 pass "Niri starts through Mesa nixGLIntel"
 
+# Regression from the first visual worktree bootstrap on Proxmox:
+# .git is a file inside linked worktrees. The host was written but not staged,
+# so a pure flake offered only homeConfigurations.ryoku (not paulo).
+grep -Fq 'rev-parse --is-inside-work-tree' "$BOOTSTRAP" ||
+  fail "worktree-aware Git detection missing"
+grep -Fq 'ls-files --error-unmatch' "$BOOTSTRAP" ||
+  fail "bootstrap must verify host actually reached Git index"
+! grep -Fq '[[ -d "$REPO_ROOT/.git" ]]' "$BOOTSTRAP" ||
+  fail "bootstrap still ignores linked worktrees"
+mkdir -p "$TEST_HOME/worktree-fixture"
+git -C "$TEST_HOME/worktree-fixture" init -q
+git -C "$TEST_HOME/worktree-fixture" config user.name "Ryoku CI"
+git -C "$TEST_HOME/worktree-fixture" config user.email "ryoku-ci@example.invalid"
+printf 'baseline\n' > "$TEST_HOME/worktree-fixture/README"
+git -C "$TEST_HOME/worktree-fixture" add README
+git -C "$TEST_HOME/worktree-fixture" commit -q -m "initial"
+git -C "$TEST_HOME/worktree-fixture" worktree add -q --detach "$TEST_HOME/linked"
+[[ -f "$TEST_HOME/linked/.git" ]] ||
+  fail "expected .git to be a file in linked worktree"
+[[ "$(git -C "$TEST_HOME/linked" rev-parse --is-inside-work-tree)" == true ]] ||
+  fail "Git rev-parse cannot recognize linked worktree"
+mkdir -p "$TEST_HOME/linked/distro/flake/hosts/paulo"
+printf '{ username = "paulo"; }\n' > "$TEST_HOME/linked/distro/flake/hosts/paulo/default.nix"
+git -C "$TEST_HOME/linked" add -- distro/flake/hosts/paulo/default.nix
+git -C "$TEST_HOME/linked" ls-files --error-unmatch -- distro/flake/hosts/paulo/default.nix >/dev/null ||
+  fail "host not stageable from detached linked worktree"
+pass "linked worktree host index and pure flake visibility"
+
 # Ryoku DMS needs to autostart in the GDM direct-niri --session mode:
 # that mode does not necessarily start graphical-session.target.
 DMS_MODULE="$ROOT/distro/flake/home/dms.nix"
