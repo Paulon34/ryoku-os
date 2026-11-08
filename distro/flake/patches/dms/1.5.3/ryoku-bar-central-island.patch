@@ -1,0 +1,116 @@
+diff -ruN a/Modules/DankBar/CenterSection.qml b/Modules/DankBar/CenterSection.qml
+--- a/Modules/DankBar/CenterSection.qml
++++ b/Modules/DankBar/CenterSection.qml
+@@ -357,23 +357,37 @@
+     implicitWidth: isVertical ? widgetThickness : totalSize
+     implicitHeight: isVertical ? totalSize : widgetThickness
+
+-    // Section capsule around centered widgets only (not full bar width).
+-    // MediaIsland is a sibling overlay — excluded from contentStart/contentSize —
+-    // so this capsule stays clock-sized when media appears/resizes.
++    // Section capsule — one visual island for clock + media.
++    // When media is visible, extend equally left and right of the clock so the
++    // clock stays mathematically screen-centered while media sits coupled on the right.
++    // MediaIsland remains outside centerWidgets layout math (clock position unchanged).
++    readonly property real mediaBalance: {
++        if (root.isVertical)
++            return 0;
++        const mw = mediaIsland.width;
++        if (mw < 0.5)
++            return 0;
++        return root.widgetSpacing + mw;
++    }
++
+     Rectangle {
+         id: islandBg
+         z: -1
+         visible: root.noBackground && root.contentSize > 0
+-        x: root.isVertical ? (root.width - width) / 2 : (root.contentStart - root.islandPad)
++        x: root.isVertical
++           ? (root.width - width) / 2
++           : (root.contentStart - root.islandPad - root.mediaBalance)
+         y: root.isVertical ? (root.contentStart - root.islandPad) : (root.height - height) / 2
+-        width: root.isVertical ? root.widgetThickness : (root.contentSize + root.islandPad * 2)
++        width: root.isVertical
++               ? root.widgetThickness
++               : (root.contentSize + root.islandPad * 2 + root.mediaBalance * 2)
+         height: root.isVertical ? (root.contentSize + root.islandPad * 2) : root.widgetThickness
+         radius: Theme.cornerRadius
+         color: root.islandColor
+         border.width: 0
+     }
+
+-    // Ryoku Dynamic Media Island — anchored to the right edge of the clock.
++    // Ryoku Dynamic Media Island — content only; shares islandBg capsule.
+     // Outside the centerWidgets layout math: clock x = f(parentCenter, clock.width) only.
+     MediaIsland {
+         id: mediaIsland
+diff -ruN a/Modules/DankBar/Widgets/MediaIsland.qml b/Modules/DankBar/Widgets/MediaIsland.qml
+--- a/Modules/DankBar/Widgets/MediaIsland.qml
++++ b/Modules/DankBar/Widgets/MediaIsland.qml
+@@ -5,8 +5,9 @@
+ import qs.Services
+ import qs.Widgets
+
+-// Ryoku Dynamic Media Island — compact pill right of the clock.
+-// 5A layout · 5B mini-player · 5C polish (anim / stable title slot / null-safe close)
++// Ryoku Dynamic Media Island — compact media chip right of the clock.
++// Shares the CenterSection capsule (no independent pill background).
++// 5A layout · 5B mini-player · 5C polish · central-island unify
+ Item {
+     id: root
+
+@@ -36,8 +37,10 @@
+     readonly property real artSize: 22
+     readonly property real playSize: 20
+     readonly property real maxTitleWidth: 104
+-    // Match clock island horizontal denseness.
+-    readonly property real hPad: Math.max(7, islandPad + 3)
++    // Inner content insets within the shared central capsule.
++    // Slightly tighter on the left (clock already provides separation via widgetSpacing).
++    readonly property real hPadLeft: Math.max(4, islandPad + 1)
++    readonly property real hPadRight: Math.max(7, islandPad + 3)
+
+     readonly property real targetContentWidth: {
+         if (!playerAvailable)
+@@ -48,7 +51,7 @@
+         return artSize + gaps + (titleW > 0 ? titleW + gaps : 0) + playSize;
+     }
+
+-    readonly property real targetWidth: playerAvailable ? (targetContentWidth + hPad * 2) : 0
++    readonly property real targetWidth: playerAvailable ? (targetContentWidth + hPadLeft + hPadRight) : 0
+
+     visible: !hidden
+     readonly property bool hidden: !playerAvailable && width < 1 && opacity < 0.01
+@@ -148,21 +151,7 @@
+             loader.loaded.connect(onLoaded);
+     }
+
+-    Rectangle {
+-        id: pillBg
+-        anchors.fill: parent
+-        radius: Theme.cornerRadius
+-        color: root.islandColor
+-        border.width: 0
+-        opacity: root.playerAvailable ? 1 : 0
+-
+-        Behavior on opacity {
+-            NumberAnimation {
+-                duration: Theme.shortDuration
+-                easing.type: Theme.standardEasing
+-            }
+-        }
+-    }
++    // No independent pillBg — CenterSection.islandBg is the single capsule.
+
+     MouseArea {
+         id: bodyClick
+@@ -176,7 +165,7 @@
+         id: contentRow
+         anchors.verticalCenter: parent.verticalCenter
+         anchors.left: parent.left
+-        anchors.leftMargin: root.hPad
++        anchors.leftMargin: root.hPadLeft
+         spacing: Theme.spacingXS
+         visible: root.width > 8
+         z: 1

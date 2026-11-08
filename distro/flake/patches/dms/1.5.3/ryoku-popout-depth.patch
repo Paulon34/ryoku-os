@@ -1,0 +1,325 @@
+diff --git a/Modals/Common/DankModalStandalone.qml b/Modals/Common/DankModalStandalone.qml
+index 24f3fa0..51d721f 100644
+--- a/Modals/Common/DankModalStandalone.qml
++++ b/Modals/Common/DankModalStandalone.qml
+@@ -31,10 +31,11 @@ Item {
+     property bool closeOnBackgroundClick: true
+     property string animationType: "scale"
+     property int animationDuration: Theme.modalAnimationDuration
+-    property real animationScaleCollapsed: 0.96
+-    property real animationOffset: Theme.spacingL
+-    property list<real> animationEnterCurve: Theme.expressiveCurves.expressiveDefaultSpatial
+-    property list<real> animationExitCurve: Theme.expressiveCurves.emphasized
++    // Ryoku: profile-driven scale/offset and no-overshoot curves (was a fixed 0.96 + spring).
++    property real animationScaleCollapsed: Theme.effectScaleCollapsed
++    property real animationOffset: RyokuVisual.economy ? 0 : Theme.spacingL
++    property list<real> animationEnterCurve: Theme.variantModalEnterCurve
++    property list<real> animationExitCurve: Theme.variantModalExitCurve
+     property color backgroundColor: Theme.withAlpha(Theme.surfaceContainer, Theme.popupTransparency)
+     property color borderColor: Theme.outlineMedium
+     property real borderWidth: 0
+@@ -172,7 +173,7 @@ Item {
+         }
+     }
+
+-    readonly property var shadowLevel: Theme.elevationLevel3
++    readonly property var shadowLevel: RyokuVisual.modalElevation >= 4 ? Theme.elevationLevel4 : Theme.elevationLevel3
+     readonly property real shadowFallbackOffset: 6
+     readonly property real shadowRenderPadding: (root.enableShadow && Theme.elevationEnabled && SettingsData.modalElevationEnabled) ? Theme.elevationRenderPadding(shadowLevel, Theme.elevationLightDirection, shadowFallbackOffset, 8, 16) : 0
+     readonly property real shadowMotionPadding: animationType === "slide" ? 30 : Math.max(0, animationOffset)
+@@ -256,7 +257,8 @@ Item {
+             targetWindow: contentWindow
+             readonly property real s: Math.min(1, modalContainer.scaleValue)
+             readonly property real op: Math.max(0, Math.min(1, (morph.openProgress - 0.06) * 2))
+-            readonly property real visibleScale: s * op
++            // Ryoku depth: keep the region inside the tilted card's projected far edge.
++            readonly property real visibleScale: s * op * RyokuVisual.tiltInset(modalContainer.height * s, modalContainer.tiltAngle)
+             // Blur tracks the surface's scaled rect, matching the connected backend.
+             blurX: modalContainer.x + modalContainer.width * (1 - visibleScale) * 0.5 + Theme.snap(modalContainer.animX, root.dpr)
+             blurY: modalContainer.y + modalContainer.height * (1 - visibleScale) * 0.5 + Theme.snap(modalContainer.animY, root.dpr)
+@@ -355,7 +357,7 @@ Item {
+                 Behavior on openProgress {
+                     enabled: root.animationsEnabled
+                     DankAnim {
+-                        duration: root.animationDuration
++                        duration: Theme.variantDuration(root.animationDuration, root.shouldBeVisible)
+                         easing.bezierCurve: root.shouldBeVisible ? root.animationEnterCurve : root.animationExitCurve
+                     }
+                 }
+@@ -364,6 +366,8 @@ Item {
+             readonly property real animX: modalContainer.offsetX * (1 - morph.openProgress)
+             readonly property real animY: modalContainer.offsetY * (1 - morph.openProgress)
+             readonly property real scaleValue: root.animationScaleCollapsed + (1.0 - root.animationScaleCollapsed) * morph.openProgress
++            // Ryoku depth (Cinematic): subtle X tilt while opening/closing, 0 at rest.
++            readonly property real tiltAngle: RyokuVisual.tiltDegrees * (1 - morph.openProgress)
+
+             Item {
+                 id: contentContainer
+@@ -381,11 +385,17 @@ Item {
+                     scale: modalContainer.scaleValue
+                     x: Theme.snap(modalContainer.animX, root.dpr) + (parent.width - width) * (1 - modalContainer.scaleValue) * 0.5
+                     y: Theme.snap(modalContainer.animY, root.dpr) + (parent.height - height) * (1 - modalContainer.scaleValue) * 0.5
++                    transform: Rotation {
++                        origin.x: animatedContent.width / 2
++                        origin.y: animatedContent.height / 2
++                        axis { x: 1; y: 0; z: 0 }
++                        angle: modalContainer.tiltAngle
++                    }
+
+                     Behavior on opacity {
+                         enabled: root.animationsEnabled
+                         NumberAnimation {
+-                            duration: animationDuration
++                            duration: Theme.variantDuration(root.animationDuration, root.shouldBeVisible)
+                             easing.type: Easing.BezierSpline
+                             easing.bezierCurve: root.shouldBeVisible ? root.animationEnterCurve : root.animationExitCurve
+                         }
+diff --git a/Modules/DankBar/Widgets/SystemTrayBar.qml b/Modules/DankBar/Widgets/SystemTrayBar.qml
+index 459d326..2d8bfff 100644
+--- a/Modules/DankBar/Widgets/SystemTrayBar.qml
++++ b/Modules/DankBar/Widgets/SystemTrayBar.qml
+@@ -1274,19 +1274,22 @@ BasePill {
+                 })(), overflowMenu.dpr)
+
+             opacity: root.menuOpen ? 1 : 0
+-            scale: root.menuOpen ? 1 : 0.85
++            // Ryoku motion: profile scale and curves instead of a 0.85 pop.
++            scale: root.menuOpen ? 1 : RyokuVisual.scaleCollapsed
+
+             Behavior on opacity {
+                 NumberAnimation {
+-                    duration: Theme.mediumDuration
+-                    easing.type: Theme.emphasizedEasing
++                    duration: root.menuOpen ? RyokuVisual.enterDuration : RyokuVisual.exitDuration
++                    easing.type: Easing.BezierSpline
++                    easing.bezierCurve: root.menuOpen ? RyokuVisual.enterCurve : RyokuVisual.exitCurve
+                 }
+             }
+
+             Behavior on scale {
+                 NumberAnimation {
+-                    duration: Theme.mediumDuration
+-                    easing.type: Theme.emphasizedEasing
++                    duration: root.menuOpen ? RyokuVisual.enterDuration : RyokuVisual.exitDuration
++                    easing.type: Easing.BezierSpline
++                    easing.bezierCurve: root.menuOpen ? RyokuVisual.enterCurve : RyokuVisual.exitCurve
+                 }
+             }
+
+@@ -1786,19 +1789,22 @@ BasePill {
+                         })(), menuWindow.dpr)
+
+                     opacity: menuRoot.showMenu ? 1 : 0
+-                    scale: menuRoot.showMenu ? 1 : 0.85
++                    // Ryoku motion: profile scale and curves instead of a 0.85 pop.
++                    scale: menuRoot.showMenu ? 1 : RyokuVisual.scaleCollapsed
+
+                     Behavior on opacity {
+                         NumberAnimation {
+-                            duration: Theme.mediumDuration
+-                            easing.type: Theme.emphasizedEasing
++                            duration: menuRoot.showMenu ? RyokuVisual.enterDuration : RyokuVisual.exitDuration
++                            easing.type: Easing.BezierSpline
++                            easing.bezierCurve: menuRoot.showMenu ? RyokuVisual.enterCurve : RyokuVisual.exitCurve
+                         }
+                     }
+
+                     Behavior on scale {
+                         NumberAnimation {
+-                            duration: Theme.mediumDuration
+-                            easing.type: Theme.emphasizedEasing
++                            duration: menuRoot.showMenu ? RyokuVisual.enterDuration : RyokuVisual.exitDuration
++                            easing.type: Easing.BezierSpline
++                            easing.bezierCurve: menuRoot.showMenu ? RyokuVisual.enterCurve : RyokuVisual.exitCurve
+                         }
+                     }
+
+diff --git a/Widgets/DankOSD.qml b/Widgets/DankOSD.qml
+index 38245dc..30a14db 100644
+--- a/Widgets/DankOSD.qml
++++ b/Widgets/DankOSD.qml
+@@ -267,7 +267,11 @@ PanelWindow {
+         width: alignedWidth
+         height: alignedHeight
+         opacity: shouldBeVisible ? 1 : 0
+-        scale: shouldBeVisible ? 1 : 0.9
++        scale: shouldBeVisible ? 1 : RyokuVisual.osdScaleCollapsed
++
++        // Ryoku motion: short enter on the profile curve, shorter exit.
++        readonly property int _ryokuDuration: shouldBeVisible ? Math.round(RyokuVisual.enterDuration * 0.9) : RyokuVisual.exitDuration
++        readonly property var _ryokuCurve: shouldBeVisible ? RyokuVisual.enterCurve : RyokuVisual.exitCurve
+
+         property bool childHovered: false
+         readonly property real popupSurfaceAlpha: Theme.popupTransparency
+@@ -286,7 +290,7 @@ PanelWindow {
+             id: bgShadowLayer
+             anchors.fill: parent
+             z: -1
+-            level: Theme.elevationLevel3
++            level: RyokuVisual.cinematic ? Theme.elevationLevel3 : Theme.elevationLevel2
+             fallbackOffset: 6
+             targetRadius: Theme.cornerRadius
+             targetColor: Theme.withAlpha(Theme.surfaceContainer, osdContainer.popupSurfaceAlpha)
+@@ -317,15 +321,17 @@ PanelWindow {
+
+         Behavior on opacity {
+             NumberAnimation {
+-                duration: animationDuration
+-                easing.type: animationEasing
++                duration: animationDuration === 0 ? 0 : osdContainer._ryokuDuration
++                easing.type: Easing.BezierSpline
++                easing.bezierCurve: osdContainer._ryokuCurve
+             }
+         }
+
+         Behavior on scale {
+             NumberAnimation {
+-                duration: animationDuration
+-                easing.type: animationEasing
++                duration: animationDuration === 0 ? 0 : osdContainer._ryokuDuration
++                easing.type: Easing.BezierSpline
++                easing.bezierCurve: osdContainer._ryokuCurve
+             }
+         }
+     }
+diff --git a/Widgets/DankPopoutStandalone.qml b/Widgets/DankPopoutStandalone.qml
+index a4e84cc..1576826 100644
+--- a/Widgets/DankPopoutStandalone.qml
++++ b/Widgets/DankPopoutStandalone.qml
+@@ -58,6 +58,25 @@ Item {
+     property bool fullHeightSurface: false
+     property bool _primeContent: false
+     property bool _contentWarm: false
++    // Ryoku: a cold open builds the content tree synchronously and its first frame can take
++    // a few hundred ms; hold the morph (and the blur region it drives) until that frame lands.
++    property bool _ryokuAwaitFirstFrame: false
++
++    function _ryokuReleaseFirstFrame() {
++        if (!_ryokuAwaitFirstFrame)
++            return;
++        _ryokuAwaitFirstFrame = false;
++        ryokuFirstFrameFallback.stop();
++        if (shouldBeVisible)
++            morph.openProgress = 1;
++    }
++
++    Timer {
++        id: ryokuFirstFrameFallback
++        interval: 250
++        repeat: false
++        onTriggered: root._ryokuReleaseFirstFrame()
++    }
+     property bool _resizeActive: false
+     property real _surfaceMarginLeft: 0
+     property real _surfaceMarginTop: 0
+@@ -331,6 +350,10 @@ Item {
+         closeTimer.stop();
+         isClosing = false;
+         animationsEnabled = false;
++        if (!shouldBeVisible && !contentLoader.item) {
++            _ryokuAwaitFirstFrame = true;
++            ryokuFirstFrameFallback.restart();
++        }
+         _primeContent = true;
+         _contentWarm = true;
+
+@@ -387,6 +410,8 @@ Item {
+
+     function close() {
+         isClosing = true;
++        _ryokuAwaitFirstFrame = false;
++        ryokuFirstFrameFallback.stop();
+         shouldBeVisible = false;
+         _primeContent = false;
+         PopoutManager.popoutChanged();
+@@ -435,7 +460,8 @@ Item {
+     // devicePixelRatio rounds to integer under fractional scaling; use the real scale Qt renders at.
+     readonly property real dpr: screen ? (CompositorService.getScreenScale(screen) || screen.devicePixelRatio) : 1
+
+-    readonly property var shadowLevel: Theme.elevationLevel3
++    // Ryoku: popouts sit one level below modals; Cinematic lifts both.
++    readonly property var shadowLevel: RyokuVisual.popoutElevation >= 3 ? Theme.elevationLevel3 : Theme.elevationLevel2
+     readonly property real shadowFallbackOffset: 6
+     readonly property real shadowRenderPadding: (Theme.elevationEnabled && SettingsData.popoutElevationEnabled) ? Theme.elevationRenderPadding(shadowLevel, effectiveShadowDirection, shadowFallbackOffset, 8, 16) : 0
+     readonly property real shadowMotionPadding: fluidStandaloneActive ? 0 : Math.max(0, animationOffset)
+@@ -654,7 +680,8 @@ Item {
+             targetWindow: contentWindow
+             readonly property real s: Math.min(1, contentContainer.scaleValue)
+             readonly property real op: Math.max(0, Math.min(1, (morph.openProgress - 0.08) * 1.6))
+-            readonly property real visibleScale: s * op
++            // Ryoku depth: keep the region inside the tilted card's projected far edge.
++            readonly property real visibleScale: s * op * RyokuVisual.tiltInset(contentContainer.height * s, contentContainer.tiltAngle)
+             readonly property bool revealClipActive: root.fluidStandaloneActive
+
+             // Blur tracks the surface's scaled rect, matching the connected backend
+@@ -792,6 +819,9 @@ Item {
+             readonly property real animX: contentContainer.offsetX * (1 - morph.openProgress)
+             readonly property real animY: contentContainer.offsetY * (1 - morph.openProgress)
+             readonly property real scaleValue: contentContainer.computedScaleCollapsed + (1.0 - contentContainer.computedScaleCollapsed) * morph.openProgress
++            // Ryoku depth (Cinematic): the card swings in about its X axis from the
++            // bar side while opening/closing; 0 at rest, so text stays unfiltered.
++            readonly property real tiltAngle: root.fluidStandaloneActive ? 0 : RyokuVisual.tiltDegrees * (1 - morph.openProgress) * (barBottom ? -1 : 1)
+             readonly property real clampedAnimX: Math.max(-width, Math.min(animX, width))
+             readonly property real clampedAnimY: Math.max(-height, Math.min(animY, height))
+             readonly property real revealWidth: {
+@@ -820,7 +850,14 @@ Item {
+             Connections {
+                 target: root
+                 function onShouldBeVisibleChanged() {
+-                    morph.openProgress = root.shouldBeVisible ? 1 : 0;
++                    morph.openProgress = root.shouldBeVisible && !root._ryokuAwaitFirstFrame ? 1 : 0;
++                }
++            }
++
++            Connections {
++                target: root._ryokuAwaitFirstFrame ? contentContainer.Window.window : null
++                function onFrameSwapped() {
++                    root._ryokuReleaseFirstFrame();
+                 }
+             }
+
+@@ -854,6 +891,12 @@ Item {
+                         scale: root.fluidStandaloneActive ? 1 : contentWrapper.scale
+                         x: root.fluidStandaloneActive ? 0 : contentWrapper.x
+                         y: root.fluidStandaloneActive ? 0 : contentWrapper.y
++                        transform: Rotation {
++                            origin.x: shadowSource.width / 2
++                            origin.y: shadowSource.height / 2
++                            axis { x: 1; y: 0; z: 0 }
++                            angle: contentContainer.tiltAngle
++                        }
+                         level: root.shadowLevel
+                         direction: root.effectiveShadowDirection
+                         fallbackOffset: root.shadowFallbackOffset
+@@ -880,8 +923,17 @@ Item {
+                         x: Theme.snap(contentContainer.animX + (rollOutAdjuster.baseWidth - width) * (1 - contentContainer.scaleValue) * 0.5, root.dpr)
+                         y: Theme.snap(contentContainer.animY + (rollOutAdjuster.baseHeight - height) * (1 - contentContainer.scaleValue) * 0.5, root.dpr)
+
++                        transform: Rotation {
++                            origin.x: contentWrapper.width / 2
++                            origin.y: contentWrapper.height / 2
++                            axis { x: 1; y: 0; z: 0 }
++                            angle: contentContainer.tiltAngle
++                        }
++
+                         layer.enabled: !Theme.isDirectionalEffect && _renderActive
+-                        layer.smooth: false
++                        // Ryoku: filter the cached texture only while tilted; at rest it is
++                        // sampled 1:1 so text stays crisp.
++                        layer.smooth: contentContainer.tiltAngle !== 0
+                         layer.textureSize: Qt.size(0, 0)
+
+                         Behavior on opacity {
+@@ -940,6 +992,12 @@ Item {
+                         y: root.fluidStandaloneActive ? 0 : contentWrapper.y
+                         opacity: contentWrapper.publishedOpacity
+                         scale: root.fluidStandaloneActive ? 1 : contentWrapper.scale
++                        transform: Rotation {
++                            origin.x: rollOutAdjuster.baseWidth / 2
++                            origin.y: rollOutAdjuster.baseHeight / 2
++                            axis { x: 1; y: 0; z: 0 }
++                            angle: contentContainer.tiltAngle
++                        }
+                         visible: contentWrapper.visible
+                         radius: Theme.cornerRadius
+                         color: "transparent"

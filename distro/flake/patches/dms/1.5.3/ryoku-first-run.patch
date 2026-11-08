@@ -1,0 +1,30 @@
+diff --git a/Common/SessionData.qml b/Common/SessionData.qml
+index b06e791..28337ef 100644
+--- a/Common/SessionData.qml
++++ b/Common/SessionData.qml
+@@ -279,6 +279,9 @@ Singleton {
+
+             _loadedSessionSnapshot = getCurrentSessionJson();
+             _hasLoaded = true;
++            // Ryoku: persist first-run defaults (see SettingsData.loadSettings).
++            if (!txt || !txt.trim())
++                Qt.callLater(saveSettings);
+
+             if (!isGreeterMode && typeof Theme !== "undefined")
+                 Theme.generateSystemThemesFromCurrentTheme();
+diff --git a/Common/SettingsData.qml b/Common/SettingsData.qml
+index bcd6bc3..752a10a 100644
+--- a/Common/SettingsData.qml
++++ b/Common/SettingsData.qml
+@@ -1791,6 +1791,11 @@ Singleton {
+
+             _loadedSettingsSnapshot = JSON.stringify(Store.toJson(root));
+             _hasLoaded = true;
++            // Ryoku: a first run has no settings.json and DMS would not write one
++            // until some setting changes; persist the defaults so the declarative
++            // Ryoku layer (home/dms.nix) has a file to merge its bar into.
++            if (!txt || !txt.trim())
++                Qt.callLater(saveSettings);
+             applyStoredTheme();
+             updateCompositorCursor();
+             Processes.detectQtTools();

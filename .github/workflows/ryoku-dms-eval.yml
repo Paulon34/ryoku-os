@@ -1,0 +1,53 @@
+# Evaluate the complete DMS Home Manager module against pinned Nix inputs.
+# No VM, no patch build, no claims about Quattro rendering or guest login.
+name: ryoku-dms-nix-eval
+
+on:
+  push:
+    branches:
+      - cursor/debian-niri-desktop-port-88e9
+    paths:
+      - "distro/flake/**"
+      - "distro/session/**"
+      - "distro/tests/**"
+      - ".github/workflows/ryoku-dms-eval.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  home-manager-eval:
+    name: pure-dms-home-manager-evaluation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Evaluate Ryoku host Home Manager activation (pure)
+        run: |
+          set -euo pipefail
+          nix eval --raw --show-trace ./distro/flake#homeConfigurations.ryoku.activationPackage.drvPath
+
+      - name: Check generated desktop user appears in pure Git flake
+        run: |
+          set -euo pipefail
+          mkdir -p distro/flake/hosts/paulo
+          sed -e 's/username = "ryoku"/username = "paulo"/' \
+              -e 's|/home/ryoku|/home/paulo|' \
+              distro/flake/hosts/ryoku/default.nix > distro/flake/hosts/paulo/default.nix
+          git add -- distro/flake/hosts/paulo/default.nix
+          git ls-files --error-unmatch -- distro/flake/hosts/paulo/default.nix
+          nix eval --raw --show-trace ./distro/flake#homeConfigurations.paulo.activationPackage.drvPath
+
+      - name: Build Ryoku-patched DMS Quattro package
+        run: |
+          set -euo pipefail
+          nix build --no-link --show-trace ./distro/flake#dms-shell-ryoku

@@ -1,0 +1,266 @@
+diff --git a/Modules/Notifications/Center/NotificationCard.qml b/Modules/Notifications/Center/NotificationCard.qml
+index 5499ec0..775b2b5 100644
+--- a/Modules/Notifications/Center/NotificationCard.qml
++++ b/Modules/Notifications/Center/NotificationCard.qml
+@@ -1051,6 +1051,47 @@ Rectangle {
+         }
+     }
+
++    // Ryoku: copy the latest message of the group (summary + body), revealed on hover.
++    DankActionButton {
++        id: copyButton
++
++        property bool copied: false
++        readonly property var latest: notificationGroup ? notificationGroup.latestNotification : null
++
++        anchors.right: fixedControls.right
++        anchors.top: fixedControls.bottom
++        anchors.topMargin: Theme.spacingXS
++        visible: NotificationService.plainTextOf(latest).length > 0
++        iconName: copied ? "check" : "content_copy"
++        iconSize: compactMode ? 14 : 16
++        buttonSize: compactMode ? 24 : 28
++        iconColor: copied ? Theme.primary : Theme.surfaceVariantText
++        tooltipText: copied ? I18n.tr("Copied") : I18n.tr("Copy text")
++        opacity: copied || cardHoverHandler.hovered ? 1 : 0
++
++        Behavior on opacity {
++            NumberAnimation {
++                duration: RyokuVisual.fastDuration
++                easing.type: Easing.BezierSpline
++                easing.bezierCurve: RyokuVisual.enterCurve
++            }
++        }
++
++        onClicked: {
++            if (NotificationService.copyNotificationText(latest)) {
++                copied = true;
++                copiedReset.restart();
++            }
++        }
++
++        Timer {
++            id: copiedReset
++            interval: 1200
++            repeat: false
++            onTriggered: copyButton.copied = false
++        }
++    }
++
+     Behavior on height {
+         enabled: root.__initialized && root.userInitiatedExpansion && root.animateExpansion
+         NumberAnimation {
+diff --git a/Modules/Notifications/Popup/NotificationPopup.qml b/Modules/Notifications/Popup/NotificationPopup.qml
+index c7a3946..fd55189 100644
+--- a/Modules/Notifications/Popup/NotificationPopup.qml
++++ b/Modules/Notifications/Popup/NotificationPopup.qml
+@@ -1051,6 +1051,48 @@ PanelWindow {
+                 }
+             }
+
++            // Ryoku: copy summary + body. Lives under the close button inside the
++            // reserved right gutter, so it never overlaps or reflows the text.
++            DankActionButton {
++                id: copyButton
++
++                property bool copied: false
++
++                anchors.right: closeButton.right
++                anchors.top: closeButton.bottom
++                anchors.topMargin: Theme.spacingXS
++                visible: NotificationService.plainTextOf(notificationData).length > 0
++                iconName: copied ? "check" : "content_copy"
++                iconSize: compactMode ? 13 : 15
++                buttonSize: compactMode ? 20 : 24
++                iconColor: copied ? Theme.primary : (cardHoverHandler.hovered ? Theme.surfaceText : Theme.surfaceVariantText)
++                tooltipText: copied ? I18n.tr("Copied") : I18n.tr("Copy text")
++                opacity: copied || cardHoverHandler.hovered ? 1 : 0
++                z: 15
++
++                Behavior on opacity {
++                    NumberAnimation {
++                        duration: RyokuVisual.fastDuration
++                        easing.type: Easing.BezierSpline
++                        easing.bezierCurve: RyokuVisual.enterCurve
++                    }
++                }
++
++                onClicked: {
++                    if (NotificationService.copyNotificationText(notificationData)) {
++                        copied = true;
++                        copiedReset.restart();
++                    }
++                }
++
++                Timer {
++                    id: copiedReset
++                    interval: 1200
++                    repeat: false
++                    onTriggered: copyButton.copied = false
++                }
++            }
++
+             DankActionButton {
+                 id: expandButton
+
+diff --git a/Services/NotificationService.qml b/Services/NotificationService.qml
+index d5206cb..06e79d6 100644
+--- a/Services/NotificationService.qml
++++ b/Services/NotificationService.qml
+@@ -488,6 +488,77 @@ Singleton {
+         return value.toLowerCase().includes(pattern.toLowerCase());
+     }
+
++    // Ryoku DND / urgency policy. Messages from chat apps — freedesktop
++    // categories InstantMessaging/Chat/IRCClient, or a few well-known clients
++    // without usable desktop entries — are treated as Normal even when flagged
++    // "critical", so they can't get persistent popups, skip the flood limiter
++    // or break through Do Not Disturb. System sources (battery, updates,
++    // devices) keep Critical, and only Critical popups are shown under DND
++    // (silently: AudioService mutes every sound while DND is on).
++    // A matching user notification rule still decides urgency explicitly.
++    readonly property var _ryokuChatCategories: ["InstantMessaging", "Chat", "IRCClient"]
++    readonly property var _ryokuChatClients: ["discord", "vesktop", "webcord", "armcord", "legcord", "telegram", "zapzap", "whatsapp", "signal", "element", "slack"]
++    property var _ryokuChatCache: ({})
++
++    function _ryokuIsChatApp(notif) {
++        const desktopId = (notif.desktopEntry || "").toString();
++        const appName = (notif.appName || "").toString();
++        const key = desktopId + "|" + appName;
++        if (_ryokuChatCache[key] !== undefined)
++            return _ryokuChatCache[key];
++        let chat = false;
++        const entry = DesktopEntries.heuristicLookup(desktopId || appName);
++        if (entry && entry.categories) {
++            for (const category of entry.categories) {
++                if (_ryokuChatCategories.indexOf(category) >= 0) {
++                    chat = true;
++                    break;
++                }
++            }
++        }
++        if (!chat) {
++            const haystack = (desktopId + " " + appName).toLowerCase();
++            chat = _ryokuChatClients.some(name => haystack.indexOf(name) >= 0);
++        }
++        _ryokuChatCache[key] = chat;
++        return chat;
++    }
++
++    function _ryokuApplyChatUrgency(notif, policy) {
++        if (policy.urgency === NotificationUrgency.Critical && _ryokuIsChatApp(notif))
++            policy.urgency = NotificationUrgency.Normal;
++        return policy;
++    }
++
++    function _ryokuPopupAllowed(urgency) {
++        return !SessionData.doNotDisturb || urgency === NotificationUrgency.Critical;
++    }
++
++    // Ryoku: plain text (summary + body, markup removed) for the clipboard.
++    function plainTextOf(wrapper) {
++        if (!wrapper)
++            return "";
++        const strip = s => String(s || "")
++            .replace(/<br\s*\/?>/gi, "\n")
++            .replace(/<[^>]*>/g, "")
++            .replace(/&nbsp;/g, " ")
++            .replace(/&lt;/g, "<")
++            .replace(/&gt;/g, ">")
++            .replace(/&quot;/g, "\"")
++            .replace(/&#39;|&apos;/g, "'")
++            .replace(/&amp;/g, "&")
++            .trim();
++        return [strip(wrapper.summary), strip(wrapper.body)].filter(s => s.length > 0).join("\n");
++    }
++
++    function copyNotificationText(wrapper) {
++        const text = plainTextOf(wrapper);
++        if (!text.length)
++            return false;
++        Quickshell.execDetached(["dms", "cl", "copy", text]);
++        return true;
++    }
++
+     function _evaluateNotificationPolicy(notif) {
+         const baseUrgency = typeof notif.urgency === "number" ? notif.urgency : NotificationUrgency.Normal;
+         const policy = {
+@@ -500,7 +571,7 @@ Singleton {
+
+         const rules = SettingsData.notificationRules || [];
+         if (!rules.length)
+-            return policy;
++            return _ryokuApplyChatUrgency(notif, policy);
+
+         const info = {
+             "appName": _resolveAppNameForRule(notif),
+@@ -536,7 +607,7 @@ Singleton {
+             return policy;
+         }
+
+-        return policy;
++        return _ryokuApplyChatUrgency(notif, policy);
+     }
+
+     function pruneHistory() {
+@@ -714,7 +785,7 @@ Singleton {
+                 }
+             }
+
+-            const shouldShowPopup = !root.popupsDisabled && !SessionData.doNotDisturb && !policy.disablePopup;
++            const shouldShowPopup = !root.popupsDisabled && _ryokuPopupAllowed(policy.urgency) && !policy.disablePopup;
+             const isTransient = notif.transient;
+             const shouldKeepInCenter = !isTransient && !policy.hideFromCenter;
+
+@@ -986,14 +1057,15 @@ Singleton {
+             return;
+         if (popupsDisabled)
+             return;
+-        if (SessionData.doNotDisturb)
+-            return;
+         if (notificationQueue.length === 0)
+             return;
++        const nextIndex = SessionData.doNotDisturb ? notificationQueue.findIndex(n => n && n.urgency === NotificationUrgency.Critical) : 0;
++        if (nextIndex < 0)
++            return;
+
+         _processingQueue = true;
+
+-        const next = notificationQueue.shift();
++        const next = notificationQueue.splice(nextIndex, 1)[0];
+         if (!next) {
+             _processingQueue = false;
+             return;
+@@ -1322,12 +1394,13 @@ Singleton {
+         target: SessionData
+         function onDoNotDisturbChanged() {
+             if (SessionData.doNotDisturb) {
+-                // Hide all current popups when DND is enabled
++                // Hide all current popups when DND is enabled (Ryoku: critical ones stay)
+                 for (const notif of visibleNotifications) {
+-                    notif.popup = false;
++                    if (notif.urgency !== NotificationUrgency.Critical)
++                        notif.popup = false;
+                 }
+-                visibleNotifications = [];
+-                notificationQueue = [];
++                visibleNotifications = visibleNotifications.filter(n => n && n.urgency === NotificationUrgency.Critical);
++                notificationQueue = notificationQueue.filter(n => n && n.urgency === NotificationUrgency.Critical);
+             } else {
+                 // Re-enable popup processing when DND is disabled
+                 processQueue();
+diff --git a/translations/poexports/pt.json b/translations/poexports/pt.json
+index 559e417..e1b86a6 100644
+--- a/translations/poexports/pt.json
++++ b/translations/poexports/pt.json
+@@ -1,4 +1,10 @@
+ {
++  "Copy text": {
++    "Copy text": "Copiar texto"
++  },
++  "Copied": {
++    "Copied": "Copiado"
++  },
+   "No Bluetooth adapter was found on this device.": {
+     "No Bluetooth adapter was found on this device.": "Nenhum adaptador Bluetooth foi encontrado neste dispositivo."
+   },

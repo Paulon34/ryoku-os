@@ -1,0 +1,381 @@
+diff --git a/Modules/DankBar/DankBarContent.qml b/Modules/DankBar/DankBarContent.qml
+index 7d26b61..48cdb68 100644
+--- a/Modules/DankBar/DankBarContent.qml
++++ b/Modules/DankBar/DankBarContent.qml
+@@ -591,7 +591,7 @@ Item {
+
+         let baseMap = {
+             "launcherButton": launcherButtonComponent,
+-            "workspaceSwitcher": workspaceSwitcherComponent,
++            "workspaceSwitcher": RyokuVisual.quattro && CompositorService.isHyprland ? ryokuWorkspacesComponent : workspaceSwitcherComponent,
+             "focusedWindow": focusedWindowComponent,
+             "runningApps": runningAppsComponent,
+             "appsDock": appsDockComponent,
+@@ -633,7 +633,7 @@ Item {
+
+     readonly property var allComponents: ({
+             "launcherButtonComponent": launcherButtonComponent,
+-            "workspaceSwitcherComponent": workspaceSwitcherComponent,
++            "workspaceSwitcherComponent": RyokuVisual.quattro && CompositorService.isHyprland ? ryokuWorkspacesComponent : workspaceSwitcherComponent,
+             "focusedWindowComponent": focusedWindowComponent,
+             "runningAppsComponent": runningAppsComponent,
+             "appsDockComponent": appsDockComponent,
+@@ -1029,6 +1029,19 @@ Item {
+         }
+     }
+
++    Component {
++        id: ryokuWorkspacesComponent
++
++        RyokuWorkspaces {
++            axis: barWindow.axis
++            screenName: _barScreenName
++            widgetHeight: barWindow.widgetThickness
++            barThickness: barWindow.effectiveBarThickness
++            parentScreen: barWindow.screen
++            barConfig: topBarContent.barConfig
++        }
++    }
++
+     Component {
+         id: workspaceSwitcherComponent
+
+diff --git a/Modules/DankBar/WidgetHost.qml b/Modules/DankBar/WidgetHost.qml
+index d864c67..de6895c 100644
+--- a/Modules/DankBar/WidgetHost.qml
++++ b/Modules/DankBar/WidgetHost.qml
+@@ -119,6 +119,14 @@ Loader {
+         restoreMode: Binding.RestoreNone
+     }
+
++    Binding {
++        target: root.item
++        when: root.item && "ryokuPanelTarget" in root.item && "popoutTarget" in root.item
++        property: "ryokuPanelTarget"
++        value: root.item ? (root.item.popoutTarget ?? null) : null
++        restoreMode: Binding.RestoreNone
++    }
++
+     Binding {
+         target: root.item
+         when: root.item && "isFirst" in root.item
+diff --git a/Modules/DankBar/Widgets/Clock.qml b/Modules/DankBar/Widgets/Clock.qml
+index 0817b35..0eda4b4 100644
+--- a/Modules/DankBar/Widgets/Clock.qml
++++ b/Modules/DankBar/Widgets/Clock.qml
+@@ -16,11 +16,34 @@ BasePill {
+
+     content: Component {
+         Item {
+-            implicitWidth: root.isVerticalOrientation ? (root.widgetThickness - root.horizontalPadding * 2) : clockRow.implicitWidth
++            implicitWidth: root.isVerticalOrientation ? (root.widgetThickness - root.horizontalPadding * 2) : (quattroLabel.visible ? quattroLabel.implicitWidth : clockRow.implicitWidth)
+             implicitHeight: root.isVerticalOrientation ? clockColumn.implicitHeight : (root.widgetThickness - root.horizontalPadding * 2)
+
+             readonly property bool compact: widgetData?.clockCompactMode !== undefined ? widgetData.clockCompactMode : SettingsData.clockCompactMode
+
++            // Quattro: one monospace label, weekday then time ("domingo 14:10"),
++            // as Omarchy's clock reads. Follows the 12/24 h and seconds settings.
++            StyledText {
++                id: quattroLabel
++                visible: RyokuVisual.quattro && !root.isVerticalOrientation
++                anchors.centerIn: parent
++                text: {
++                    const d = systemClock?.date;
++                    if (!d)
++                        return "";
++                    let time = SettingsData.use24HourClock ? "HH:mm" : (SettingsData.padHours12Hour ? "hh:mm" : "h:mm");
++                    if (SettingsData.showSeconds)
++                        time += ":ss";
++                    if (!SettingsData.use24HourClock)
++                        time += " AP";
++                    const day = parent.compact ? "ddd" : "dddd";
++                    return d.toLocaleString(I18n.locale(), day + " " + time);
++                }
++                font.family: RyokuVisual.chromeFont
++                font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
++                color: Theme.widgetTextColor
++            }
++
+             Column {
+                 id: clockColumn
+                 visible: root.isVerticalOrientation
+@@ -198,7 +221,7 @@ BasePill {
+
+             Row {
+                 id: clockRow
+-                visible: !root.isVerticalOrientation
++                visible: !root.isVerticalOrientation && !RyokuVisual.quattro
+                 anchors.centerIn: parent
+                 spacing: Theme.spacingS
+
+diff --git a/Modules/DankBar/Widgets/MediaIsland.qml b/Modules/DankBar/Widgets/MediaIsland.qml
+index 6b34f2b..51c0d81 100644
+--- a/Modules/DankBar/Widgets/MediaIsland.qml
++++ b/Modules/DankBar/Widgets/MediaIsland.qml
+@@ -191,7 +191,8 @@ Item {
+             visible: text.length > 0
+             // Mild pause cue — no continuous animation.
+             opacity: root.isPlaying ? 1 : 0.82
+-            color: Theme.widgetTextColor
++            color: RyokuVisual.quattro ? Theme.surfaceTextSecondary : Theme.widgetTextColor
++            font.family: RyokuVisual.quattro ? RyokuVisual.chromeFont : resolvedFontFamily
+             font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+             elide: Text.ElideRight
+             maximumLineCount: 1
+diff --git a/Modules/DankBar/Widgets/RyokuWorkspaces.qml b/Modules/DankBar/Widgets/RyokuWorkspaces.qml
+new file mode 100644
+index 0000000..8e4940b
+--- /dev/null
++++ b/Modules/DankBar/Widgets/RyokuWorkspaces.qml
+@@ -0,0 +1,155 @@
++import QtQuick
++import Quickshell
++import Quickshell.Hyprland
++import qs.Common
++import qs.Services
++import qs.Widgets
++
++// Quattro workspaces. Behaviour after Omarchy's omarchy.workspaces bar widget
++// (github.com/omacom/omarchy, branch quattro, MIT), reimplemented for Ryoku's
++// global numbering (Super+1…0): slots 1–5 always, then any other workspace
++// that exists; empty ones dimmed; the one this monitor shows drawn as a filled
++// square in the accent colour. Purely event-driven — no timers.
++Item {
++    id: root
++
++    property var axis: null
++    property string screenName: ""
++    property var parentScreen: null
++    property real widgetHeight: 30
++    property real barThickness: 48
++    property var barConfig: null
++
++    readonly property bool isVertical: axis?.isVertical ?? false
++    readonly property var monitor: parentScreen ? Hyprland.monitorFor(parentScreen) : Hyprland.focusedMonitor
++    readonly property int shownId: monitor?.activeWorkspace?.id ?? -1
++    readonly property real slot: Math.round(Math.max(18, widgetHeight * 0.72))
++    readonly property real fontSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
++    readonly property string shownGlyph: "\u{f14fb}"
++
++    readonly property var ids: {
++        const list = [1, 2, 3, 4, 5];
++        const values = Hyprland.workspaces.values;
++        for (let i = 0; i < values.length; i++) {
++            const id = values[i].id;
++            if (id > 0 && list.indexOf(id) === -1)
++                list.push(id);
++        }
++        list.sort((a, b) => a - b);
++        return list;
++    }
++
++    function workspaceById(id) {
++        const values = Hyprland.workspaces.values;
++        for (let i = 0; i < values.length; i++) {
++            if (values[i].id === id)
++                return values[i];
++        }
++        return null;
++    }
++
++    function focusWorkspace(id) {
++        Hyprland.dispatch("workspace " + id);
++    }
++
++    property real _wheel: 0
++    function scroll(delta) {
++        _wheel += delta;
++        if (Math.abs(_wheel) < 120)
++            return;
++        const step = _wheel > 0 ? -1 : 1;
++        _wheel = 0;
++        const index = ids.indexOf(shownId);
++        if (index === -1)
++            return;
++        const target = ids[Math.max(0, Math.min(ids.length - 1, index + step))];
++        if (target !== shownId)
++            focusWorkspace(target);
++    }
++
++    // Quickshell credits a switch to the focused monitor; moving or renumbering
++    // a workspace needs a fresh read from Hyprland.
++    Connections {
++        target: Hyprland
++        function onRawEvent(event) {
++            const name = event ? String(event.name) : "";
++            if (name === "moveworkspacev2" || name === "changeworkspaceid") {
++                Hyprland.refreshMonitors();
++                Hyprland.refreshWorkspaces();
++            }
++        }
++    }
++
++    implicitWidth: isVertical ? barThickness : grid.implicitWidth
++    implicitHeight: isVertical ? grid.implicitHeight : barThickness
++    width: implicitWidth
++    height: implicitHeight
++
++    Grid {
++        id: grid
++        anchors.centerIn: parent
++        columns: root.isVertical ? 1 : root.ids.length
++        spacing: 1
++
++        Repeater {
++            model: root.ids
++
++            Item {
++                id: cell
++                required property int modelData
++
++                readonly property var workspace: root.workspaceById(modelData)
++                readonly property bool occupied: workspace !== null && (workspace.toplevels?.values?.length ?? 0) > 0
++                readonly property bool shown: modelData === root.shownId
++                readonly property bool urgent: workspace?.urgent ?? false
++
++                width: root.isVertical ? root.widgetHeight : root.slot
++                height: root.isVertical ? root.slot : root.widgetHeight
++
++                Rectangle {
++                    anchors.fill: parent
++                    anchors.margins: 1
++                    radius: Math.min(6, Theme.cornerRadius)
++                    color: Theme.withAlpha(Theme.surfaceText, hover.containsMouse && !cell.shown ? RyokuVisual.stateHover : 0)
++                }
++
++                StyledText {
++                    id: label
++                    anchors.centerIn: parent
++                    text: cell.shown ? root.shownGlyph : (cell.modelData === 10 ? "0" : String(cell.modelData))
++                    font.family: RyokuVisual.chromeFont
++                    font.pixelSize: cell.shown ? Math.round(root.fontSize * 1.05) : root.fontSize
++                    font.weight: cell.shown ? Font.DemiBold : Font.Normal
++                    color: cell.urgent ? Theme.error : (cell.shown ? Theme.primary : Theme.widgetTextColor)
++                    opacity: cell.shown || cell.occupied || cell.urgent ? 1 : 0.45
++                    scale: hover.pressed ? RyokuVisual.pressScale : 1
++
++                    Behavior on opacity {
++                        NumberAnimation {
++                            duration: Theme.currentAnimationBaseDuration === 0 ? 0 : 140
++                            easing.type: Easing.OutCubic
++                        }
++                    }
++
++                    Behavior on scale {
++                        NumberAnimation {
++                            duration: Theme.currentAnimationBaseDuration === 0 ? 0 : 160
++                            easing.type: Easing.BezierSpline
++                            easing.bezierCurve: RyokuVisual.easeOut
++                        }
++                    }
++                }
++
++                MouseArea {
++                    id: hover
++                    anchors.fill: parent
++                    hoverEnabled: true
++                    cursorShape: Qt.PointingHandCursor
++                    onClicked: if (!cell.shown)
++                        root.focusWorkspace(cell.modelData)
++                    onWheel: wheel => root.scroll(wheel.angleDelta.y)
++                }
++            }
++        }
++    }
++}
+diff --git a/Modules/Plugins/BasePill.qml b/Modules/Plugins/BasePill.qml
+index c6cdba3..246ebad 100644
+--- a/Modules/Plugins/BasePill.qml
++++ b/Modules/Plugins/BasePill.qml
+@@ -9,6 +9,8 @@ Item {
+     property var axis: null
+     property string section: "center"
+     property var popoutTarget: null
++    // Set by WidgetHost: widgets that redeclare popoutTarget shadow the one above.
++    property var ryokuPanelTarget: null
+     property var parentScreen: null
+     property real widgetThickness: 30
+     property real barThickness: 48
+@@ -99,8 +101,12 @@ Item {
+         Rectangle {
+             id: background
+             anchors.fill: parent
+-            radius: (barConfig?.noBackground ?? false) ? 0 : Theme.cornerRadius
++            radius: RyokuVisual.quattro ? Math.min(6, Theme.cornerRadius) : ((barConfig?.noBackground ?? false) ? 0 : Theme.cornerRadius)
+             color: {
++                // Quattro: widgets sit on the strip itself; hover is a flat
++                // foreground wash, no pill.
++                if (RyokuVisual.quattro)
++                    return root.enableBackgroundHover && (mouseArea.containsMouse || (root.isHovered || false)) ? Theme.withAlpha(Theme.surfaceText, RyokuVisual.stateHover) : "transparent";
+                 if (barConfig?.noBackground ?? false) {
+                     return "transparent";
+                 }
+@@ -119,6 +125,7 @@ Item {
+
+         DankRipple {
+             id: rippleLayer
++            visible: !RyokuVisual.quattro
+             rippleColor: Theme.surfaceText
+             cornerRadius: background.radius
+         }
+@@ -127,6 +134,47 @@ Item {
+             id: contentLoader
+             anchors.verticalCenter: parent.verticalCenter
+             anchors.horizontalCenter: parent.horizontalCenter
++            // Quattro press feedback: only the glyph gives, so the hit area
++            // and the bar layout hold still.
++            scale: RyokuVisual.quattro && mouseArea.pressed && mouseArea.pressedButtons & Qt.LeftButton ? RyokuVisual.pressScale : 1
++
++            Behavior on scale {
++                enabled: RyokuVisual.quattro
++                NumberAnimation {
++                    duration: Theme.currentAnimationBaseDuration === 0 ? 0 : 160
++                    easing.type: Easing.BezierSpline
++                    easing.bezierCurve: RyokuVisual.easeOut
++                }
++            }
++        }
++
++        // Quattro open-panel mark: a short accent line on the bar's inner edge
++        // under the widget whose popout is open on this screen.
++        Rectangle {
++            readonly property bool panelOpen: {
++                const t = root.ryokuPanelTarget || root.popoutTarget;
++                if (!RyokuVisual.quattro || !t || !t.shouldBeVisible)
++                    return false;
++                return !t.screen || !root.parentScreen || t.screen.name === root.parentScreen.name;
++            }
++            readonly property string edge: root.axis?.edge ?? "top"
++            readonly property real extent: Math.max(10, Math.round((root.isVerticalOrientation ? parent.height : parent.width) * 0.45))
++            z: 50
++            visible: opacity > 0
++            opacity: panelOpen ? 0.9 : 0
++            color: Theme.primary
++            radius: 1
++            width: root.isVerticalOrientation ? 2 : extent
++            height: root.isVerticalOrientation ? extent : 2
++            x: root.isVerticalOrientation ? (edge === "left" ? parent.width - width : 0) : Math.floor((parent.width - width) / 2)
++            y: root.isVerticalOrientation ? Math.floor((parent.height - height) / 2) : (edge === "bottom" ? 0 : parent.height - height)
++
++            Behavior on opacity {
++                NumberAnimation {
++                    duration: Theme.currentAnimationBaseDuration === 0 ? 0 : 140
++                    easing.type: Easing.OutCubic
++                }
++            }
+         }
+     }
+
+@@ -146,8 +194,10 @@ Item {
+                 root.rightClicked(rPos.x, rPos.y);
+                 return;
+             }
+-            const ripplePos = mouseArea.mapToItem(visualContent, mouse.x, mouse.y);
+-            rippleLayer.trigger(ripplePos.x, ripplePos.y);
++            if (!RyokuVisual.quattro) {
++                const ripplePos = mouseArea.mapToItem(visualContent, mouse.x, mouse.y);
++                rippleLayer.trigger(ripplePos.x, ripplePos.y);
++            }
+             if (popoutTarget) {
+                 // Ensure bar context is set first if supported
+                 if (popoutTarget.setBarContext) {

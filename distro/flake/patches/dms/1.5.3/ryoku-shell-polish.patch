@@ -1,0 +1,647 @@
+diff -ruN a/Common/Theme.qml b/Common/Theme.qml
+--- a/Common/Theme.qml
++++ b/Common/Theme.qml
+@@ -661,7 +661,8 @@
+         case "surfaceVariant":
+             return surfaceVariant;
+         default:
+-            return primary;
++            // Ryoku: tonal ON state; a solid primary fill turns near-white with high Matugen contrast.
++            return withAlpha(primary, 0.22);
+         }
+     }
+
+@@ -680,7 +681,7 @@
+         case "surfaceVariant":
+             return surfaceText;
+         default:
+-            return primaryText;
++            return primary;
+         }
+     }
+
+@@ -693,7 +694,8 @@
+         case "surfaceVariant":
+             return surfaceText;
+         default:
+-            return primary;
++            // Ryoku: neutral OFF icon so ON/OFF differ in more than the fill.
++            return surfaceVariantText;
+         }
+     }
+
+@@ -706,7 +708,7 @@
+         case "surfaceVariant":
+             return withAlpha(surfaceText, 0.22);
+         default:
+-            return withAlpha(primaryText, 0.22);
++            return withAlpha(primary, 0.30);
+         }
+     }
+
+diff -ruN a/Modules/ControlCenter/Components/ActionTile.qml b/Modules/ControlCenter/Components/ActionTile.qml
+--- a/Modules/ControlCenter/Components/ActionTile.qml
++++ b/Modules/ControlCenter/Components/ActionTile.qml
+@@ -29,7 +29,7 @@
+
+     color: isActive ? _tileBgActive : _tileBgInactive
+     // Ryoku CC: ON = subtle primary ring; OFF = no outline
+-    border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.color: isActive ? _tileRingActive : Theme.withAlpha(Theme.outlineMedium, 0)
+     border.width: isActive ? 1 : 0
+     opacity: enabled ? 1.0 : 0.6
+
+@@ -53,9 +53,9 @@
+
+     Row {
+         anchors.fill: parent
+-        anchors.leftMargin: Theme.spacingL + 2
++        anchors.leftMargin: Theme.spacingL
+         anchors.rightMargin: Theme.spacingM
+-        spacing: Theme.spacingM
++        spacing: Theme.spacingM + Theme.spacingS
+
+         DankIcon {
+             name: root.iconName
+diff -ruN a/Modules/ControlCenter/Components/DragDropGrid.qml b/Modules/ControlCenter/Components/DragDropGrid.qml
+--- a/Modules/ControlCenter/Components/DragDropGrid.qml
++++ b/Modules/ControlCenter/Components/DragDropGrid.qml
+@@ -121,11 +121,13 @@
+                     return NetworkService.ethernetConnected ? "settings_ethernet" : NetworkService.wifiSignalIcon;
+                 if (status === "wifi")
+                     return NetworkService.wifiSignalIcon;
+-                return "wifi";
++                return NetworkService.wifiEnabled ? "wifi" : "wifi_off";
+             }
+         case "bluetooth":
+             {
+-                return "bluetooth";
++                if (!BluetoothService.enabled)
++                    return "bluetooth_disabled";
++                return BluetoothService.connected ? "bluetooth_connected" : "bluetooth";
+             }
+         case "audioOutput":
+             {
+diff -ruN a/Modules/ControlCenter/Components/HeaderPane.qml b/Modules/ControlCenter/Components/HeaderPane.qml
+--- a/Modules/ControlCenter/Components/HeaderPane.qml
++++ b/Modules/ControlCenter/Components/HeaderPane.qml
+@@ -53,17 +53,23 @@
+         Column {
+             anchors.verticalCenter: parent.verticalCenter
+             spacing: 0
++            width: Math.max(0, root.width - avatarContainer.width - actionCluster.width - Theme.spacingM * 3 - Theme.spacingS)
+
+             Typography {
++                width: parent.width
+                 text: UserInfoService.fullName || UserInfoService.username || I18n.tr("User")
+                 style: Typography.Style.Subtitle
+                 color: Theme.surfaceText
++                elide: Text.ElideRight
+             }
+
+             Typography {
+-                text: DgopService.uptime ? I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + " " + DgopService.uptime.slice(3) : I18n.tr("Unknown")
++                width: parent.width
++                text: DgopService.uptime ? I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + " " + DgopService.uptime.slice(3) : ""
++                visible: text.length > 0
+                 style: Typography.Style.Caption
+                 color: Theme.surfaceVariantText
++                elide: Text.ElideRight
+             }
+         }
+     }
+@@ -73,7 +79,7 @@
+         id: actionCluster
+         anchors.right: parent.right
+         anchors.verticalCenter: parent.verticalCenter
+-        anchors.rightMargin: Theme.spacingS
++        anchors.rightMargin: Theme.spacingM
+         height: 36
+         width: actionButtonsRow.width + Theme.spacingXXS * 2
+         radius: height / 2
+diff -ruN a/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml b/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml
+--- a/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml
++++ b/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml
+@@ -117,7 +117,7 @@
+             }
+
+             onEntered: {
+-                const tooltipText = targetDevice ? "bl device: " + targetDevice.name : "Backlight Control";
++                const tooltipText = targetDevice ? targetDevice.name : I18n.tr("Brightness");
+                 sharedTooltip.show(tooltipText, iconArea, 0, 0, "bottom");
+             }
+
+diff -ruN a/Modules/ControlCenter/Widgets/CompoundPill.qml b/Modules/ControlCenter/Widgets/CompoundPill.qml
+--- a/Modules/ControlCenter/Widgets/CompoundPill.qml
++++ b/Modules/ControlCenter/Widgets/CompoundPill.qml
+@@ -92,7 +92,7 @@
+             anchors.verticalCenter: parent.verticalCenter
+             radius: _tileRadius
+             color: isActive ? _tileBgActive : _tileBgInactive
+-            border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++            border.color: isActive ? _tileRingActive : Theme.withAlpha(Theme.outlineMedium, 0)
+             border.width: isActive ? 1 : 0
+             antialiasing: true
+
+diff -ruN a/Modules/ControlCenter/Widgets/SmallBatteryButton.qml b/Modules/ControlCenter/Widgets/SmallBatteryButton.qml
+--- a/Modules/ControlCenter/Widgets/SmallBatteryButton.qml
++++ b/Modules/ControlCenter/Widgets/SmallBatteryButton.qml
+@@ -16,11 +16,8 @@
+
+     width: parent ? ((parent.width - parent.spacing * 3) / 4) : 48
+     height: 48
+-    radius: {
+-        if (Theme.cornerRadius === 0)
+-            return 0;
+-        return isActive ? Theme.cornerRadius : Theme.cornerRadius + 4;
+-    }
++    // Ryoku CC: same shape and states as SmallCompoundButton
++    radius: Theme.cornerRadius
+
+     function hoverTint(base) {
+         const factor = 1.2;
+@@ -39,8 +36,8 @@
+         const baseColor = mouseArea.containsMouse ? Theme.ccPillInactiveHoverBg : _tileBgInactive;
+         return baseColor;
+     }
+-    border.color: isActive ? _tileRingActive : Theme.outlineMedium
+-    border.width: isActive ? 1 : Theme.layerOutlineWidth
++    border.color: isActive ? _tileRingActive : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: isActive ? 1 : 0
+     antialiasing: true
+     opacity: enabled ? 1.0 : 0.6
+
+@@ -64,7 +61,7 @@
+
+         DankIcon {
+             name: BatteryService.getBatteryIcon()
+-            size: Theme.iconSizeLarge
++            size: Theme.iconSize
+             color: {
+                 if (BatteryService.isLowBattery && !BatteryService.isCharging) {
+                     return Theme.error;
+@@ -104,8 +101,8 @@
+         onClicked: root.clicked()
+     }
+
+-    Behavior on radius {
+-        NumberAnimation {
++    Behavior on color {
++        ColorAnimation {
+             duration: Theme.shortDuration
+             easing.type: Theme.standardEasing
+         }
+diff -ruN a/Modules/ControlCenter/Widgets/SmallCompoundButton.qml b/Modules/ControlCenter/Widgets/SmallCompoundButton.qml
+--- a/Modules/ControlCenter/Widgets/SmallCompoundButton.qml
++++ b/Modules/ControlCenter/Widgets/SmallCompoundButton.qml
+@@ -40,7 +40,7 @@
+         return baseColor;
+     }
+     // Ryoku CC: ON = subtle primary ring; OFF = no outline
+-    border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.color: isActive ? _tileRingActive : Theme.withAlpha(Theme.outlineMedium, 0)
+     border.width: isActive ? 1 : 0
+     antialiasing: true
+     opacity: enabled ? 1.0 : 0.6
+diff -ruN a/Modules/ControlCenter/Widgets/SmallDiskUsageButton.qml b/Modules/ControlCenter/Widgets/SmallDiskUsageButton.qml
+--- a/Modules/ControlCenter/Widgets/SmallDiskUsageButton.qml
++++ b/Modules/ControlCenter/Widgets/SmallDiskUsageButton.qml
+@@ -32,7 +32,8 @@
+
+     width: parent ? ((parent.width - parent.spacing * 3) / 4) : 48
+     height: 48
+-    radius: Theme.cornerRadius + 4
++    // Ryoku CC: same shape as the other small tiles
++    radius: Theme.cornerRadius
+
+     function hoverTint(base) {
+         const factor = 1.2;
+@@ -42,8 +43,8 @@
+     readonly property color _tileBg: Theme.ccPillInactiveBg
+
+     color: mouseArea.containsMouse ? Theme.ccPillInactiveHoverBg : _tileBg
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+     antialiasing: true
+     opacity: enabled ? 1.0 : 0.6
+
+@@ -68,7 +69,7 @@
+         DankIcon {
+             anchors.verticalCenter: parent.verticalCenter
+             name: "storage"
+-            size: Theme.iconSizeLarge
++            size: Theme.iconSize
+             color: {
+                 if (root.usagePercent > 90)
+                     return Theme.error;
+diff -ruN a/Modules/ControlCenter/Widgets/SmallToggleButton.qml b/Modules/ControlCenter/Widgets/SmallToggleButton.qml
+--- a/Modules/ControlCenter/Widgets/SmallToggleButton.qml
++++ b/Modules/ControlCenter/Widgets/SmallToggleButton.qml
+@@ -14,11 +14,8 @@
+
+     width: parent ? ((parent.width - parent.spacing * 3) / 4) : 48
+     height: 48
+-    radius: {
+-        if (Theme.cornerRadius === 0)
+-            return 0;
+-        return isActive ? Theme.cornerRadius : Theme.cornerRadius + 4;
+-    }
++    // Ryoku CC: same shape and states as SmallCompoundButton
++    radius: Theme.cornerRadius
+
+     function hoverTint(base) {
+         const factor = 1.2;
+@@ -37,8 +34,8 @@
+         const baseColor = mouseArea.containsMouse ? Theme.ccPillInactiveHoverBg : _tileBgInactive;
+         return baseColor;
+     }
+-    border.color: isActive ? _tileRingActive : Theme.outlineMedium
+-    border.width: isActive ? 1 : Theme.layerOutlineWidth
++    border.color: isActive ? _tileRingActive : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: isActive ? 1 : 0
+     antialiasing: true
+     opacity: enabled ? 1.0 : 0.6
+
+@@ -80,8 +77,8 @@
+         onClicked: root.clicked()
+     }
+
+-    Behavior on radius {
+-        NumberAnimation {
++    Behavior on color {
++        ColorAnimation {
+             duration: Theme.shortDuration
+             easing.type: Theme.standardEasing
+         }
+diff -ruN a/Modules/ControlCenter/Widgets/ToggleButton.qml b/Modules/ControlCenter/Widgets/ToggleButton.qml
+--- a/Modules/ControlCenter/Widgets/ToggleButton.qml
++++ b/Modules/ControlCenter/Widgets/ToggleButton.qml
+@@ -33,7 +33,7 @@
+         return baseColor;
+     }
+     // Ryoku CC: ON = subtle primary ring; OFF = no outline
+-    border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.color: isActive ? _tileRingActive : Theme.withAlpha(Theme.outlineMedium, 0)
+     border.width: isActive ? 1 : 0
+     opacity: enabled ? 1.0 : 0.6
+
+@@ -47,8 +47,9 @@
+     Rectangle {
+         anchors.fill: parent
+         radius: Theme.cornerRadius
+-        color: mouseArea.containsMouse ? hoverTint(_containerBg) : Theme.withAlpha(_containerBg, 0)
+-        opacity: mouseArea.containsMouse ? 0.08 : 0.0
++        color: hoverTint(root.color)
++        opacity: mouseArea.pressed ? 0.16 : (mouseArea.containsMouse ? 0.08 : 0.0)
++        visible: opacity > 0
+
+         Behavior on opacity {
+             NumberAnimation {
+@@ -59,9 +60,10 @@
+
+     Row {
+         anchors.fill: parent
+-        anchors.leftMargin: Theme.spacingL + 2
++        // Icon centre and label start match CompoundPill (8 pad + 40 tile + 12 gap).
++        anchors.leftMargin: Theme.spacingL
+         anchors.rightMargin: Theme.spacingM
+-        spacing: Theme.spacingM
++        spacing: Theme.spacingM + Theme.spacingS
+
+         DankIcon {
+             name: root.iconName
+diff -ruN a/Modules/DankBar/CenterSection.qml b/Modules/DankBar/CenterSection.qml
+--- a/Modules/DankBar/CenterSection.qml
++++ b/Modules/DankBar/CenterSection.qml
+@@ -21,7 +21,7 @@
+     property bool forceVerticalLayout: false
+
+     // Ryoku Media Island (5A): clock item ref — media is NOT in the repeater,
+-    // so index/geometric layout never shifts the clock when media width changes.
++    // so media width changes never re-run the index/geometric layout.
+     property var mediaClockRef: null
+
+     function findClockItem() {
+@@ -357,11 +357,12 @@
+     implicitWidth: isVertical ? widgetThickness : totalSize
+     implicitHeight: isVertical ? totalSize : widgetThickness
+
+-    // Section capsule — one visual island for clock + media.
+-    // When media is visible, extend equally left and right of the clock so the
+-    // clock stays mathematically screen-centered while media sits coupled on the right.
+-    // MediaIsland remains outside centerWidgets layout math (clock position unchanged).
+-    readonly property real mediaBalance: {
++    // Section capsule — one visual island for [clock | media], centered as a whole.
++    // The layout functions center the clock widgets alone; media sits right after
++    // them outside that math, and the whole group (widgets, media, capsule) is shifted
++    // left by half the media extent so the capsule's center is the bar's center.
++    // Media width animates, so the shift and both capsule edges follow it smoothly.
++    readonly property real mediaExtent: {
+         if (root.isVertical)
+             return 0;
+         const mw = mediaIsland.width;
+@@ -369,6 +370,8 @@
+             return 0;
+         return root.widgetSpacing + mw;
+     }
++    // Rounded to whole px so clock text never lands on a subpixel.
++    readonly property real clusterShift: -Math.round(mediaExtent / 2)
+
+     Rectangle {
+         id: islandBg
+@@ -376,11 +379,11 @@
+         visible: root.noBackground && root.contentSize > 0
+         x: root.isVertical
+            ? (root.width - width) / 2
+-           : (root.contentStart - root.islandPad - root.mediaBalance)
++           : (root.contentStart + root.clusterShift - root.islandPad)
+         y: root.isVertical ? (root.contentStart - root.islandPad) : (root.height - height) / 2
+         width: root.isVertical
+                ? root.widgetThickness
+-               : (root.contentSize + root.islandPad * 2 + root.mediaBalance * 2)
++               : (root.contentSize + root.islandPad * 2 + root.mediaExtent)
+         height: root.isVertical ? (root.contentSize + root.islandPad * 2) : root.widgetThickness
+         radius: Theme.cornerRadius
+         color: root.islandColor
+@@ -388,7 +391,7 @@
+     }
+
+     // Ryoku Dynamic Media Island — content only; shares islandBg capsule.
+-    // Outside the centerWidgets layout math: clock x = f(parentCenter, clock.width) only.
++    // Outside the centerWidgets layout math, so media width never re-runs the layout.
+     MediaIsland {
+         id: mediaIsland
+         z: 1
+@@ -406,7 +409,7 @@
+             const clock = root.mediaClockRef;
+             if (!clock)
+                 return 0;
+-            return clock.x + clock.width + root.widgetSpacing;
++            return clock.x + root.clusterShift + clock.width + root.widgetSpacing;
+         }
+     }
+
+@@ -444,6 +447,7 @@
+             property var itemData: modelData
+             readonly property real itemSpacing: root.widgetSpacing
+
++            x: root.clusterShift
+             width: root.isVertical ? root.width : (widgetLoader.item ? widgetLoader.item.width : 0)
+             height: widgetLoader.item ? widgetLoader.item.height : 0
+
+diff -ruN a/Modules/DankBar/Widgets/MediaIsland.qml b/Modules/DankBar/Widgets/MediaIsland.qml
+--- a/Modules/DankBar/Widgets/MediaIsland.qml
++++ b/Modules/DankBar/Widgets/MediaIsland.qml
+@@ -34,21 +34,22 @@
+     }
+     readonly property bool popoutOpen: !!(PopoutService.mediaIslandPopout?.shouldBeVisible)
+
+-    readonly property real artSize: 22
+-    readonly property real playSize: 20
+-    readonly property real maxTitleWidth: 104
++    readonly property real artSize: 20
++    readonly property real playSize: 18
++    // Cap only: short titles shrink the chip; longer ones elide.
++    readonly property real maxTitleWidth: 96
+     // Inner content insets within the shared central capsule.
+     // Slightly tighter on the left (clock already provides separation via widgetSpacing).
+-    readonly property real hPadLeft: Math.max(4, islandPad + 1)
+-    readonly property real hPadRight: Math.max(7, islandPad + 3)
++    readonly property real hPadLeft: Math.max(3, islandPad)
++    readonly property real hPadRight: Math.max(5, islandPad + 2)
++
++    readonly property real titleWidth: titleLabel.text.length > 0 ? Math.min(Math.ceil(titleLabel.implicitWidth), maxTitleWidth) : 0
+
+     readonly property real targetContentWidth: {
+         if (!playerAvailable)
+             return 0;
+-        // Fixed title slot when metadata exists — avoids width jumps on track change.
+-        const titleW = titleLabel.text.length > 0 ? maxTitleWidth : 0;
+         const gaps = Theme.spacingXS;
+-        return artSize + gaps + (titleW > 0 ? titleW + gaps : 0) + playSize;
++        return artSize + gaps + (titleWidth > 0 ? titleWidth + gaps : 0) + playSize;
+     }
+
+     readonly property real targetWidth: playerAvailable ? (targetContentWidth + hPadLeft + hPadRight) : 0
+@@ -66,14 +67,14 @@
+
+     Behavior on opacity {
+         NumberAnimation {
+-            duration: Theme.shortDuration
++            duration: Theme.mediumDuration
+             easing.type: Theme.standardEasing
+         }
+     }
+
+     Behavior on width {
+         NumberAnimation {
+-            duration: Theme.mediumDuration
++            duration: Theme.longDuration
+             easing.type: Easing.BezierSpline
+             easing.bezierCurve: Theme.expressiveCurves.emphasizedDecel
+         }
+@@ -81,7 +82,7 @@
+
+     Behavior on scale {
+         NumberAnimation {
+-            duration: Theme.shortDuration
++            duration: Theme.mediumDuration
+             easing.type: Easing.BezierSpline
+             easing.bezierCurve: Theme.expressiveCurves.emphasizedDecel
+         }
+@@ -195,11 +196,11 @@
+             elide: Text.ElideRight
+             maximumLineCount: 1
+             wrapMode: Text.NoWrap
+-            width: text.length > 0 ? root.maxTitleWidth : 0
++            width: root.titleWidth
+
+             Behavior on opacity {
+                 NumberAnimation {
+-                    duration: Theme.shortDuration
++                    duration: Theme.mediumDuration
+                     easing.type: Theme.standardEasing
+                 }
+             }
+@@ -215,14 +216,14 @@
+
+             Behavior on color {
+                 ColorAnimation {
+-                    duration: Theme.shortDuration
++                    duration: Theme.mediumDuration
+                 }
+             }
+
+             DankIcon {
+                 anchors.centerIn: parent
+                 name: root.isPlaying ? "pause" : "play_arrow"
+-                size: 12
++                size: 11
+                 color: root.isPlaying ? Theme.background : Theme.primary
+             }
+
+diff -ruN a/Modules/DankBar/Widgets/SystemTrayBar.qml b/Modules/DankBar/Widgets/SystemTrayBar.qml
+--- a/Modules/DankBar/Widgets/SystemTrayBar.qml
++++ b/Modules/DankBar/Widgets/SystemTrayBar.qml
+@@ -1855,7 +1855,7 @@
+                                 visible: entryStack.count === 0
+                                 width: parent.width
+                                 height: 28
+-                                radius: Theme.cornerRadius
++                                radius: Theme.cornerRadius / 2
+                                 color: visibilityToggleArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(Theme.surfaceContainer, 0)
+
+                                 StyledText {
+@@ -1919,7 +1919,7 @@
+                                 visible: entryStack.count > 0
+                                 width: parent.width
+                                 height: 28
+-                                radius: Theme.cornerRadius
++                                radius: Theme.cornerRadius / 2
+                                 color: backArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(Theme.surfaceContainer, 0)
+
+                                 Row {
+@@ -1967,7 +1967,7 @@
+
+                                     width: menuColumn.width
+                                     height: menuEntry?.isSeparator ? 1 : 28
+-                                    radius: menuEntry?.isSeparator ? 0 : Theme.cornerRadius
++                                    radius: menuEntry?.isSeparator ? 0 : Theme.cornerRadius / 2
+                                     color: {
+                                         if (menuEntry?.isSeparator)
+                                             return Theme.outlineHeavy;
+diff -ruN a/Modules/DankDash/MediaPlayerTab.qml b/Modules/DankDash/MediaPlayerTab.qml
+--- a/Modules/DankDash/MediaPlayerTab.qml
++++ b/Modules/DankDash/MediaPlayerTab.qml
+@@ -112,7 +112,8 @@
+     }
+
+     implicitWidth: SettingsData.showWeekNumber ? 736 : 700
+-    implicitHeight: playerContent.height + Theme.spacingM * 2
++    // Same height as the other DankDash tabs: no popout resize on tab switch or title wrap.
++    implicitHeight: Math.max(410, playerContent.height + Theme.spacingM * 2)
+
+     Connections {
+         target: activePlayer
+@@ -323,7 +324,8 @@
+
+     Timer {
+         interval: 1000
+-        running: activePlayer?.playbackState === MprisPlaybackState.Playing && !isSeeking
++        // Idle cost: the tab stays loaded after DankDash closes.
++        running: activePlayer?.playbackState === MprisPlaybackState.Playing && !isSeeking && root.visible && (Window.window?.visible ?? false)
+         repeat: true
+         onTriggered: activePlayer?.positionChanged()
+     }
+diff -ruN a/Modules/DankDash/Overview/UserInfoCard.qml b/Modules/DankDash/Overview/UserInfoCard.qml
+--- a/Modules/DankDash/Overview/UserInfoCard.qml
++++ b/Modules/DankDash/Overview/UserInfoCard.qml
+@@ -41,7 +41,7 @@
+
+             StyledText {
+                 width: parent.width
+-                text: UserInfoService.username || I18n.tr("brandon")
++                text: UserInfoService.fullName || UserInfoService.username || ""
+                 font.pixelSize: Theme.fontSizeMedium
+                 font.weight: Font.Medium
+                 color: Theme.surfaceText
+@@ -90,6 +90,7 @@
+             Row {
+                 width: parent.width
+                 spacing: Theme.spacingXS
++                visible: !!DgopService.shortUptime
+
+                 DankIcon {
+                     name: "schedule"
+@@ -100,7 +101,7 @@
+
+                 StyledText {
+                     width: parent.width - 14 - Theme.spacingXS
+-                    text: DgopService.shortUptime ? I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + DgopService.shortUptime.slice(2) : I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'")
++                    text: I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + (DgopService.shortUptime || "").slice(2)
+                     font.pixelSize: Theme.fontSizeSmall
+                     color: Theme.surfaceVariantText
+                     anchors.verticalCenter: parent.verticalCenter
+diff -ruN a/Modules/DankDash/WallpaperTab.qml b/Modules/DankDash/WallpaperTab.qml
+--- a/Modules/DankDash/WallpaperTab.qml
++++ b/Modules/DankDash/WallpaperTab.qml
+@@ -546,14 +546,6 @@
+                             radius: Theme.cornerRadius
+                             border.width: isCurrent ? 2 : 0
+                             border.color: isCurrent ? Theme.primary : "transparent"
+-                            scale: wallpaperMouseArea.containsMouse && !isCurrent ? 1.02 : 1.0
+-
+-                            Behavior on scale {
+-                                NumberAnimation {
+-                                    duration: Theme.shortDuration
+-                                    easing.type: Theme.standardEasing
+-                                }
+-                            }
+
+                             Behavior on border.color {
+                                 ColorAnimation {
+@@ -562,22 +554,7 @@
+                                 }
+                             }
+
+-                            Rectangle {
+-                                anchors.fill: parent
+-                                anchors.margins: isCurrent ? 2 : 0
+-                                radius: parent.radius
+-                                color: wallpaperMouseArea.containsMouse ? Theme.primaryHoverLight : "transparent"
+-                                z: 2
+-                                opacity: isCurrent ? 0 : 1
+-
+-                                Behavior on color {
+-                                    ColorAnimation {
+-                                        duration: Theme.shortDuration
+-                                        easing.type: Theme.standardEasing
+-                                    }
+-                                }
+-                            }
+-
++                            // Hover feedback comes from the StateLayer below only.
+                             ClippingRectangle {
+                                 anchors.fill: parent
+                                 anchors.margins: isCurrent ? 2 : 0
+diff -ruN a/Widgets/DankOSD.qml b/Widgets/DankOSD.qml
+--- a/Widgets/DankOSD.qml
++++ b/Widgets/DankOSD.qml
+@@ -286,8 +286,9 @@
+             fallbackOffset: 6
+             targetRadius: Theme.cornerRadius
+             targetColor: Theme.withAlpha(Theme.surfaceContainer, osdContainer.popupSurfaceAlpha)
++            // Drawn above `background`; a second border would hide the configured one.
+             borderColor: Theme.outlineMedium
+-            borderWidth: 1
++            borderWidth: 0
+             shadowEnabled: Theme.elevationEnabled && SettingsData.popoutElevationEnabled && Quickshell.env("DMS_DISABLE_LAYER") !== "true" && Quickshell.env("DMS_DISABLE_LAYER") !== "1"
+         }
+
+diff -ruN a/Widgets/DankSlider.qml b/Widgets/DankSlider.qml
+--- a/Widgets/DankSlider.qml
++++ b/Widgets/DankSlider.qml
+@@ -117,7 +117,7 @@
+                 anchors.verticalCenter: parent.verticalCenter
+                 color: slider.enabled ? Theme.primary : Theme.withAlpha(Theme.onSurface, 0.12)
+                 border.width: 2
+-                border.color: slider.enabled ? Theme.surfaceContainer : Theme.withAlpha(Theme.surfaceContainer, 0)
++                border.color: slider.enabled ? slider.thumbOutlineColor : Theme.withAlpha(slider.thumbOutlineColor, 0)
+
+                 StyledRect {
+                     anchors.fill: parent
+diff -ruN a/Widgets/DankSpinner.qml b/Widgets/DankSpinner.qml
+--- a/Widgets/DankSpinner.qml
++++ b/Widgets/DankSpinner.qml
+@@ -8,7 +8,8 @@
+     property real size: 48
+     property real strokeWidth: Math.max(2, size / 12)
+     property color color: Theme.primary
+-    property bool running: visible
++    // Popouts stay loaded while hidden; don't spin inside an invisible window.
++    property bool running: visible && (Window.window?.visible ?? false)
+
+     implicitWidth: size
+     implicitHeight: size

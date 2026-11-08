@@ -18,9 +18,9 @@ Experimental Rust desktop PRs `#6`–`#18` are **preserved** and **out of scope*
 ┌─────────────────────────────────────────────┐
 │  Apps (Kitty/Thunar/Fuzzel APT + Nix extras)│
 ├─────────────────────────────────────────────┤
-│  Shell/UI (DMS port = ENTREGA B)            │
+│  Shell/UI (DMS 1.5.3 + Ryoku patches = B)   │
 ├─────────────────────────────────────────────┤
-│  Niri (Nix) + XWayland                      │
+│  Niri (Nix) + XWayland + Matugen colors     │
 ├─────────────────────────────────────────────┤
 │  Home Manager standalone flake              │
 ├─────────────────────────────────────────────┤

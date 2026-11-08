@@ -6,7 +6,7 @@
 }:
 
 # Standalone Home Manager for Debian — intentionally NO osConfig / NixOS options.
-# nixGL arrives via extraSpecialArgs into ./nixgl.nix only.
+# nixGL / dankMaterialShell arrive via extraSpecialArgs into their modules.
 {
   imports = [
     # profiles.nix is pulled via flake modules = [ ./modules ... ]; keep home lean.
@@ -15,30 +15,20 @@
     ./fuzzel.nix
     ./theme.nix
     ./nixgl.nix
+    ./dms.nix
+    ./matugen.nix
   ];
-
-  # Surface Jarvis default for shells / later ryoku-cli.
-  home.sessionVariables.RYOKU_JARVIS = lib.mkDefault (
-    if config.ryoku.profile.jarvis then "1" else "0"
-  );
-  home.sessionVariables.RYOKU_EDITION = config.ryoku.profile.edition;
-  home.sessionVariables.RYOKU_VISUAL_PROFILE = config.ryoku.profile.visual;
-  home.sessionVariables.RYOKU_SHELL_STYLE = config.ryoku.profile.shellStyle;
 
   home.stateVersion = "25.11";
 
   programs.home-manager.enable = true;
 
-  # Session-facing packages from Nix when APT equivalents are missing or weaker.
   home.packages = with pkgs; [
     niri
-    xwayland-satellite # XWayland integration helper used by modern Niri
+    xwayland-satellite
     wl-clipboard
-    grim
-    slurp
   ];
 
-  # Portals: prefer user services when systemd --user is available on Debian.
   xdg.enable = true;
   xdg.mimeApps.enable = true;
 
@@ -47,13 +37,15 @@
     default=gtk;wlr;
   '';
 
-  # Environment for mixed APT + Nix graphics stacks.
   home.sessionVariables = {
     NIXOS_OZONE_WL = "1";
     MOZ_ENABLE_WAYLAND = "1";
     QT_QPA_PLATFORM = "wayland;xcb";
-    # Hint for tools wrapping GL apps (see nixgl.nix).
     RYOKU_NIXGL_WRAPPER = "${config.home.homeDirectory}/.local/bin/ryoku-nixgl";
+    RYOKU_JARVIS = lib.mkDefault (if config.ryoku.profile.jarvis then "1" else "0");
+    RYOKU_EDITION = config.ryoku.profile.edition;
+    RYOKU_VISUAL_PROFILE = config.ryoku.profile.visual;
+    RYOKU_SHELL_STYLE = config.ryoku.profile.shellStyle;
   };
 
   home.file.".local/bin/ryoku-niri-session" = {

@@ -1,0 +1,239 @@
+diff -ruN a/Modules/DankBar/BarCanvas.qml b/Modules/DankBar/BarCanvas.qml
+--- a/Modules/DankBar/BarCanvas.qml
++++ b/Modules/DankBar/BarCanvas.qml
+@@ -61,7 +61,9 @@
+     // M3 elevation shadow — Level 2 baseline (navigation bar), with per-bar override support
+     readonly property bool hasPerBarOverride: (barConfig?.shadowIntensity ?? 0) > 0
+     readonly property var elevLevel: Theme.elevationLevel2
+-    readonly property bool shadowEnabled: (Theme.elevationEnabled && (typeof SettingsData !== "undefined" ? (SettingsData.barElevationEnabled ?? true) : false)) || hasPerBarOverride
++    // Ryoku: no full-width chrome/shadow when noBackground (floating islands).
++    readonly property bool noBackground: barConfig?.noBackground ?? false
++    readonly property bool shadowEnabled: !noBackground && ((Theme.elevationEnabled && (typeof SettingsData !== "undefined" ? (SettingsData.barElevationEnabled ?? true) : false)) || hasPerBarOverride)
+     readonly property string autoBarShadowDirection: isTop ? "top" : (isBottom ? "bottom" : (isLeft ? "left" : (isRight ? "right" : "top")))
+     readonly property string globalShadowDirection: Theme.elevationLightDirection === "autoBar" ? autoBarShadowDirection : Theme.elevationLightDirection
+     readonly property string perBarShadowDirectionMode: barConfig?.shadowDirectionMode ?? "inherit"
+@@ -218,7 +220,7 @@
+             preferredRendererType: Shape.CurveRenderer
+
+             ShapePath {
+-                fillColor: barWindow._bgColor
++                fillColor: root.noBackground ? "transparent" : barWindow._bgColor
+                 strokeColor: "transparent"
+                 strokeWidth: 0
+
+@@ -245,7 +247,7 @@
+             id: barBorderShape
+             anchors.fill: parent
+             preferredRendererType: Shape.CurveRenderer
+-            visible: barConfig?.borderEnabled ?? false
++            visible: !(root.noBackground) && (barConfig?.borderEnabled ?? false)
+
+             ShapePath {
+                 fillColor: "transparent"
+diff -ruN a/Modules/DankBar/CenterSection.qml b/Modules/DankBar/CenterSection.qml
+--- a/Modules/DankBar/CenterSection.qml
++++ b/Modules/DankBar/CenterSection.qml
+@@ -19,6 +19,21 @@
+     property bool overrideAxisLayout: false
+     property bool forceVerticalLayout: false
+
++    // Ryoku islands: pad around centered content when chrome is transparent.
++    readonly property real islandPad: {
++        if (!noBackground)
++            return 0;
++        return Math.max(4, (barConfig?.innerPadding ?? 4));
++    }
++
++    readonly property color islandColor: {
++        const rawTransparency = (barConfig && barConfig.widgetTransparency !== undefined) ? barConfig.widgetTransparency : 1.0;
++        const baseColor = Theme.widgetBaseBackgroundColor;
++        if (Theme.widgetBackgroundHasAlpha)
++            return Theme.blendAlpha(baseColor, rawTransparency);
++        return Theme.withAlpha(baseColor, rawTransparency);
++    }
++
+     readonly property bool isVertical: overrideAxisLayout ? forceVerticalLayout : (axis?.isVertical ?? false)
+     readonly property real widgetSpacing: {
+         const baseSpacing = noBackground ? 2 : Theme.spacingXS;
+@@ -322,6 +337,20 @@
+     implicitWidth: isVertical ? widgetThickness : totalSize
+     implicitHeight: isVertical ? totalSize : widgetThickness
+
++    // Section capsule around centered widgets only (not full bar width).
++    Rectangle {
++        id: islandBg
++        z: -1
++        visible: root.noBackground && root.contentSize > 0
++        x: root.isVertical ? (root.width - width) / 2 : (root.contentStart - root.islandPad)
++        y: root.isVertical ? (root.contentStart - root.islandPad) : (root.height - height) / 2
++        width: root.isVertical ? root.widgetThickness : (root.contentSize + root.islandPad * 2)
++        height: root.isVertical ? (root.contentSize + root.islandPad * 2) : root.widgetThickness
++        radius: Theme.cornerRadius
++        color: root.islandColor
++        border.width: 0
++    }
++
+     Timer {
+         id: layoutTimer
+         interval: 0
+diff -ruN a/Modules/DankBar/DankBarWindow.qml b/Modules/DankBar/DankBarWindow.qml
+--- a/Modules/DankBar/DankBarWindow.qml
++++ b/Modules/DankBar/DankBarWindow.qml
+@@ -394,7 +394,14 @@
+     readonly property color _surfaceContainer: Theme.surfaceContainer
+     readonly property string _barId: barConfig?.id ?? "default"
+     property real _backgroundAlpha: barConfig?.transparency ?? 1.0
+-    readonly property color _bgColor: (FrameTransitionState.effectiveFrameEnabled && usesFrameBarChrome) ? Theme.withAlpha(SettingsData.effectiveFrameColor, SettingsData.frameOpacity) : Theme.withAlpha(_surfaceContainer, _backgroundAlpha)
++    // Ryoku: honor noBackground — full-width chrome must be transparent for floating islands.
++    readonly property color _bgColor: {
++        if (barConfig?.noBackground ?? false)
++            return Qt.rgba(0, 0, 0, 0);
++        if (FrameTransitionState.effectiveFrameEnabled && usesFrameBarChrome)
++            return Theme.withAlpha(SettingsData.effectiveFrameColor, SettingsData.frameOpacity);
++        return Theme.withAlpha(_surfaceContainer, _backgroundAlpha);
++    }
+
+     function _updateBackgroundAlpha() {
+         const live = SettingsData.barConfigs.find(c => c.id === _barId);
+diff -ruN a/Modules/DankBar/LeftSection.qml b/Modules/DankBar/LeftSection.qml
+--- a/Modules/DankBar/LeftSection.qml
++++ b/Modules/DankBar/LeftSection.qml
+@@ -21,12 +21,59 @@
+     readonly property bool isVertical: overrideAxisLayout ? forceVerticalLayout : (axis?.isVertical ?? false)
+     property alias widgetLayoutLoader: layoutLoader
+
+-    implicitHeight: layoutLoader.item ? layoutLoader.item.implicitHeight : 0
+-    implicitWidth: layoutLoader.item ? layoutLoader.item.implicitWidth : 0
++    // Ryoku islands: pad the section when chrome is transparent (noBackground).
++    readonly property real islandPad: {
++        if (!noBackground)
++            return 0;
++        return Math.max(4, (barConfig?.innerPadding ?? 4));
++    }
++
++    readonly property color islandColor: {
++        const rawTransparency = (barConfig && barConfig.widgetTransparency !== undefined) ? barConfig.widgetTransparency : 1.0;
++        const baseColor = Theme.widgetBaseBackgroundColor;
++        if (Theme.widgetBackgroundHasAlpha)
++            return Theme.blendAlpha(baseColor, rawTransparency);
++        return Theme.withAlpha(baseColor, rawTransparency);
++    }
++
++    implicitWidth: {
++        const contentW = layoutLoader.item ? layoutLoader.item.implicitWidth : 0;
++        return contentW + islandPad * 2;
++    }
++    implicitHeight: {
++        const contentH = layoutLoader.item ? layoutLoader.item.implicitHeight : 0;
++        if (!noBackground)
++            return contentH;
++        return Math.max(widgetThickness, contentH) + islandPad * 2;
++    }
++
++    // Section capsule — only in floating-islands mode (noBackground).
++    Rectangle {
++        id: islandBg
++        z: -1
++        visible: root.noBackground && (layoutLoader.item ? layoutLoader.item.implicitWidth > 0 : false)
++        anchors.centerIn: parent
++        width: {
++            const contentW = layoutLoader.item ? layoutLoader.item.implicitWidth : 0;
++            return contentW + root.islandPad * 2;
++        }
++        height: {
++            if (root.isVertical) {
++                const contentH = layoutLoader.item ? layoutLoader.item.implicitHeight : 0;
++                return contentH + root.islandPad * 2;
++            }
++            return root.widgetThickness;
++        }
++        radius: Theme.cornerRadius
++        color: root.islandColor
++        border.width: 0
++    }
+
+     Loader {
+         id: layoutLoader
+-        anchors.fill: parent
++        anchors.centerIn: parent
++        width: item ? item.implicitWidth : 0
++        height: item ? item.implicitHeight : 0
+         sourceComponent: root.isVertical ? columnComp : rowComp
+     }
+
+diff -ruN a/Modules/DankBar/RightSection.qml b/Modules/DankBar/RightSection.qml
+--- a/Modules/DankBar/RightSection.qml
++++ b/Modules/DankBar/RightSection.qml
+@@ -21,13 +21,59 @@
+     readonly property bool isVertical: overrideAxisLayout ? forceVerticalLayout : (axis?.isVertical ?? false)
+     property alias widgetLayoutLoader: layoutLoader
+
+-    implicitHeight: layoutLoader.item ? layoutLoader.item.implicitHeight : 0
+-    implicitWidth: layoutLoader.item ? layoutLoader.item.implicitWidth : 0
++    // Ryoku islands: pad the section when chrome is transparent (noBackground).
++    readonly property real islandPad: {
++        if (!noBackground)
++            return 0;
++        return Math.max(4, (barConfig?.innerPadding ?? 4));
++    }
++
++    readonly property color islandColor: {
++        const rawTransparency = (barConfig && barConfig.widgetTransparency !== undefined) ? barConfig.widgetTransparency : 1.0;
++        const baseColor = Theme.widgetBaseBackgroundColor;
++        if (Theme.widgetBackgroundHasAlpha)
++            return Theme.blendAlpha(baseColor, rawTransparency);
++        return Theme.withAlpha(baseColor, rawTransparency);
++    }
++
++    implicitWidth: {
++        const contentW = layoutLoader.item ? layoutLoader.item.implicitWidth : 0;
++        return contentW + islandPad * 2;
++    }
++    implicitHeight: {
++        const contentH = layoutLoader.item ? layoutLoader.item.implicitHeight : 0;
++        if (!noBackground)
++            return contentH;
++        return Math.max(widgetThickness, contentH) + islandPad * 2;
++    }
++
++    // Section capsule — only in floating-islands mode (noBackground).
++    Rectangle {
++        id: islandBg
++        z: -1
++        visible: root.noBackground && (layoutLoader.item ? layoutLoader.item.implicitWidth > 0 : false)
++        anchors.centerIn: parent
++        width: {
++            const contentW = layoutLoader.item ? layoutLoader.item.implicitWidth : 0;
++            return contentW + root.islandPad * 2;
++        }
++        height: {
++            if (root.isVertical) {
++                const contentH = layoutLoader.item ? layoutLoader.item.implicitHeight : 0;
++                return contentH + root.islandPad * 2;
++            }
++            return root.widgetThickness;
++        }
++        radius: Theme.cornerRadius
++        color: root.islandColor
++        border.width: 0
++    }
+
+     Loader {
+         id: layoutLoader
+-        width: parent.width
+-        height: parent.height
++        anchors.centerIn: parent
++        width: item ? item.implicitWidth : 0
++        height: item ? item.implicitHeight : 0
+         sourceComponent: root.isVertical ? columnComp : rowComp
+     }
+
+@@ -40,7 +86,7 @@
+                 return baseSpacing + (outlineThickness * 2);
+             }
+             spacing: widgetSpacing
+-            anchors.right: parent ? parent.right : undefined
++            // Keep intrinsic width; parent Loader sizes to implicitWidth (no anchors.right needed).
+             Repeater {
+                 id: rowRepeater
+                 model: root.widgetsModel

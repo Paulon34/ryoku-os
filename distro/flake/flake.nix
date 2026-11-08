@@ -1,7 +1,7 @@
 {
-  description = "Ryoku Debian — standalone Home Manager + Niri (no NixOS/osConfig)";
+  description = "Ryoku Debian — standalone Home Manager + Niri + DMS (no NixOS/osConfig)";
 
-  # Pins are commit SHAs so guests can `nix flake lock` reproducibly.
+  # Pins are commit SHAs / tags so guests can `nix flake lock` reproducibly.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/f9a75f41be3a74eab55d3a7679d34ad6cc0da977";
 
@@ -14,10 +14,16 @@
       url = "github:nix-community/nixGL/4306ae1d15adf3d386f1462b330d4f2648404711";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # DankMaterialShell 1.5.3 — matches Ryoku visual patch pin.
+    dankMaterialShell = {
+      url = "github:AvengeMedia/DankMaterialShell/v1.5.3";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs, home-manager, nixGL, ... }:
+    { self, nixpkgs, home-manager, nixGL, dankMaterialShell, ... }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -42,7 +48,7 @@
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
-            inherit nixGL;
+            inherit nixGL dankMaterialShell;
             ryokuUser = {
               inherit username homeDirectory;
             };
@@ -82,20 +88,28 @@
       packages.${system} = {
         niri = pkgs.niri;
         nixGLIntel = nixGL.packages.${system}.nixGLIntel;
-        # Deterministic default for pure flakes; NVIDIA auto-detection is impure.
+        # Pure Mesa default: automatic NVIDIA detection requires impure currentTime.
         nixGLDefault = nixGL.packages.${system}.nixGLIntel;
+        dms-shell = dankMaterialShell.packages.${system}.dms-shell;
+        # Buildable reference variant to verify all Ryoku 1.5.3 patches in CI.
+        dms-shell-ryoku = pkgs.callPackage ./pkgs/dms-shell-ryoku.nix {
+          dms-shell = dankMaterialShell.packages.${system}.dms-shell;
+          ryokuSettingsJson = "/home/ryoku/.config/ryoku/settings.json";
+          ryokuShellStyle = "quattro";
+        };
       };
 
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
         test -f ${./home/home.nix}
         test -f ${./home/niri.nix}
+        test -f ${./home/dms.nix}
+        test -f ${./patches/dms/1.5.3/ryoku-quattro-foundation.patch}
         test -f ${./hosts/ryoku/default.nix}
         test -f ${./modules/profiles.nix}
         mkdir -p $out
         echo ok > $out/result
       '';
 
-      # Expose builder for docs/tests (not a homeConfiguration by itself).
       lib.mkRyokuHome = mkHome;
 
       formatter.${system} = pkgs.nixfmt-rfc-style;

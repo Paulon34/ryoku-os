@@ -650,20 +650,31 @@ write_host_module() {
   fi
   info "wrote $path"
 
-  # Flakes only see tracked files — stage without committing.
-  if command -v git >/dev/null 2>&1 && [[ -d "$REPO_ROOT/.git" ]]; then
-    local rel="distro/flake/hosts/$TARGET_USER/default.nix"
-    if [[ "$(id -u)" -eq 0 && "$SYSROOT" == "/" ]]; then
-      sudo -u "$TARGET_USER" git -C "$REPO_ROOT" add -- "$rel" \
-        || warn "git add $rel failed — flake may not see host until staged"
-    else
-      git -C "$REPO_ROOT" add -- "$rel" \
-        || warn "git add $rel failed — flake may not see host until staged"
-    fi
-    info "staged $rel for pure flake evaluation"
-  else
-    warn "no git repo — ensure hosts/$TARGET_USER/default.nix is visible to the flake"
+  # Fixture tests deliberately use a copied flake outside a Git checkout and
+  # never run Home Manager. They must not alter the repository index.
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: host written without Git staging (no flake evaluation)"
+    return 0
   fi
+
+  # Flakes with a git+file source only see tracked or staged files.
+  # In a linked worktree .git is a FILE, not a directory; never test -d .git.
+  # Fail closed: without this host attr, Home Manager cannot evaluate #$TARGET_USER.
+  if ! command -v git >/dev/null 2>&1 ||
+     [[ "$(git -C "$REPO_ROOT" rev-parse --is-inside-work-tree 2>/dev/null || true)" != "true" ]]; then
+    die "Git checkout/worktree not available at $REPO_ROOT — cannot stage Home Manager host for pure flake"
+  fi
+  local rel="distro/flake/hosts/$TARGET_USER/default.nix"
+  if [[ "$(id -u)" -eq 0 && "$SYSROOT" == "/" ]]; then
+    sudo -u "$TARGET_USER" git -C "$REPO_ROOT" add -- "$rel" ||
+      die "git add failed for $rel (check ownership and .gitignore)"
+  else
+    git -C "$REPO_ROOT" add -- "$rel" ||
+      die "git add failed for $rel (check ownership and .gitignore)"
+  fi
+  git -C "$REPO_ROOT" ls-files --error-unmatch -- "$rel" >/dev/null ||
+    die "host $rel is not indexed by Git; refusing Home Manager activation"
+  info "staged and verified $rel for pure flake evaluation"
 }
 
 activate_home_manager() {

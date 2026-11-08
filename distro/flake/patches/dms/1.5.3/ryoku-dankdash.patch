@@ -1,0 +1,3292 @@
+diff -ruN a/Modules/DankDash/DankDashPopout.qml b/Modules/DankDash/DankDashPopout.qml
+--- a/Modules/DankDash/DankDashPopout.qml
++++ b/Modules/DankDash/DankDashPopout.qml
+@@ -302,8 +302,9 @@
+                 anchors.left: parent.left
+                 anchors.right: parent.right
+                 anchors.top: parent.top
++                // Ryoku 6A: slightly tighter outer chrome; content tabs unchanged.
+                 anchors.margins: Theme.spacingM
+-                spacing: Theme.spacingS
++                spacing: Theme.spacingXS
+
+                 DankTabBar {
+                     id: tabBar
+@@ -313,11 +314,15 @@
+                     // mid-animation. Gate on data only. The bar also hides entirely when the
+                     // current view's tab isn't in the visible set (e.g. IPC-opened hidden tab).
+                     readonly property bool showTabs: (model?.length ?? 0) > 0 && root.currentTabIndex >= 0
++                    // Ryoku 6A: compact nav density (hit targets still ≥40).
++                    readonly property int ryokuTabHeight: 40
+                     width: parent.width
+-                    height: showTabs ? 48 : 0
++                    height: showTabs ? ryokuTabHeight : 0
++                    tabHeight: ryokuTabHeight
++                    iconSize: Theme.iconSize - 2
+                     visible: showTabs
+                     currentIndex: root.currentTabIndex
+-                    spacing: Theme.spacingS
++                    spacing: Theme.spacingXS
+                     equalWidthTabs: true
+                     enableArrowNavigation: false
+                     focus: false
+@@ -349,7 +354,7 @@
+
+                 Item {
+                     width: parent.width
+-                    height: tabBar.showTabs ? Theme.spacingXS : 0
++                    height: tabBar.showTabs ? Theme.spacingXXS : 0
+                     visible: tabBar.showTabs
+                 }
+
+@@ -416,7 +421,7 @@
+                                 popoutY: root.alignedY
+                                 popoutWidth: root.alignedWidth
+                                 popoutHeight: root.alignedHeight
+-                                contentOffsetY: Theme.spacingM + (tabBar.showTabs ? 48 + Theme.spacingS + Theme.spacingXS : 0)
++                                contentOffsetY: Theme.spacingM + (tabBar.showTabs ? tabBar.ryokuTabHeight + Theme.spacingXS + Theme.spacingXXS : 0)
+                                 section: root.triggerSection
+                                 barPosition: root.effectiveBarPosition
+                                 Component.onCompleted: root.__mediaTabRef = this
+diff -ruN a/Widgets/DankTabBar.qml b/Widgets/DankTabBar.qml
+--- a/Widgets/DankTabBar.qml
++++ b/Widgets/DankTabBar.qml
+@@ -9,6 +9,7 @@
+     property int currentIndex: 0
+     property int spacing: Theme.spacingL
+     property int tabHeight: 56
++    property int iconSize: Theme.iconSize
+     property bool showIcons: true
+     property bool equalWidthTabs: true
+     property bool enableArrowNavigation: true
+@@ -119,38 +120,69 @@
+                 property bool isActive: !isAction && tabBar.currentIndex === index
+                 property bool hasIcon: tabBar.showIcons && modelData && modelData.icon && modelData.icon.length > 0
+                 property bool hasText: modelData && modelData.text && modelData.text.length > 0
++                // Ryoku: idle uses variant text; action stays secondary until pressed/hovered.
++                readonly property color idleColor: Theme.surfaceVariantText
++                readonly property color activeColor: Theme.primary
++                readonly property real contentOpacity: {
++                    if (tabItem.isActive)
++                        return 1;
++                    if (tabItem.isAction)
++                        return tabArea.containsMouse || tabArea.pressed ? 0.92 : 0.72;
++                    return 1;
++                }
+
+-                width: tabBar.equalWidthTabs ? (tabBar.width - tabBar.spacing * Math.max(0, tabRepeater.count - 1)) / Math.max(1, tabRepeater.count) : Math.max(contentCol.implicitWidth + Theme.spacingXL, 64)
++                width: tabBar.equalWidthTabs ? (tabBar.width - tabBar.spacing * Math.max(0, tabRepeater.count - 1)) / Math.max(1, tabRepeater.count) : Math.max(contentCol.implicitWidth + Theme.spacingL, 56)
+                 height: tabBar.tabHeight
+
+                 Column {
+                     id: contentCol
+                     anchors.centerIn: parent
+-                    spacing: Theme.spacingXS
++                    spacing: Theme.spacingXXS
++                    opacity: tabItem.contentOpacity
++
++                    Behavior on opacity {
++                        NumberAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
+
+                     DankIcon {
+                         name: modelData.icon || ""
+                         anchors.horizontalCenter: parent.horizontalCenter
+-                        size: Theme.iconSize
+-                        color: tabItem.isActive ? Theme.primary : Theme.surfaceText
++                        size: tabBar.iconSize
++                        color: tabItem.isActive ? tabItem.activeColor : tabItem.idleColor
+                         visible: hasIcon
++
++                        Behavior on color {
++                            ColorAnimation {
++                                duration: Theme.shortDuration
++                            }
++                        }
+                     }
+
+                     StyledText {
+                         text: modelData.text || ""
+                         anchors.horizontalCenter: parent.horizontalCenter
+-                        font.pixelSize: Theme.fontSizeMedium
+-                        color: tabItem.isActive ? Theme.primary : Theme.surfaceText
+-                        font.weight: Font.Medium
++                        font.pixelSize: Theme.fontSizeSmall
++                        color: tabItem.isActive ? tabItem.activeColor : tabItem.idleColor
++                        font.weight: tabItem.isActive ? Font.Medium : Font.Normal
+                         visible: hasText
++
++                        Behavior on color {
++                            ColorAnimation {
++                                duration: Theme.shortDuration
++                            }
++                        }
+                     }
+                 }
+
+                 Rectangle {
+                     id: stateLayer
+                     anchors.fill: parent
++                    anchors.margins: Theme.spacingXXS
+                     color: Theme.surfaceTint
+-                    opacity: tabArea.pressed ? 0.12 : (tabArea.containsMouse ? 0.08 : 0)
++                    opacity: tabArea.pressed ? 0.10 : (tabArea.containsMouse ? 0.06 : 0)
+                     visible: opacity > 0
+                     radius: Theme.cornerRadius
+                     Behavior on opacity {
+@@ -184,15 +216,13 @@
+         }
+     }
+
++    // Underline indicator — sits inside the bar (Ryoku compact), not below it.
+     Rectangle {
+         id: indicator
+-        y: parent.height + 7
+-        height: 3
+-        width: 60
+-        topLeftRadius: Theme.cornerRadius
+-        topRightRadius: Theme.cornerRadius
+-        bottomLeftRadius: 0
+-        bottomRightRadius: 0
++        y: parent.height - height
++        height: 2
++        width: 40
++        radius: 1
+         color: Theme.primary
+         visible: false
+
+@@ -216,11 +246,13 @@
+         }
+     }
+
++    // Soft hairline under the nav — separates chrome from content without heavy outline.
+     Rectangle {
+         width: parent.width
+         height: 1
+-        y: parent.height + 10
+-        color: Theme.outlineStrong
++        y: parent.height - 1
++        z: -1
++        color: Theme.withAlpha(Theme.outline, 0.35)
+     }
+
+     function updateIndicator() {
+@@ -232,12 +264,13 @@
+
+         const item = tabRepeater.itemAt(currentIndex);
+         if (!item || item.isAction) {
++            indicator.visible = false;
+             return;
+         }
+
+         const tabPos = item.mapToItem(tabBar, 0, 0);
+         const tabCenterX = tabPos.x + item.width / 2;
+-        const indicatorWidth = 60;
++        const indicatorWidth = Math.min(40, Math.max(28, item.width * 0.35));
+
+         if (tabPos.x < 10 && currentIndex > 0) {
+             Qt.callLater(updateIndicator);
+diff -ruN a/Modules/DankDash/Overview/Card.qml b/Modules/DankDash/Overview/Card.qml
+--- a/Modules/DankDash/Overview/Card.qml
++++ b/Modules/DankDash/Overview/Card.qml
+@@ -7,11 +7,12 @@
+     LayoutMirroring.enabled: I18n.isRtl
+     LayoutMirroring.childrenInherit: true
+
+-    property int pad: Theme.spacingM
++    // Ryoku 6B: denser pad; soft Material surface without heavy outline.
++    property int pad: Theme.spacingS
+
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
++    border.color: Theme.withAlpha(Theme.outline, 0.22)
+     border.width: 1
+
+     default property alias content: contentItem.data
+diff -ruN a/Modules/DankDash/OverviewTab.qml b/Modules/DankDash/OverviewTab.qml
+--- a/Modules/DankDash/OverviewTab.qml
++++ b/Modules/DankDash/OverviewTab.qml
+@@ -21,50 +21,59 @@
+         return calendarLoader.item ? calendarLoader.item.handleKeyEvent(event) : false;
+     }
+
++    // Ryoku 6B Overview composition — absolute geometry, Theme gaps only.
++    // PRIMARY: Clock (top-left), Calendar (bottom-left)
++    // SECONDARY: Weather (top-right), Media (bottom-right lower)
++    // UTILITY: UserInfo (top-right), SystemMonitor (bottom-right upper)
+     Item {
++        id: board
+         anchors.fill: parent
+-        // Clock - top left (narrower and shorter)
++
++        readonly property real gap: Theme.spacingS
++        readonly property real leftW: (width - gap) * 0.58
++        readonly property real rightW: (width - gap) * 0.42
++        readonly property real topH: 136
++        readonly property real bottomH: height - topH - gap
++        readonly property real rightX: leftW + gap
++        readonly property real bottomY: topH + gap
++        // Right column: monitor slightly shorter than media (utility vs secondary).
++        readonly property real monitorH: Math.floor((bottomH - gap) * 0.42)
++        readonly property real mediaH: bottomH - monitorH - gap
++
++        // PRIMARY — Clock
+         ClockCard {
+             x: 0
+             y: 0
+-            width: parent.width * 0.2 - Theme.spacingM * 2
+-            height: 180
++            width: board.leftW
++            height: board.topH
+         }
+
+-        // Weather - top middle-left (narrower)
++        // SECONDARY — Weather (compact); collapses when disabled
+         WeatherOverviewCard {
+-            x: SettingsData.weatherEnabled ? parent.width * 0.2 - Theme.spacingM : 0
++            x: board.rightX
+             y: 0
+-            width: SettingsData.weatherEnabled ? parent.width * 0.3 : 0
+-            height: 100
++            width: SettingsData.weatherEnabled ? Math.floor((board.rightW - board.gap) * 0.48) : 0
++            height: board.topH
+             visible: SettingsData.weatherEnabled
+
+             onClicked: root.switchToWeatherTab()
+         }
+
+-        // UserInfo - top middle-right (extend when weather disabled)
++        // UTILITY — UserInfo (fills right top when weather off)
+         UserInfoCard {
+-            x: SettingsData.weatherEnabled ? parent.width * 0.5 : parent.width * 0.2 - Theme.spacingM
++            x: SettingsData.weatherEnabled ? (board.rightX + Math.floor((board.rightW - board.gap) * 0.48) + board.gap) : board.rightX
+             y: 0
+-            width: SettingsData.weatherEnabled ? parent.width * 0.5 : parent.width * 0.8
+-            height: 100
+-        }
+-
+-        // SystemMonitor - middle left (narrow and shorter)
+-        SystemMonitorCard {
+-            x: 0
+-            y: 180 + Theme.spacingM
+-            width: parent.width * 0.2 - Theme.spacingM * 2
+-            height: 220
++            width: SettingsData.weatherEnabled ? Math.ceil((board.rightW - board.gap) * 0.52) : board.rightW
++            height: board.topH
+         }
+
+-        // Calendar - bottom middle; deferred so the grid stays off the emerge frame.
++        // PRIMARY — Calendar (async; deferred off emerge frame)
+         Loader {
+             id: calendarLoader
+-            x: parent.width * 0.2 - Theme.spacingM
+-            y: 100 + Theme.spacingM
+-            width: parent.width * 0.6
+-            height: 300
++            x: 0
++            y: board.bottomY
++            width: board.leftW
++            height: board.bottomH
+             asynchronous: true
+             sourceComponent: Component {
+                 CalendarOverviewCard {
+@@ -80,12 +89,20 @@
+             }
+         }
+
+-        // Media - bottom right (narrow and taller)
++        // UTILITY — SystemMonitor
++        SystemMonitorCard {
++            x: board.rightX
++            y: board.bottomY
++            width: board.rightW
++            height: board.monitorH
++        }
++
++        // SECONDARY — Media overview (click → Media tab)
+         MediaOverviewCard {
+-            x: parent.width * 0.8
+-            y: 100 + Theme.spacingM
+-            width: parent.width * 0.2
+-            height: 300
++            x: board.rightX
++            y: board.bottomY + board.monitorH + board.gap
++            width: board.rightW
++            height: board.mediaH
+
+             onClicked: root.switchToMediaTab()
+         }
+diff -ruN a/Modules/DankDash/Overview/CalendarOverviewCard.qml b/Modules/DankDash/Overview/CalendarOverviewCard.qml
+--- a/Modules/DankDash/Overview/CalendarOverviewCard.qml
++++ b/Modules/DankDash/Overview/CalendarOverviewCard.qml
+@@ -212,13 +212,14 @@
+
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
++    // Ryoku 6B: match Overview Card chrome (soft hairline).
++    border.color: Theme.withAlpha(Theme.outline, 0.22)
+     border.width: 1
+
+     Column {
+         anchors.fill: parent
+-        anchors.margins: Theme.spacingM
+-        spacing: Theme.spacingS
++        anchors.margins: Theme.spacingS
++        spacing: Theme.spacingXS
+
+         Rectangle {
+             id: dankWarning
+@@ -326,24 +327,24 @@
+
+         Row {
+             width: parent.width
+-            height: 28
++            height: 32
+             visible: !showEventDetails
+
+             DankActionButton {
+                 buttonSize: 28
+                 iconSize: 14
+                 iconName: "chevron_left"
+-                iconColor: Theme.primary
++                iconColor: Theme.surfaceVariantText
+                 onClicked: root.shiftMonth(-1)
+             }
+
+             StyledText {
+                 width: parent.width - 84
+-                height: 28
++                height: 32
+                 text: calendarGrid.displayDate.toLocaleDateString(I18n.locale(), "MMMM yyyy")
+                 font.pixelSize: Theme.fontSizeMedium
+                 color: Theme.surfaceText
+-                font.weight: Font.Medium
++                font.weight: Font.DemiBold
+                 horizontalAlignment: Text.AlignHCenter
+                 verticalAlignment: Text.AlignVCenter
+             }
+@@ -352,7 +353,7 @@
+                 buttonSize: 28
+                 iconSize: 14
+                 iconName: "today"
+-                iconColor: Theme.primary
++                iconColor: Theme.surfaceVariantText
+                 onClicked: root.goToToday()
+             }
+
+@@ -360,32 +361,32 @@
+                 buttonSize: 28
+                 iconSize: 14
+                 iconName: "chevron_right"
+-                iconColor: Theme.primary
++                iconColor: Theme.surfaceVariantText
+                 onClicked: root.shiftMonth(1)
+             }
+         }
+
+         Row {
+             width: parent.width
+-            height: parent.height - 28 - Theme.spacingS
++            height: parent.height - 32 - Theme.spacingXS
+             visible: !showEventDetails
+-            spacing: SettingsData.showWeekNumber ? Theme.spacingS : 0
++            spacing: SettingsData.showWeekNumber ? Theme.spacingXS : 0
+
+             Column {
+                 id: weekNumberColumn
+                 visible: SettingsData.showWeekNumber
+-                width: SettingsData.showWeekNumber ? 28 : 0
++                width: SettingsData.showWeekNumber ? 24 : 0
+                 height: parent.height
+-                spacing: Theme.spacingS
++                spacing: Theme.spacingXS
+
+                 Item {
+                     width: parent.width
+-                    height: 18
++                    height: 16
+                 }
+
+                 Grid {
+                     width: parent.width
+-                    height: parent.height - 18 - Theme.spacingS
++                    height: parent.height - 16 - Theme.spacingXS
+                     columns: 1
+                     rows: 6
+
+@@ -404,8 +405,8 @@
+                                     return root.getWeekNumber(rowDate);
+                                 }
+                                 font.pixelSize: Theme.fontSizeSmall
+-                                color: Theme.surfaceTextSecondary
+-                                font.weight: Font.Medium
++                                color: Theme.surfaceVariantText
++                                font.weight: Font.Normal
+                             }
+                         }
+                     }
+@@ -415,11 +416,11 @@
+             Column {
+                 width: SettingsData.showWeekNumber ? (parent.width - weekNumberColumn.width - parent.spacing) : parent.width
+                 height: parent.height
+-                spacing: Theme.spacingS
++                spacing: Theme.spacingXS
+
+                 Row {
+                     width: parent.width
+-                    height: 18
++                    height: 16
+
+                     Repeater {
+                         model: {
+@@ -434,15 +435,15 @@
+
+                         Rectangle {
+                             width: parent.width / 7
+-                            height: 18
++                            height: 16
+                             color: "transparent"
+
+                             StyledText {
+                                 anchors.centerIn: parent
+                                 text: modelData
+                                 font.pixelSize: Theme.fontSizeSmall
+-                                color: Theme.surfaceTextSecondary
+-                                font.weight: Font.Medium
++                                color: Theme.surfaceVariantText
++                                font.weight: Font.Normal
+                             }
+                         }
+                     }
+@@ -451,7 +452,7 @@
+                 Grid {
+                     id: calendarGrid
+                     width: parent.width
+-                    height: parent.height - 18 - Theme.spacingS
++                    height: parent.height - 16 - Theme.spacingXS
+                     columns: 7
+                     rows: 6
+
+@@ -480,27 +481,47 @@
+                             height: parent.height / 6
+                             color: "transparent"
+
++                            // Ryoku 6C: pill states — today = primary fill; selected = soft ring; hover = light layer.
+                             Rectangle {
++                                id: dayPill
+                                 anchors.centerIn: parent
+-                                width: Math.min(parent.width - 4, parent.height - 4, 32)
++                                width: Math.min(parent.width - 2, parent.height - 2, 34)
+                                 height: width
+-                                color: isToday ? Theme.primaryHover : dayArea.containsMouse ? Theme.primaryHoverLight : Theme.withAlpha(Theme.primaryHoverLight, 0)
+-                                radius: Theme.cornerRadius
+-                                border.color: (isSelected && !isToday) ? Theme.primary : Theme.withAlpha(Theme.primary, 0)
+-                                border.width: (isSelected && !isToday) ? 1 : 0
++                                radius: width / 2
++                                color: {
++                                    if (isToday)
++                                        return Theme.primary;
++                                    if (dayArea.containsMouse)
++                                        return Theme.primaryHoverLight;
++                                    return "transparent";
++                                }
++                                border.color: (isSelected && !isToday) ? Theme.primary : "transparent"
++                                border.width: (isSelected && !isToday) ? 1.5 : 0
++
++                                Behavior on color {
++                                    ColorAnimation {
++                                        duration: Theme.shortDuration
++                                    }
++                                }
+
+                                 StyledText {
+                                     anchors.centerIn: parent
+                                     text: dayDate.getDate()
+                                     font.pixelSize: Theme.fontSizeSmall
+-                                    color: isToday ? Theme.primary : isCurrentMonth ? Theme.surfaceText : Theme.surfaceVariantText
+-                                    font.weight: isToday ? Font.Medium : Font.Normal
++                                    color: {
++                                        if (isToday)
++                                            return Theme.primaryText;
++                                        if (!isCurrentMonth)
++                                            return Theme.withAlpha(Theme.surfaceVariantText, 0.55);
++                                        return Theme.surfaceText;
++                                    }
++                                    font.weight: (isToday || isSelected) ? Font.Medium : Font.Normal
+                                 }
+
+                                 Row {
+                                     anchors.bottom: parent.bottom
+                                     anchors.horizontalCenter: parent.horizontalCenter
+-                                    anchors.bottomMargin: 3
++                                    anchors.bottomMargin: 2
+                                     spacing: Theme.spacingXXS
+                                     visible: CalendarService && CalendarService.calendarAvailable && CalendarService.hasEventsForDate(dayDate)
+
+@@ -517,11 +538,11 @@
+                                         }
+
+                                         Rectangle {
+-                                            width: 5
+-                                            height: 5
+-                                            radius: 2.5
+-                                            color: modelData === "primary" ? (isToday ? Qt.lighter(Theme.primary, 1.3) : Theme.primary) : modelData
+-                                            opacity: isToday ? 0.95 : 0.8
++                                            width: 4
++                                            height: 4
++                                            radius: 2
++                                            color: modelData === "primary" ? (isToday ? Theme.primaryText : Theme.primary) : modelData
++                                            opacity: isToday ? 0.9 : 0.85
+                                         }
+                                     }
+                                 }
+diff -ruN a/Modules/DankDash/Overview/ClockCard.qml b/Modules/DankDash/Overview/ClockCard.qml
+--- a/Modules/DankDash/Overview/ClockCard.qml
++++ b/Modules/DankDash/Overview/ClockCard.qml
+@@ -4,107 +4,69 @@
+ import qs.Services
+ import qs.Widgets
+
++// Ryoku 6C — Clock as Overview PRIMARY: single-line time + secondary date.
+ Card {
+     id: root
+
+-    Column {
+-        anchors.centerIn: parent
+-        spacing: 0
++    readonly property date now: systemClock.date
+
+-        Column {
+-            spacing: -8
+-            anchors.horizontalCenter: parent.horizontalCenter
+-
+-            Row {
+-                spacing: 0
+-                anchors.horizontalCenter: parent.horizontalCenter
+-                LayoutMirroring.enabled: false
+-
+-                StyledText {
+-                    text: {
+-                        if (SettingsData.use24HourClock) {
+-                            return String(systemClock?.date?.getHours()).padStart(2, '0').charAt(0);
+-                        } else {
+-                            const hours = systemClock?.date?.getHours();
+-                            const display = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+-                            return String(display).padStart(2, '0').charAt(0);
+-                        }
+-                    }
+-                    font.pixelSize: 48
+-                    color: Theme.primary
+-                    font.weight: Font.Medium
+-                    width: 28
+-                    horizontalAlignment: Text.AlignHCenter
+-                }
+-
+-                StyledText {
+-                    text: {
+-                        if (SettingsData.use24HourClock) {
+-                            return String(systemClock?.date?.getHours()).padStart(2, '0').charAt(1);
+-                        } else {
+-                            const hours = systemClock?.date?.getHours();
+-                            const display = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+-                            return String(display).padStart(2, '0').charAt(1);
+-                        }
+-                    }
+-                    font.pixelSize: 48
+-                    color: Theme.primary
+-                    font.weight: Font.Medium
+-                    width: 28
+-                    horizontalAlignment: Text.AlignHCenter
+-                }
+-            }
+-
+-            Row {
+-                spacing: 0
+-                anchors.horizontalCenter: parent.horizontalCenter
+-                LayoutMirroring.enabled: false
+-
+-                StyledText {
+-                    text: String(systemClock?.date?.getMinutes()).padStart(2, '0').charAt(0)
+-                    font.pixelSize: 48
+-                    color: Theme.primary
+-                    font.weight: Font.Medium
+-                    width: 28
+-                    horizontalAlignment: Text.AlignHCenter
+-                }
+-
+-                StyledText {
+-                    text: String(systemClock?.date?.getMinutes()).padStart(2, '0').charAt(1)
+-                    font.pixelSize: 48
+-                    color: Theme.primary
+-                    font.weight: Font.Medium
+-                    width: 28
+-                    horizontalAlignment: Text.AlignHCenter
+-                }
+-            }
++    readonly property string timeText: {
++        const d = root.now;
++        if (!d)
++            return "--:--";
++        if (SettingsData.use24HourClock) {
++            const h = String(d.getHours()).padStart(2, "0");
++            const m = String(d.getMinutes()).padStart(2, "0");
++            if (SettingsData.showSeconds)
++                return h + ":" + m + ":" + String(d.getSeconds()).padStart(2, "0");
++            return h + ":" + m;
+         }
++        const hours = d.getHours();
++        const display = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
++        const h = String(display).padStart(2, "0");
++        const m = String(d.getMinutes()).padStart(2, "0");
++        const suffix = hours >= 12 ? " PM" : " AM";
++        if (SettingsData.showSeconds)
++            return h + ":" + m + ":" + String(d.getSeconds()).padStart(2, "0") + suffix;
++        return h + ":" + m + suffix;
++    }
+
+-        Row {
+-            visible: SettingsData.showSeconds
+-            spacing: 0
+-            anchors.horizontalCenter: parent.horizontalCenter
+-
+-            StyledText {
+-                text: String(systemClock?.date?.getSeconds()).padStart(2, '0')
+-                font.pixelSize: 24
+-                color: Theme.withAlpha(Theme.primary, 0.7)
+-                font.weight: Font.Medium
+-                horizontalAlignment: Text.AlignHCenter
+-            }
+-        }
++    // Locale-aware weekday + day + month (e.g. "Wednesday, 23 Sep").
++    readonly property string dateText: {
++        const d = root.now;
++        if (!d)
++            return "";
++        return d.toLocaleDateString(I18n.locale(), "dddd, d MMM");
++    }
+
+-        Item {
+-            width: 1
+-            height: Theme.spacingXS
+-            anchors.horizontalCenter: parent.horizontalCenter
++    Column {
++        anchors.left: parent.left
++        anchors.right: parent.right
++        anchors.verticalCenter: parent.verticalCenter
++        spacing: Theme.spacingXS
++
++        StyledText {
++            width: parent.width
++            text: root.timeText
++            font.pixelSize: SettingsData.showSeconds ? Math.round(Theme.fontSizeXLarge * 2.1) : Math.round(Theme.fontSizeXLarge * 2.4)
++            font.weight: Font.Medium
++            color: Theme.surfaceText
++            elide: Text.ElideRight
++            maximumLineCount: 1
++            wrapMode: Text.NoWrap
++            horizontalAlignment: Text.AlignLeft
+         }
+
+         StyledText {
+-            text: systemClock?.date?.toLocaleDateString(I18n.locale(), "MMM dd")
+-            font.pixelSize: Theme.fontSizeSmall
+-            color: Theme.surfaceTextMedium
+-            anchors.horizontalCenter: parent.horizontalCenter
++            width: parent.width
++            text: root.dateText
++            font.pixelSize: Theme.fontSizeMedium
++            font.weight: Font.Normal
++            color: Theme.surfaceVariantText
++            elide: Text.ElideRight
++            maximumLineCount: 1
++            wrapMode: Text.NoWrap
++            horizontalAlignment: Text.AlignLeft
+         }
+     }
+
+diff -ruN a/Modules/DankDash/MediaPlayerTab.qml b/Modules/DankDash/MediaPlayerTab.qml
+--- a/Modules/DankDash/MediaPlayerTab.qml
++++ b/Modules/DankDash/MediaPlayerTab.qml
+@@ -25,6 +25,7 @@
+     property string section: ""
+     property int barPosition: SettingsData.Position.Top
+
++    // Respects SettingsData.mediaUseAlbumArtAccent via MediaAccentService (falls back to Theme.primary).
+     readonly property color accent: MediaAccentService.accent
+     readonly property color onAccent: MediaAccentService.onAccent
+     readonly property color accentHover: MediaAccentService.accentHover
+@@ -40,6 +41,7 @@
+     property bool volumeExpanded: false
+     property bool devicesExpanded: false
+     property bool playersExpanded: false
++    property real previousVolume: 0.0
+
+     function resetDropdownStates() {
+         volumeExpanded = false;
+@@ -63,6 +65,8 @@
+     readonly property bool volumeAvailable: !!((activePlayer && activePlayer.volumeSupported && !__isChromeBrowser) || (AudioService.sink && AudioService.sink.audio))
+     readonly property bool usePlayerVolume: activePlayer && activePlayer.volumeSupported && !__isChromeBrowser
+     readonly property real currentVolume: usePlayerVolume ? activePlayer.volume : (AudioService.sink?.audio?.volume ?? 0)
++    readonly property int volumePercent: Math.round(currentVolume * 100)
++    readonly property int volumeMaximum: usePlayerVolume ? 100 : AudioService.sinkMaxVolume
+
+     property bool isSwitching: false
+
+@@ -108,7 +112,7 @@
+     }
+
+     implicitWidth: SettingsData.showWeekNumber ? 736 : 700
+-    implicitHeight: playerContent.height + playerContent.anchors.topMargin * 2
++    implicitHeight: playerContent.height + Theme.spacingM * 2
+
+     Connections {
+         target: activePlayer
+@@ -183,6 +187,31 @@
+         }
+     }
+
++    function setVolumePercent(newVolume) {
++        if (!volumeAvailable)
++            return;
++        const maxVol = usePlayerVolume ? 100 : AudioService.sinkMaxVolume;
++        const clamped = Math.min(maxVol, Math.max(0, newVolume));
++        SessionData.suppressOSDTemporarily();
++        if (usePlayerVolume) {
++            activePlayer.volume = clamped / 100;
++        } else if (AudioService.sink?.audio) {
++            AudioService.sink.audio.volume = clamped / 100;
++        }
++    }
++
++    function dropdownAnchorFor(item) {
++        const buttonsOnRight = !isRightEdge;
++        const local = item.mapToItem(root, item.width / 2, item.height / 2);
++        const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
++        const screenY = popoutY + contentOffsetY + local.y;
++        return {
++            buttonsOnRight: buttonsOnRight,
++            screenX: screenX,
++            screenY: screenY
++        };
++    }
++
+     function triggerVolumeDropdown() {
+         if (!volumeAvailable)
+             return;
+@@ -190,11 +219,22 @@
+             return;
+         hideDropdowns();
+         volumeExpanded = true;
+-        const buttonsOnRight = !isRightEdge;
+-        const btnY = volumeButton.y + volumeButton.height / 2;
+-        const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
+-        const screenY = popoutY + contentOffsetY + btnY;
+-        showVolumeDropdown(Qt.point(screenX, screenY), targetScreen, buttonsOnRight, activePlayer, allPlayers);
++        const anchor = dropdownAnchorFor(volumeButton);
++        showVolumeDropdown(Qt.point(anchor.screenX, anchor.screenY), targetScreen, anchor.buttonsOnRight, activePlayer, allPlayers);
++    }
++
++    function triggerPlayersDropdown() {
++        hideDropdowns();
++        playersExpanded = true;
++        const anchor = dropdownAnchorFor(playerSelectorButton);
++        showPlayersDropdown(Qt.point(anchor.screenX, anchor.screenY), targetScreen, anchor.buttonsOnRight, activePlayer, allPlayers);
++    }
++
++    function triggerDevicesDropdown() {
++        hideDropdowns();
++        devicesExpanded = true;
++        const anchor = dropdownAnchorFor(audioDevicesButton);
++        showAudioDevicesDropdown(Qt.point(anchor.screenX, anchor.screenY), targetScreen, anchor.buttonsOnRight);
+     }
+
+     function toggleMute() {
+@@ -202,14 +242,14 @@
+             return;
+         SessionData.suppressOSDTemporarily();
+         if (currentVolume > 0) {
+-            volumeButton.previousVolume = currentVolume;
++            previousVolume = currentVolume;
+             if (usePlayerVolume) {
+                 activePlayer.volume = 0;
+             } else if (AudioService.sink?.audio) {
+                 AudioService.sink.audio.volume = 0;
+             }
+         } else {
+-            const restoreVolume = volumeButton.previousVolume > 0 ? volumeButton.previousVolume : 0.5;
++            const restoreVolume = previousVolume > 0 ? previousVolume : 0.5;
+             if (usePlayerVolume) {
+                 activePlayer.volume = restoreVolume;
+             } else if (AudioService.sink?.audio) {
+@@ -288,11 +328,11 @@
+         onTriggered: activePlayer?.positionChanged()
+     }
+
++    // Ryoku 6D: keep stock MultiEffect art blur, but dial intensity down for readability.
+     Item {
+         id: bgContainer
+         anchors.fill: parent
+
+-        // Fall back to the live mpris url so the background is never blank.
+         readonly property string curArt: {
+             const resolved = TrackArtService.resolvedArtUrl;
+             if (resolved !== "")
+@@ -305,7 +345,6 @@
+             const m = p.metadata;
+             return m && m["mpris:artUrl"] ? m["mpris:artUrl"].toString() : "";
+         }
+-        // Two layers crossfade: new art loads into the hidden one and fades in once decoded.
+         property bool _showA: true
+         visible: layerA.ready || layerB.ready
+
+@@ -320,7 +359,6 @@
+             if (front.art == curArt)
+                 return;
+             if (back.art == curArt) {
+-                // Already decoded in the hidden layer; flip once ready (else promote() does).
+                 if (back.ready)
+                     _showA = !_showA;
+                 return;
+@@ -328,8 +366,6 @@
+             back.art = curArt;
+         }
+
+-        // Flip to the hidden layer only when it holds the current art, ignoring stale
+-        // Ready re-emits (e.g. popout re-expose) that would otherwise ping-pong _showA.
+         function promote(layer) {
+             const back = _showA ? layerB : layerA;
+             if (layer !== back)
+@@ -356,7 +392,7 @@
+             anchors.fill: parent
+             radius: Theme.cornerRadius
+             color: Theme.surface
+-            opacity: 0.3
++            opacity: 0.62
+         }
+     }
+
+@@ -371,11 +407,11 @@
+         radius: Theme.cornerRadius
+         color: "transparent"
+         antialiasing: true
+-        opacity: front ? 0.7 : 0
++        opacity: front ? 0.32 : 0
+
+         Behavior on opacity {
+             NumberAnimation {
+-                duration: 350
++                duration: Theme.mediumDuration
+                 easing.type: Easing.InOutQuad
+             }
+         }
+@@ -402,199 +438,184 @@
+             source: layerImg
+             blurEnabled: true
+             blurMax: 64
+-            blur: 0.8
+-            saturation: -0.2
+-            brightness: -0.25
++            blur: 0.45
++            saturation: -0.25
++            brightness: -0.3
+         }
+     }
+
+     Column {
+         anchors.centerIn: parent
+-        spacing: Theme.spacingM
++        spacing: Theme.spacingS
+         visible: showNoPlayerNow
+
+         DankIcon {
+             name: "music_note"
+-            size: Theme.iconSize * 3
+-            color: Theme.surfaceTextSecondary
++            size: Theme.iconSize * 2
++            color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+
+         StyledText {
+             text: I18n.tr("No Active Players")
+-            font.pixelSize: Theme.fontSizeLarge
+-            color: Theme.surfaceTextMedium
++            font.pixelSize: Theme.fontSizeMedium
++            color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+     }
+
++    // Ryoku 6D — Now Playing: artwork left, metadata + controls right.
+     Item {
+         anchors.fill: parent
++        anchors.margins: Theme.spacingM
+         clip: false
+         visible: !_noneAvailable && (!showNoPlayerNow)
+-        ColumnLayout {
++
++        Row {
+             id: playerContent
+-            width: 484
+-            height: 370
+-            spacing: Theme.spacingXS
+-            anchors.top: parent.top
+-            anchors.topMargin: 20
+-            anchors.horizontalCenter: parent.horizontalCenter
++            width: parent.width
++            spacing: Theme.spacingL
++            anchors.verticalCenter: parent.verticalCenter
+
+             Item {
+-                width: parent.width
+-                height: 200
+-                clip: false
++                width: 210
++                height: 210
++                anchors.verticalCenter: parent.verticalCenter
+
+                 DankAlbumArt {
+-                    width: Math.min(parent.width * 0.8, parent.height * 0.9)
+-                    height: width
++                    width: parent.width
++                    height: parent.height
+                     anchors.centerIn: parent
+                     activePlayer: root.activePlayer
+                 }
+             }
+
+-            // Song Info and Controls Section
+-            Item {
+-                width: parent.width
+-                Layout.fillHeight: true
++            Column {
++                width: parent.width - 210 - Theme.spacingL
++                spacing: Theme.spacingS
++                anchors.verticalCenter: parent.verticalCenter
+
+                 Column {
+-                    id: songInfo
+                     width: parent.width
+-                    spacing: Theme.spacingXS
+-                    anchors.top: parent.top
+-                    anchors.horizontalCenter: parent.horizontalCenter
++                    spacing: Theme.spacingXXS
+
+                     StyledText {
++                        width: parent.width
+                         text: MprisController.stableTitle || I18n.tr("Unknown Track")
+-                        font.pixelSize: Theme.fontSizeLarge
+-                        font.weight: Font.Bold
++                        font.pixelSize: Theme.fontSizeXLarge
++                        font.weight: Font.DemiBold
+                         color: Theme.surfaceText
+-                        width: parent.width
+-                        horizontalAlignment: Text.AlignHCenter
+                         elide: Text.ElideRight
+                         wrapMode: Text.WordWrap
+                         maximumLineCount: 2
+                     }
+
+                     StyledText {
++                        width: parent.width
+                         text: MprisController.stableArtist || I18n.tr("Unknown Artist")
+                         font.pixelSize: Theme.fontSizeMedium
+-                        color: Theme.surfaceTextMedium
+-                        width: parent.width
+-                        horizontalAlignment: Text.AlignHCenter
++                        font.weight: Font.Normal
++                        color: Theme.surfaceVariantText
+                         elide: Text.ElideRight
+-                        wrapMode: Text.WordWrap
+                         maximumLineCount: 1
++                        wrapMode: Text.NoWrap
+                     }
+
++                    // Reserve album line so late metadata does not shift seekbar.
+                     StyledText {
++                        width: parent.width
++                        height: Math.max(implicitHeight, Theme.fontSizeSmall * 1.4)
+                         text: activePlayer?.trackAlbum || ""
+                         font.pixelSize: Theme.fontSizeSmall
+-                        color: Theme.surfaceTextSecondary
+-                        width: parent.width
+-                        horizontalAlignment: Text.AlignHCenter
++                        color: Theme.surfaceVariantText
++                        opacity: 0.85
+                         elide: Text.ElideRight
+-                        wrapMode: Text.WordWrap
+                         maximumLineCount: 1
+-                        // Reserve the line so late album metadata doesn't shift the seekbar.
+-                        height: Math.max(implicitHeight, Theme.fontSizeSmall * 1.4)
++                        wrapMode: Text.NoWrap
+                     }
+                 }
+
+-                Item {
+-                    id: seekbarContainer
++                Column {
+                     width: parent.width
+-                    anchors.top: songInfo.bottom
+-                    anchors.bottom: playbackControls.top
+-                    anchors.horizontalCenter: parent.horizontalCenter
++                    spacing: Theme.spacingXXS
+
+-                    Column {
++                    DankSeekbar {
+                         width: parent.width
+-                        spacing: Theme.spacingXXS
+-                        anchors.horizontalCenter: parent.horizontalCenter
+-                        anchors.verticalCenter: parent.verticalCenter
+-                        anchors.verticalCenterOffset: parent.height * 0.2
+-
+-                        DankSeekbar {
+-                            width: parent.width * 0.8
+-                            height: 20
+-                            anchors.horizontalCenter: parent.horizontalCenter
+-                            activePlayer: root.activePlayer
+-                            isSeeking: root.isSeeking
+-                            onIsSeekingChanged: root.isSeeking = isSeeking
+-                        }
++                        height: 20
++                        activePlayer: root.activePlayer
++                        isSeeking: root.isSeeking
++                        onIsSeekingChanged: root.isSeeking = isSeeking
++                    }
+
+-                        Item {
+-                            width: parent.width * 0.8
+-                            height: 16
+-                            anchors.horizontalCenter: parent.horizontalCenter
++                    Item {
++                        width: parent.width
++                        height: 16
+
+-                            StyledText {
+-                                anchors.left: parent.left
+-                                anchors.verticalCenter: parent.verticalCenter
+-                                text: {
+-                                    if (!activePlayer)
+-                                        return "0:00";
+-                                    const rawPos = Math.max(0, activePlayer.position || 0);
+-                                    const pos = stableLength ? rawPos % Math.max(1, stableLength) : rawPos;
+-                                    const minutes = Math.floor(pos / 60);
+-                                    const seconds = Math.floor(pos % 60);
+-                                    const timeStr = minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+-                                    return timeStr;
+-                                }
+-                                font.pixelSize: Theme.fontSizeSmall
+-                                color: Theme.surfaceVariantText
++                        StyledText {
++                            anchors.left: parent.left
++                            anchors.verticalCenter: parent.verticalCenter
++                            text: {
++                                if (!activePlayer)
++                                    return "0:00";
++                                const rawPos = Math.max(0, activePlayer.position || 0);
++                                const pos = stableLength ? rawPos % Math.max(1, stableLength) : rawPos;
++                                const minutes = Math.floor(pos / 60);
++                                const seconds = Math.floor(pos % 60);
++                                return minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+                             }
++                            font.pixelSize: Theme.fontSizeSmall
++                            color: Theme.surfaceVariantText
++                        }
+
+-                            StyledText {
+-                                anchors.right: parent.right
+-                                anchors.verticalCenter: parent.verticalCenter
+-                                text: {
+-                                    if (!activePlayer || stableLength <= 0)
+-                                        return "--:--";
+-                                    const dur = stableLength;
+-                                    const minutes = Math.floor(dur / 60);
+-                                    const seconds = Math.floor(dur % 60);
+-                                    return minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+-                                }
+-                                font.pixelSize: Theme.fontSizeSmall
+-                                color: Theme.surfaceVariantText
++                        StyledText {
++                            anchors.right: parent.right
++                            anchors.verticalCenter: parent.verticalCenter
++                            text: {
++                                if (!activePlayer || stableLength <= 0)
++                                    return "--:--";
++                                const dur = stableLength;
++                                const minutes = Math.floor(dur / 60);
++                                const seconds = Math.floor(dur % 60);
++                                return minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+                             }
++                            font.pixelSize: Theme.fontSizeSmall
++                            color: Theme.surfaceVariantText
+                         }
+                     }
+                 }
+
+                 Item {
+-                    id: playbackControls
+                     width: parent.width
+-                    height: 50
+-                    anchors.bottom: parent.bottom
++                    height: 56
+
+                     Row {
+                         anchors.centerIn: parent
+-                        spacing: Theme.spacingM
++                        spacing: Theme.spacingS
+                         height: parent.height
+
+                         Item {
+-                            width: 50
+-                            height: 50
++                            width: 40
++                            height: 40
+                             anchors.verticalCenter: parent.verticalCenter
+                             visible: activePlayer && activePlayer.shuffleSupported
++                            opacity: (activePlayer && activePlayer.canControl && activePlayer.shuffleSupported) ? 1 : 0.4
+
+                             Rectangle {
+-                                width: 40
+-                                height: 40
+-                                radius: 20
+-                                anchors.centerIn: parent
+-                                color: shuffleArea.containsMouse ? root.accentHover : Theme.withAlpha(root.accent, 0)
++                                anchors.fill: parent
++                                radius: width / 2
++                                color: shuffleArea.containsMouse ? Theme.primaryHoverLight : "transparent"
++
++                                Behavior on color {
++                                    ColorAnimation {
++                                        duration: Theme.shortDuration
++                                    }
++                                }
+
+                                 DankIcon {
+                                     anchors.centerIn: parent
+                                     name: "shuffle"
+-                                    size: 20
+-                                    color: activePlayer && activePlayer.shuffle ? root.accent : Theme.surfaceText
++                                    size: 18
++                                    color: activePlayer && activePlayer.shuffle ? root.accent : Theme.surfaceVariantText
+                                 }
+
+                                 MouseArea {
+@@ -612,16 +633,21 @@
+                         }
+
+                         Item {
+-                            width: 50
+-                            height: 50
++                            width: 44
++                            height: 44
+                             anchors.verticalCenter: parent.verticalCenter
++                            opacity: (activePlayer && activePlayer.canGoPrevious) ? 1 : 0.4
+
+                             Rectangle {
+-                                width: 40
+-                                height: 40
+-                                radius: 20
+-                                anchors.centerIn: parent
+-                                color: prevBtnArea.containsMouse ? Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency) : Theme.withAlpha(Theme.surfaceContainerHigh, 0)
++                                anchors.fill: parent
++                                radius: width / 2
++                                color: prevBtnArea.containsMouse ? Theme.primaryHoverLight : "transparent"
++
++                                Behavior on color {
++                                    ColorAnimation {
++                                        duration: Theme.shortDuration
++                                    }
++                                }
+
+                                 DankIcon {
+                                     anchors.centerIn: parent
+@@ -641,15 +667,13 @@
+                         }
+
+                         Item {
+-                            width: 50
+-                            height: 50
++                            width: 56
++                            height: 56
+                             anchors.verticalCenter: parent.verticalCenter
+
+                             Rectangle {
+-                                width: 50
+-                                height: 50
+-                                radius: 25
+-                                anchors.centerIn: parent
++                                anchors.fill: parent
++                                radius: width / 2
+                                 color: root.accent
+
+                                 DankIcon {
+@@ -667,31 +691,25 @@
+                                     cornerRadius: parent.radius
+                                     onClicked: root.activePlayer.togglePlaying()
+                                 }
+-
+-                                ElevationShadow {
+-                                    anchors.fill: parent
+-                                    z: -1
+-                                    level: Theme.elevationLevel1
+-                                    fallbackOffset: 1
+-                                    targetRadius: parent.radius
+-                                    targetColor: parent.color
+-                                    shadowOpacity: Theme.elevationLevel1 && Theme.elevationLevel1.alpha !== undefined ? Theme.elevationLevel1.alpha : 0.2
+-                                    shadowEnabled: Theme.elevationEnabled
+-                                }
+                             }
+                         }
+
+                         Item {
+-                            width: 50
+-                            height: 50
++                            width: 44
++                            height: 44
+                             anchors.verticalCenter: parent.verticalCenter
++                            opacity: (activePlayer && activePlayer.canGoNext) ? 1 : 0.4
+
+                             Rectangle {
+-                                width: 40
+-                                height: 40
+-                                radius: 20
+-                                anchors.centerIn: parent
+-                                color: nextBtnArea.containsMouse ? Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency) : Theme.withAlpha(Theme.surfaceContainerHigh, 0)
++                                anchors.fill: parent
++                                radius: width / 2
++                                color: nextBtnArea.containsMouse ? Theme.primaryHoverLight : "transparent"
++
++                                Behavior on color {
++                                    ColorAnimation {
++                                        duration: Theme.shortDuration
++                                    }
++                                }
+
+                                 DankIcon {
+                                     anchors.centerIn: parent
+@@ -711,17 +729,22 @@
+                         }
+
+                         Item {
+-                            width: 50
+-                            height: 50
++                            width: 40
++                            height: 40
+                             anchors.verticalCenter: parent.verticalCenter
+                             visible: activePlayer && activePlayer.loopSupported
++                            opacity: (activePlayer && activePlayer.canControl && activePlayer.loopSupported) ? 1 : 0.4
+
+                             Rectangle {
+-                                width: 40
+-                                height: 40
+-                                radius: 20
+-                                anchors.centerIn: parent
+-                                color: repeatArea.containsMouse ? root.accentHover : Theme.withAlpha(root.accent, 0)
++                                anchors.fill: parent
++                                radius: width / 2
++                                color: repeatArea.containsMouse ? Theme.primaryHoverLight : "transparent"
++
++                                Behavior on color {
++                                    ColorAnimation {
++                                        duration: Theme.shortDuration
++                                    }
++                                }
+
+                                 DankIcon {
+                                     anchors.centerIn: parent
+@@ -737,8 +760,8 @@
+                                             return "repeat";
+                                         }
+                                     }
+-                                    size: 20
+-                                    color: activePlayer && activePlayer.loopState !== MprisLoopState.None ? root.accent : Theme.surfaceText
++                                    size: 18
++                                    color: activePlayer && activePlayer.loopState !== MprisLoopState.None ? root.accent : Theme.surfaceVariantText
+                                 }
+
+                                 MouseArea {
+@@ -766,220 +789,256 @@
+                         }
+                     }
+                 }
+-            }
+-        }
+-    }
+
+-    Rectangle {
+-        id: playerSelectorButton
+-        width: 40
+-        height: 40
+-        radius: 20
+-        x: isRightEdge ? Theme.spacingM : parent.width - 40 - Theme.spacingM
+-        y: 185
+-        color: playerSelectorArea.containsMouse || playersExpanded ? root.accentPressed : Theme.withAlpha(root.accentPressed, 0)
+-        border.color: Theme.outlineStrong
+-        border.width: 1
+-        z: 100
+-        visible: (allPlayers?.length || 0) >= 1
++                Row {
++                    width: parent.width
++                    spacing: Theme.spacingS
++                    height: 40
+
+-        DankIcon {
+-            anchors.centerIn: parent
+-            name: "assistant_device"
+-            size: 18
+-            color: Theme.surfaceText
+-        }
++                    Item {
++                        id: volumeButton
++                        width: 32
++                        height: 32
++                        anchors.verticalCenter: parent.verticalCenter
++                        opacity: volumeAvailable ? 1 : 0.45
+
+-        MouseArea {
+-            id: playerSelectorArea
+-            anchors.fill: parent
+-            hoverEnabled: true
+-            cursorShape: Qt.PointingHandCursor
+-            onClicked: {
+-                if (playersExpanded) {
+-                    const players = (root.allPlayers || []).filter(p => p && !MprisController.isIdle(p));
+-                    if (players.length > 1) {
+-                        let currentIndex = -1;
+-                        for (let i = 0; i < players.length; i++) {
+-                            if (players[i] === root.activePlayer) {
+-                                currentIndex = i;
+-                                break;
++                        Rectangle {
++                            anchors.fill: parent
++                            radius: width / 2
++                            color: (volumeButtonArea.containsMouse && volumeAvailable) || volumeExpanded ? Theme.primaryHoverLight : "transparent"
++
++                            DankIcon {
++                                anchors.centerIn: parent
++                                name: getVolumeIcon()
++                                size: 18
++                                color: volumeAvailable && currentVolume > 0 ? Theme.surfaceText : Theme.surfaceVariantText
++                            }
++
++                            MouseArea {
++                                id: volumeButtonArea
++                                anchors.fill: parent
++                                hoverEnabled: true
++                                cursorShape: volumeAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor
++                                enabled: volumeAvailable
++                                onEntered: {
++                                    dropdownButtonEntered();
++                                    if (volumeExpanded)
++                                        return;
++                                    triggerVolumeDropdown();
++                                }
++                                onExited: {
++                                    if (volumeExpanded)
++                                        dropdownButtonExited();
++                                }
++                                onClicked: toggleMute()
+                             }
+                         }
+-                        const nextIndex = (currentIndex + 1) % players.length;
+-                        MprisController.setActivePlayer(players[nextIndex]);
+                     }
+-                    return;
+-                }
+-                hideDropdowns();
+-                playersExpanded = true;
+-                const buttonsOnRight = !isRightEdge;
+-                const btnY = playerSelectorButton.y + playerSelectorButton.height / 2;
+-                const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
+-                const screenY = popoutY + contentOffsetY + btnY;
+-                showPlayersDropdown(Qt.point(screenX, screenY), targetScreen, buttonsOnRight, activePlayer, allPlayers);
+-            }
+-            onEntered: {
+-                dropdownButtonEntered();
+-                if (playersExpanded)
+-                    return;
+-                hideDropdowns();
+-                playersExpanded = true;
+-                const buttonsOnRight = !isRightEdge;
+-                const btnY = playerSelectorButton.y + playerSelectorButton.height / 2;
+-                const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
+-                const screenY = popoutY + contentOffsetY + btnY;
+-                showPlayersDropdown(Qt.point(screenX, screenY), targetScreen, buttonsOnRight, activePlayer, allPlayers);
+-            }
+-            onExited: {
+-                if (playersExpanded)
+-                    dropdownButtonExited();
+-            }
+-        }
+-    }
+
+-    Rectangle {
+-        id: volumeButton
+-        width: 40
+-        height: 40
+-        radius: 20
+-        x: isRightEdge ? Theme.spacingM : parent.width - 40 - Theme.spacingM
+-        y: 130
+-        color: volumeButtonArea.containsMouse && volumeAvailable || volumeExpanded ? root.accentPressed : Theme.withAlpha(root.accentPressed, 0)
+-        border.color: volumeAvailable ? Theme.outlineStrong : Theme.outlineMedium
+-        border.width: 1
+-        z: 101
+-        enabled: volumeAvailable
++                    DankSlider {
++                        width: parent.width - volumeButton.width - Theme.spacingS
++                        anchors.verticalCenter: parent.verticalCenter
++                        enabled: volumeAvailable
++                        value: Math.min(volumeMaximum, volumePercent)
++                        minimum: 0
++                        maximum: volumeMaximum
++                        showValue: false
++                        leftIcon: ""
++                        rightIcon: ""
++                        onSliderValueChanged: newValue => root.setVolumePercent(newValue)
++                    }
++                }
+
+-        property real previousVolume: 0.0
++                Row {
++                    width: parent.width
++                    spacing: Theme.spacingS
++                    height: 36
+
+-        DankIcon {
+-            anchors.centerIn: parent
+-            name: getVolumeIcon()
+-            size: 18
+-            color: volumeAvailable && currentVolume > 0 ? root.accent : Theme.withAlpha(Theme.surfaceText, volumeAvailable ? 1.0 : 0.5)
+-        }
++                    Rectangle {
++                        id: playerSelectorButton
++                        width: Math.min(220, (parent.width - Theme.spacingS) / 2)
++                        height: 36
++                        radius: Theme.cornerRadius
++                        color: playerSelectorArea.containsMouse || playersExpanded ? Theme.primaryHoverLight : Theme.nestedSurface
++                        visible: (allPlayers?.length || 0) >= 1
++                        border.width: 0
++
++                        Behavior on color {
++                            ColorAnimation {
++                                duration: Theme.shortDuration
++                            }
++                        }
+
+-        MouseArea {
+-            id: volumeButtonArea
+-            anchors.fill: parent
+-            hoverEnabled: true
+-            cursorShape: Qt.PointingHandCursor
+-            onEntered: {
+-                dropdownButtonEntered();
+-                if (volumeExpanded)
+-                    return;
+-                hideDropdowns();
+-                volumeExpanded = true;
+-                const buttonsOnRight = !isRightEdge;
+-                const btnY = volumeButton.y + volumeButton.height / 2;
+-                const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
+-                const screenY = popoutY + contentOffsetY + btnY;
+-                showVolumeDropdown(Qt.point(screenX, screenY), targetScreen, buttonsOnRight, activePlayer, allPlayers);
+-            }
+-            onExited: {
+-                if (volumeExpanded)
+-                    dropdownButtonExited();
+-            }
+-            onClicked: {
+-                toggleMute();
+-            }
+-            property real wheelAccum: 0
+-            onWheel: wheelEvent => {
+-                wheelEvent.accepted = true;
+-                wheelAccum += wheelEvent.angleDelta.y;
+-                const notches = wheelAccum > 0 ? Math.floor(wheelAccum / 120) : Math.ceil(wheelAccum / 120);
+-                if (notches === 0)
+-                    return;
+-                wheelAccum -= notches * 120;
+-                root.adjustVolume(notches * AudioService.wheelVolumeStep);
+-            }
+-        }
+-    }
++                        Row {
++                            anchors.fill: parent
++                            anchors.leftMargin: Theme.spacingS
++                            anchors.rightMargin: Theme.spacingS
++                            spacing: Theme.spacingXS
++
++                            DankIcon {
++                                name: "assistant_device"
++                                size: 16
++                                color: Theme.surfaceVariantText
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
+
+-    Rectangle {
+-        id: audioDevicesButton
+-        width: 40
+-        height: 40
+-        radius: 20
+-        x: isRightEdge ? Theme.spacingM : parent.width - 40 - Theme.spacingM
+-        y: 240
+-        color: audioDevicesArea.containsMouse || devicesExpanded ? root.accentPressed : Theme.withAlpha(root.accentPressed, 0)
+-        border.color: Theme.outlineStrong
+-        border.width: 1
+-        z: 100
++                            StyledText {
++                                width: parent.width - 16 - 16 - Theme.spacingXS * 2
++                                anchors.verticalCenter: parent.verticalCenter
++                                text: activePlayer?.identity || I18n.tr("Player")
++                                font.pixelSize: Theme.fontSizeSmall
++                                color: Theme.surfaceText
++                                elide: Text.ElideRight
++                                maximumLineCount: 1
++                                wrapMode: Text.NoWrap
++                            }
+
+-        DankIcon {
+-            anchors.centerIn: parent
+-            name: "speaker"
+-            size: 18
+-            color: Theme.surfaceText
+-        }
++                            DankIcon {
++                                name: "expand_more"
++                                size: 16
++                                color: Theme.surfaceVariantText
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
++                        }
+
+-        MouseArea {
+-            id: audioDevicesArea
+-            anchors.fill: parent
+-            hoverEnabled: true
+-            cursorShape: Qt.PointingHandCursor
+-            acceptedButtons: Qt.LeftButton | Qt.RightButton
+-            onPressed: mouse => {
+-                if (mouse.button === Qt.RightButton) {
+-                    mouse.accepted = true;
+-                }
+-            }
+-            onWheel: wheelEvent => {
+-                const delta = wheelEvent.angleDelta.y;
+-                if (delta !== 0) {
+-                    AudioService.cycleAudioOutputDirection(delta < 0);
+-                    wheelEvent.accepted = true;
+-                }
+-            }
+-            onClicked: mouse => {
+-                if (mouse.button === Qt.RightButton) {
+-                    if (AudioService.sink?.audio) {
+-                        SessionData.suppressOSDTemporarily();
+-                        AudioService.sink.audio.muted = !AudioService.sink.audio.muted;
++                        MouseArea {
++                            id: playerSelectorArea
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: {
++                                if (playersExpanded) {
++                                    const players = (root.allPlayers || []).filter(p => p && !MprisController.isIdle(p));
++                                    if (players.length > 1) {
++                                        let currentIndex = -1;
++                                        for (let i = 0; i < players.length; i++) {
++                                            if (players[i] === root.activePlayer) {
++                                                currentIndex = i;
++                                                break;
++                                            }
++                                        }
++                                        const nextIndex = (currentIndex + 1) % players.length;
++                                        MprisController.setActivePlayer(players[nextIndex]);
++                                    }
++                                    return;
++                                }
++                                triggerPlayersDropdown();
++                            }
++                            onEntered: {
++                                dropdownButtonEntered();
++                                if (playersExpanded)
++                                    return;
++                                triggerPlayersDropdown();
++                            }
++                            onExited: {
++                                if (playersExpanded)
++                                    dropdownButtonExited();
++                            }
++                        }
+                     }
+-                    return;
+-                }
+-                if (devicesExpanded) {
+-                    const sinks = AudioService.getAvailableSinks();
+-                    if (sinks && sinks.length > 1) {
+-                        let currentIndex = -1;
+-                        for (let i = 0; i < sinks.length; i++) {
+-                            if (sinks[i]?.name === AudioService.sink?.name) {
+-                                currentIndex = i;
+-                                break;
++
++                    Rectangle {
++                        id: audioDevicesButton
++                        width: Math.min(220, (parent.width - Theme.spacingS) / 2)
++                        height: 36
++                        radius: Theme.cornerRadius
++                        color: audioDevicesArea.containsMouse || devicesExpanded ? Theme.primaryHoverLight : Theme.nestedSurface
++                        border.width: 0
++
++                        Behavior on color {
++                            ColorAnimation {
++                                duration: Theme.shortDuration
++                            }
++                        }
++
++                        Row {
++                            anchors.fill: parent
++                            anchors.leftMargin: Theme.spacingS
++                            anchors.rightMargin: Theme.spacingS
++                            spacing: Theme.spacingXS
++
++                            DankIcon {
++                                name: root.getAudioDeviceIcon(AudioService.sink)
++                                size: 16
++                                color: Theme.surfaceVariantText
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
++
++                            StyledText {
++                                width: parent.width - 16 - 16 - Theme.spacingXS * 2
++                                anchors.verticalCenter: parent.verticalCenter
++                                text: AudioService.sink ? AudioService.displayName(AudioService.sink) : I18n.tr("Output Device")
++                                font.pixelSize: Theme.fontSizeSmall
++                                color: Theme.surfaceText
++                                elide: Text.ElideRight
++                                maximumLineCount: 1
++                                wrapMode: Text.NoWrap
++                            }
++
++                            DankIcon {
++                                name: "expand_more"
++                                size: 16
++                                color: Theme.surfaceVariantText
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
++                        }
++
++                        MouseArea {
++                            id: audioDevicesArea
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            cursorShape: Qt.PointingHandCursor
++                            acceptedButtons: Qt.LeftButton | Qt.RightButton
++                            onPressed: mouse => {
++                                if (mouse.button === Qt.RightButton) {
++                                    mouse.accepted = true;
++                                }
++                            }
++                            onWheel: wheelEvent => {
++                                const delta = wheelEvent.angleDelta.y;
++                                if (delta !== 0) {
++                                    AudioService.cycleAudioOutputDirection(delta < 0);
++                                    wheelEvent.accepted = true;
++                                }
++                            }
++                            onClicked: mouse => {
++                                if (mouse.button === Qt.RightButton) {
++                                    if (AudioService.sink?.audio) {
++                                        SessionData.suppressOSDTemporarily();
++                                        AudioService.sink.audio.muted = !AudioService.sink.audio.muted;
++                                    }
++                                    return;
++                                }
++                                if (devicesExpanded) {
++                                    const sinks = AudioService.getAvailableSinks();
++                                    if (sinks && sinks.length > 1) {
++                                        let currentIndex = -1;
++                                        for (let i = 0; i < sinks.length; i++) {
++                                            if (sinks[i]?.name === AudioService.sink?.name) {
++                                                currentIndex = i;
++                                                break;
++                                            }
++                                        }
++                                        const nextIndex = (currentIndex + 1) % sinks.length;
++                                        AudioService.setSink(sinks[nextIndex]);
++                                    }
++                                    return;
++                                }
++                                triggerDevicesDropdown();
++                            }
++                            onEntered: {
++                                dropdownButtonEntered();
++                                if (devicesExpanded)
++                                    return;
++                                triggerDevicesDropdown();
++                            }
++                            onExited: {
++                                if (devicesExpanded)
++                                    dropdownButtonExited();
+                             }
+                         }
+-                        const nextIndex = (currentIndex + 1) % sinks.length;
+-                        AudioService.setSink(sinks[nextIndex]);
+                     }
+-                    return;
+                 }
+-                hideDropdowns();
+-                devicesExpanded = true;
+-                const buttonsOnRight = !isRightEdge;
+-                const btnY = audioDevicesButton.y + audioDevicesButton.height / 2;
+-                const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
+-                const screenY = popoutY + contentOffsetY + btnY;
+-                showAudioDevicesDropdown(Qt.point(screenX, screenY), targetScreen, buttonsOnRight);
+-            }
+-            onEntered: {
+-                dropdownButtonEntered();
+-                if (devicesExpanded)
+-                    return;
+-                hideDropdowns();
+-                devicesExpanded = true;
+-                const buttonsOnRight = !isRightEdge;
+-                const btnY = audioDevicesButton.y + audioDevicesButton.height / 2;
+-                const screenX = buttonsOnRight ? (popoutX + popoutWidth) : popoutX;
+-                const screenY = popoutY + contentOffsetY + btnY;
+-                showAudioDevicesDropdown(Qt.point(screenX, screenY), targetScreen, buttonsOnRight);
+-            }
+-            onExited: {
+-                if (devicesExpanded)
+-                    dropdownButtonExited();
+             }
+         }
+     }
+diff -ruN a/Modules/DankDash/MediaDropdownOverlay.qml b/Modules/DankDash/MediaDropdownOverlay.qml
+--- a/Modules/DankDash/MediaDropdownOverlay.qml
++++ b/Modules/DankDash/MediaDropdownOverlay.qml
+@@ -115,10 +115,10 @@
+         height: 180
+         x: isRightEdge ? anchorPos.x : anchorPos.x - width
+         y: anchorPos.y - height / 2
+-        radius: Theme.cornerRadius * 2
+-        color: Theme.floatingSurface
+-        border.color: Theme.outlineStrong
+-        border.width: 1
++        radius: Theme.cornerRadius
++        color: Theme.nestedSurface
++        border.color: "transparent"
++        border.width: 0
+
+         opacity: Theme.isDirectionalEffect ? 1 : (dropdownType === 1 ? 1 : 0)
+         scale: Theme.isDirectionalEffect ? 1 : (dropdownType === 1 ? 1 : Theme.effectScaleCollapsed)
+@@ -259,10 +259,10 @@
+         height: Math.max(200, Math.min(280, availableDevices.length * 50 + 100))
+         x: isRightEdge ? anchorPos.x : anchorPos.x - width
+         y: anchorPos.y - height / 2
+-        radius: Theme.cornerRadius * 2
+-        color: Theme.floatingSurface
+-        border.color: Theme.outlineStrong
+-        border.width: 2
++        radius: Theme.cornerRadius
++        color: Theme.nestedSurface
++        border.color: "transparent"
++        border.width: 0
+
+         opacity: Theme.isDirectionalEffect ? 1 : (dropdownType === 2 ? 1 : 0)
+         scale: Theme.isDirectionalEffect ? 1 : (dropdownType === 2 ? 1 : Theme.effectScaleCollapsed)
+@@ -315,7 +315,7 @@
+             StyledText {
+                 text: I18n.tr("Audio Output Devices (") + availableDevices.length + ")"
+                 font.pixelSize: Theme.fontSizeMedium
+-                font.weight: Font.Medium
++                font.weight: Font.DemiBold
+                 color: Theme.surfaceText
+                 width: parent.width
+                 horizontalAlignment: Text.AlignHCenter
+@@ -342,9 +342,14 @@
+                             width: parent.width
+                             height: 48
+                             radius: Theme.cornerRadius
+-                            color: deviceMouseArea.containsMouse ? Theme.primaryHover : Theme.nestedSurface
+-                            border.color: modelData === AudioService.sink ? Theme.primary : Theme.outlineHeavy
+-                            border.width: modelData === AudioService.sink ? 2 : 1
++                            color: {
++                                if (modelData === AudioService.sink)
++                                    return Theme.primaryHover;
++                                if (deviceMouseArea.containsMouse)
++                                    return Theme.primaryHoverLight;
++                                return "transparent";
++                            }
++                            border.width: 0
+
+                             Row {
+                                 anchors.left: parent.left
+@@ -451,10 +456,10 @@
+         height: Math.max(180, Math.min(240, (root.selectablePlayers?.length || 0) * 50 + 80))
+         x: isRightEdge ? anchorPos.x : anchorPos.x - width
+         y: anchorPos.y - height / 2
+-        radius: Theme.cornerRadius * 2
+-        color: Theme.floatingSurface
+-        border.color: Theme.outlineStrong
+-        border.width: 2
++        radius: Theme.cornerRadius
++        color: Theme.nestedSurface
++        border.color: "transparent"
++        border.width: 0
+
+         opacity: Theme.isDirectionalEffect ? 1 : (dropdownType === 3 ? 1 : 0)
+         scale: Theme.isDirectionalEffect ? 1 : (dropdownType === 3 ? 1 : Theme.effectScaleCollapsed)
+@@ -507,7 +512,7 @@
+             StyledText {
+                 text: I18n.tr("Media Players (") + (root.selectablePlayers?.length || 0) + ")"
+                 font.pixelSize: Theme.fontSizeMedium
+-                font.weight: Font.Medium
++                font.weight: Font.DemiBold
+                 color: Theme.surfaceText
+                 width: parent.width
+                 horizontalAlignment: Text.AlignHCenter
+@@ -534,9 +539,14 @@
+                             width: parent.width
+                             height: 48
+                             radius: Theme.cornerRadius
+-                            color: playerMouseArea.containsMouse ? Theme.primaryHover : Theme.nestedSurface
+-                            border.color: modelData === activePlayer ? Theme.primary : Theme.outlineHeavy
+-                            border.width: modelData === activePlayer ? 2 : 1
++                            color: {
++                                if (modelData === activePlayer)
++                                    return Theme.primaryHover;
++                                if (playerMouseArea.containsMouse)
++                                    return Theme.primaryHoverLight;
++                                return "transparent";
++                            }
++                            border.width: 0
+
+                             Row {
+                                 anchors.left: parent.left
+diff -ruN a/Modules/DankDash/WallpaperTab.qml b/Modules/DankDash/WallpaperTab.qml
+--- a/Modules/DankDash/WallpaperTab.qml
++++ b/Modules/DankDash/WallpaperTab.qml
+@@ -18,7 +18,10 @@
+
+     property string wallpaperDir: ""
+     property int currentPage: 0
+-    property int itemsPerPage: 16
++    // Ryoku 6E: 3×3 fills ~700×360 with larger landscape thumbs than stock 4×4.
++    readonly property int gridColumns: 3
++    readonly property int gridRows: 3
++    property int itemsPerPage: gridColumns * gridRows
+     property int totalPages: Math.max(1, Math.ceil(wallpaperFolderModel.count / itemsPerPage))
+     property bool active: false
+     property Item focusTarget: pager
+@@ -161,7 +164,7 @@
+         if (event.key === Qt.Key_Escape) {
+             return closeOverlays();
+         }
+-        const columns = 4;
++        const columns = root.gridColumns;
+         const currentCol = gridIndex % columns;
+         const visibleCount = Math.min(itemsPerPage, wallpaperFolderModel.count - currentPage * itemsPerPage);
+
+@@ -433,8 +436,8 @@
+             ListView {
+                 id: pager
+                 anchors.centerIn: parent
+-                width: parent.width - Theme.spacingS
+-                height: parent.height - Theme.spacingS
++                width: parent.width
++                height: parent.height - Theme.spacingXXS
+                 orientation: ListView.Vertical
+                 snapMode: ListView.SnapOneItem
+                 highlightRangeMode: ListView.StrictlyEnforceRange
+@@ -479,8 +482,8 @@
+
+                     width: pager.width
+                     height: pager.height
+-                    cellWidth: width / 4
+-                    cellHeight: height / 4
++                    cellWidth: width / root.gridColumns
++                    cellHeight: height / root.gridRows
+                     interactive: false
+                     keyNavigationEnabled: false
+                     activeFocusOnTab: false
+@@ -495,7 +498,7 @@
+                             anchors.fill: parent
+                             anchors.margins: Theme.spacingXS
+                             color: "transparent"
+-                            border.width: 3
++                            border.width: 2
+                             border.color: Theme.primary
+                             radius: Theme.cornerRadius
+                         }
+@@ -532,19 +535,40 @@
+                         height: pageGrid.cellHeight
+
+                         property string wallpaperPath: modelData || ""
+-                        property bool isSelected: getCurrentWallpaper() === modelData
++                        property bool isCurrent: getCurrentWallpaper() === modelData
+
++                        // Ryoku 6E: image-first thumb; current = thin primary ring + check.
+                         Rectangle {
+                             id: wallpaperCard
+                             anchors.fill: parent
+                             anchors.margins: Theme.spacingXS
+-                            color: Theme.withAlpha(Theme.surfaceContainerHighest, Theme.popupTransparency)
++                            color: Theme.nestedSurface
+                             radius: Theme.cornerRadius
++                            border.width: isCurrent ? 2 : 0
++                            border.color: isCurrent ? Theme.primary : "transparent"
++                            scale: wallpaperMouseArea.containsMouse && !isCurrent ? 1.02 : 1.0
++
++                            Behavior on scale {
++                                NumberAnimation {
++                                    duration: Theme.shortDuration
++                                    easing.type: Theme.standardEasing
++                                }
++                            }
++
++                            Behavior on border.color {
++                                ColorAnimation {
++                                    duration: Theme.shortDuration
++                                    easing.type: Theme.standardEasing
++                                }
++                            }
+
+                             Rectangle {
+                                 anchors.fill: parent
+-                                color: isSelected ? Theme.primaryPressed : Theme.withAlpha(Theme.primaryPressed, 0)
++                                anchors.margins: isCurrent ? 2 : 0
+                                 radius: parent.radius
++                                color: wallpaperMouseArea.containsMouse ? Theme.primaryHoverLight : "transparent"
++                                z: 2
++                                opacity: isCurrent ? 0 : 1
+
+                                 Behavior on color {
+                                     ColorAnimation {
+@@ -556,13 +580,15 @@
+
+                             ClippingRectangle {
+                                 anchors.fill: parent
++                                anchors.margins: isCurrent ? 2 : 0
+                                 radius: wallpaperCard.radius
+-                                color: "transparent"
++                                color: Theme.nestedSurface
+
+                                 CachingImage {
+                                     id: thumbnailImage
+                                     anchors.fill: parent
+                                     imagePath: modelData || ""
++                                    fillMode: Image.PreserveAspectCrop
+                                     maxCacheSize: 256
+                                     animate: false
+                                     opacity: status === Image.Ready ? 1 : 0
+@@ -576,6 +602,26 @@
+                                 }
+                             }
+
++                            // Current wallpaper badge
++                            Rectangle {
++                                visible: isCurrent
++                                anchors.right: parent.right
++                                anchors.bottom: parent.bottom
++                                anchors.margins: Theme.spacingXS
++                                width: 22
++                                height: 22
++                                radius: width / 2
++                                color: Theme.primary
++                                z: 3
++
++                                DankIcon {
++                                    anchors.centerIn: parent
++                                    name: "check"
++                                    size: 14
++                                    color: Theme.primaryText
++                                }
++                            }
++
+                             StateLayer {
+                                 anchors.fill: parent
+                                 cornerRadius: parent.radius
+@@ -606,13 +652,34 @@
+                 visible: wallpaperFolderModel.status === FolderListModel.Loading && wallpaperFolderModel.count === 0
+             }
+
+-            StyledText {
++            Column {
+                 anchors.centerIn: parent
++                spacing: Theme.spacingS
+                 visible: wallpaperFolderModel.status === FolderListModel.Ready && wallpaperFolderModel.count === 0
+-                text: I18n.tr("No wallpapers found\n\nClick the folder icon below to browse")
+-                font.pixelSize: 14
+-                color: Theme.outline
+-                horizontalAlignment: Text.AlignHCenter
++
++                DankIcon {
++                    name: "wallpaper"
++                    size: Theme.iconSize * 2
++                    color: Theme.surfaceVariantText
++                    anchors.horizontalCenter: parent.horizontalCenter
++                }
++
++                StyledText {
++                    text: I18n.tr("No wallpapers found")
++                    font.pixelSize: Theme.fontSizeMedium
++                    color: Theme.surfaceVariantText
++                    horizontalAlignment: Text.AlignHCenter
++                    anchors.horizontalCenter: parent.horizontalCenter
++                }
++
++                StyledText {
++                    text: I18n.tr("Click the folder icon below to browse")
++                    font.pixelSize: Theme.fontSizeSmall
++                    color: Theme.surfaceVariantText
++                    opacity: 0.8
++                    horizontalAlignment: Text.AlignHCenter
++                    anchors.horizontalCenter: parent.horizontalCenter
++                }
+             }
+         }
+
+@@ -656,8 +723,8 @@
+                         anchors.verticalCenter: parent.verticalCenter
+                         text: wallpaperFolderModel.count > 0 ? (wallpaperFolderModel.count === 1 ? I18n.tr("%1 wallpaper  •  %2 / %3").arg(wallpaperFolderModel.count).arg(currentPage + 1).arg(totalPages) : I18n.tr("%1 wallpapers  •  %2 / %3").arg(wallpaperFolderModel.count).arg(currentPage + 1).arg(totalPages)) : I18n.tr("No wallpapers")
+                         font.pixelSize: 14
+-                        color: pageIndicatorMouseArea.containsMouse && pageIndicatorMouseArea.enabled ? Theme.primary : Theme.surfaceText
+-                        opacity: 0.7
++                        color: pageIndicatorMouseArea.containsMouse && pageIndicatorMouseArea.enabled ? Theme.primary : Theme.surfaceVariantText
++                        opacity: 0.9
+
+                         MouseArea {
+                             id: pageIndicatorMouseArea
+@@ -729,9 +796,9 @@
+                 width: parent.width
+                 height: 18
+                 text: selectedFileName
+-                font.pixelSize: 12
+-                color: Theme.surfaceText
+-                opacity: 0.5
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceVariantText
++                opacity: 0.9
+                 visible: selectedFileName !== ""
+                 elide: Text.ElideMiddle
+                 horizontalAlignment: Text.AlignHCenter
+@@ -805,10 +872,9 @@
+         id: pageJumpPopup
+         width: 180
+         height: jumpColumn.height + Theme.spacingM * 2
+-        color: Theme.readableSurface
++        color: Theme.nestedSurface
+         radius: Theme.cornerRadius
+-        border.color: Theme.outlineMedium
+-        border.width: 1
++        border.width: 0
+         visible: false
+         z: 101
+         anchors.horizontalCenter: parent.horizontalCenter
+diff -ruN a/Modules/DankDash/WeatherTab.qml b/Modules/DankDash/WeatherTab.qml
+--- a/Modules/DankDash/WeatherTab.qml
++++ b/Modules/DankDash/WeatherTab.qml
+@@ -78,6 +78,19 @@
+         }
+     }
+
++    // Today high/low from existing daily forecast[0] — no new WeatherService fields.
++    readonly property string todayHighLowText: {
++        SettingsData.useFahrenheit;
++        const f = WeatherService.weather.forecast?.[0];
++        if (!f)
++            return "";
++        const hi = SettingsData.useFahrenheit ? f.tempMaxF : f.tempMax;
++        const lo = SettingsData.useFahrenheit ? f.tempMinF : f.tempMin;
++        if (hi === undefined || lo === undefined)
++            return "";
++        return I18n.tr("H:%1°  L:%2°", "weather high low").arg(hi).arg(lo);
++    }
++
+     readonly property var heroMetrics: {
+         SettingsData.useFahrenheit;
+         SettingsData.windSpeedUnit;
+@@ -118,13 +131,13 @@
+     Column {
+         id: unavailableColumn
+         anchors.centerIn: parent
+-        spacing: Theme.spacingL
++        spacing: Theme.spacingS
+         visible: !root.available
+
+         DankIcon {
+             name: "cloud_off"
+             size: Theme.iconSize * 2
+-            color: Theme.withAlpha(Theme.surfaceText, 0.5)
++            color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+
+@@ -136,8 +149,8 @@
+             StyledText {
+                 id: refreshText
+                 text: I18n.tr("No Weather Data Available")
+-                font.pixelSize: Theme.fontSizeLarge
+-                color: Theme.withAlpha(Theme.surfaceText, 0.7)
++                font.pixelSize: Theme.fontSizeMedium
++                color: Theme.surfaceVariantText
+                 anchors.verticalCenter: parent.verticalCenter
+             }
+
+@@ -145,7 +158,7 @@
+                 id: refreshButtonTwo
+                 anchors.verticalCenter: parent.verticalCenter
+                 iconName: isRefreshing ? "" : "refresh"
+-                iconColor: Theme.withAlpha(Theme.surfaceText, 0.4)
++                iconColor: Theme.surfaceVariantText
+                 tooltipText: I18n.tr("Refresh Weather")
+                 tooltipSide: "left"
+                 enabled: !isRefreshing
+@@ -177,23 +190,23 @@
+         id: mainColumn
+         anchors.fill: parent
+         visible: root.available
+-        spacing: Theme.spacingS
++        spacing: Theme.spacingXS
+
++        // Ryoku 6F — current conditions hero; no heavy outline.
+         Rectangle {
+             id: heroCard
+             width: parent.width
+-            height: heroContent.height + Theme.spacingL * 2
++            height: heroContent.height + Theme.spacingM * 2
+             radius: Theme.cornerRadius
+             color: Theme.nestedSurface
+-            border.color: Theme.outlineMedium
+-            border.width: 1
++            border.width: 0
+
+             Column {
+                 id: heroContent
+-                x: Theme.spacingL
+-                y: Theme.spacingL
+-                width: parent.width - Theme.spacingL * 2
+-                spacing: Theme.spacingM
++                x: Theme.spacingM
++                y: Theme.spacingM
++                width: parent.width - Theme.spacingM * 2
++                spacing: Theme.spacingS
+
+                 Item {
+                     width: parent.width
+@@ -208,16 +221,25 @@
+                         DankIcon {
+                             id: weatherIcon
+                             name: WeatherService.getWeatherIcon(WeatherService.weather.wCode)
+-                            size: Theme.iconSize * 2
++                            size: Theme.iconSize * 2.5
+                             color: Theme.primary
+                             anchors.verticalCenter: parent.verticalCenter
+                         }
+
+                         Column {
+                             id: tempColumn
+-                            spacing: Theme.spacingXS
++                            spacing: Theme.spacingXXS
+                             anchors.verticalCenter: parent.verticalCenter
+
++                            StyledText {
++                                text: WeatherService.weather.city || ""
++                                font.pixelSize: Theme.fontSizeMedium
++                                font.weight: Font.Medium
++                                color: Theme.surfaceText
++                                visible: text.length > 0
++                                anchors.left: parent.left
++                            }
++
+                             Item {
+                                 anchors.left: parent.left
+                                 width: tempText.width + unitText.width + Theme.spacingXS
+@@ -227,9 +249,9 @@
+                                     id: tempText
+                                     LayoutMirroring.enabled: false
+                                     text: (SettingsData.useFahrenheit ? WeatherService.weather.tempF : WeatherService.weather.temp) + "°"
+-                                    font.pixelSize: Theme.fontSizeXLarge + 8
++                                    font.pixelSize: Theme.fontSizeXLarge + 6
+                                     color: Theme.surfaceText
+-                                    font.weight: Font.Light
++                                    font.weight: Font.Medium
+                                     anchors.left: parent.left
+                                     anchors.verticalCenter: parent.verticalCenter
+                                 }
+@@ -239,7 +261,7 @@
+                                     LayoutMirroring.enabled: false
+                                     text: SettingsData.useFahrenheit ? "F" : "C"
+                                     font.pixelSize: Theme.fontSizeMedium
+-                                    color: Theme.withAlpha(Theme.surfaceText, 0.7)
++                                    color: Theme.surfaceVariantText
+                                     anchors.left: tempText.right
+                                     anchors.leftMargin: Theme.spacingXS
+                                     anchors.verticalCenter: parent.verticalCenter
+@@ -260,24 +282,27 @@
+                             StyledText {
+                                 text: WeatherService.getWeatherCondition(WeatherService.weather.wCode)
+                                 font.pixelSize: Theme.fontSizeMedium
+-                                color: Theme.withAlpha(Theme.surfaceText, 0.7)
++                                color: Theme.surfaceVariantText
+                                 anchors.left: parent.left
+                             }
+
+-                            StyledText {
+-                                property var feelsLike: SettingsData.useFahrenheit ? (WeatherService.weather.feelsLikeF || WeatherService.weather.tempF) : (WeatherService.weather.feelsLike || WeatherService.weather.temp)
+-                                text: I18n.tr("Feels Like %1°", "weather feels like temperature").arg(feelsLike)
+-                                font.pixelSize: Theme.fontSizeSmall
+-                                color: Theme.withAlpha(Theme.surfaceText, 0.5)
++                            Row {
++                                spacing: Theme.spacingM
+                                 anchors.left: parent.left
+-                            }
+
+-                            StyledText {
+-                                text: WeatherService.weather.city || ""
+-                                font.pixelSize: Theme.fontSizeSmall
+-                                color: Theme.withAlpha(Theme.surfaceText, 0.5)
+-                                visible: text.length > 0
+-                                anchors.left: parent.left
++                                StyledText {
++                                    property var feelsLike: SettingsData.useFahrenheit ? (WeatherService.weather.feelsLikeF || WeatherService.weather.tempF) : (WeatherService.weather.feelsLike || WeatherService.weather.temp)
++                                    text: I18n.tr("Feels Like %1°", "weather feels like temperature").arg(feelsLike)
++                                    font.pixelSize: Theme.fontSizeSmall
++                                    color: Theme.surfaceVariantText
++                                }
++
++                                StyledText {
++                                    text: root.todayHighLowText
++                                    font.pixelSize: Theme.fontSizeSmall
++                                    color: Theme.surfaceVariantText
++                                    visible: text.length > 0
++                                }
+                             }
+                         }
+                     }
+@@ -299,7 +324,7 @@
+                                 DankIcon {
+                                     name: modelData.icon
+                                     size: Theme.iconSizeSmall - 2
+-                                    color: Theme.withAlpha(Theme.surfaceText, 0.5)
++                                    color: Theme.surfaceVariantText
+                                     anchors.verticalCenter: parent.verticalCenter
+                                 }
+
+@@ -309,7 +334,7 @@
+                                     StyledText {
+                                         text: modelData.label
+                                         font.pixelSize: Theme.fontSizeSmall
+-                                        color: Theme.withAlpha(Theme.surfaceText, 0.5)
++                                        color: Theme.surfaceVariantText
+                                         anchors.left: parent.left
+                                     }
+
+@@ -317,6 +342,7 @@
+                                         text: modelData.value
+                                         font.pixelSize: Theme.fontSizeMedium
+                                         color: Theme.surfaceText
++                                        font.weight: Font.Medium
+                                         anchors.left: parent.left
+                                     }
+                                 }
+@@ -836,7 +862,7 @@
+                 anchors.right: parent.right
+                 anchors.verticalCenter: parent.verticalCenter
+                 iconName: isRefreshing ? "" : "refresh"
+-                iconColor: Theme.withAlpha(Theme.surfaceText, 0.4)
++                iconColor: Theme.surfaceVariantText
+                 tooltipText: I18n.tr("Refresh Weather")
+                 tooltipSide: "left"
+                 enabled: !isRefreshing
+@@ -910,7 +936,7 @@
+             anchors.fill: parent
+             reuseItems: true
+             orientation: ListView.Horizontal
+-            spacing: Theme.spacingS
++            spacing: Theme.spacingXS
+             clip: true
+             snapMode: ListView.SnapToItem
+             highlightRangeMode: ListView.StrictlyEnforceRange
+@@ -1007,7 +1033,7 @@
+             anchors.fill: parent
+             reuseItems: true
+             orientation: ListView.Horizontal
+-            spacing: Theme.spacingS
++            spacing: Theme.spacingXS
+             clip: true
+             snapMode: ListView.SnapToItem
+             highlightRangeMode: ListView.StrictlyEnforceRange
+diff -ruN a/Modules/DankDash/WeatherForecastCard.qml b/Modules/DankDash/WeatherForecastCard.qml
+--- a/Modules/DankDash/WeatherForecastCard.qml
++++ b/Modules/DankDash/WeatherForecastCard.qml
+@@ -3,6 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
++// Ryoku 6F — compact forecast cell; chrome aligned with Overview Card.
+ Rectangle {
+     id: root
+     radius: Theme.cornerRadius
+@@ -36,7 +37,7 @@
+
+     readonly property var minTemp: WeatherService.formatTemp(root.forecastData?.tempMin)
+     readonly property var maxTemp: WeatherService.formatTemp(root.forecastData?.tempMax)
+-    readonly property string minMaxTempText: (minTemp ?? "--") + "/" + (maxTemp ?? "--")
++    readonly property string minMaxTempText: (maxTemp ?? "--") + "/" + (minTemp ?? "--")
+
+     readonly property var temp: WeatherService.formatTemp(root.forecastData?.temp)
+     readonly property string tempText: temp ?? "--"
+@@ -61,23 +62,15 @@
+     readonly property string pressureText: pressure ?? "--"
+
+     readonly property var precipitation: root.forecastData?.precipitationProbability
+-    readonly property string precipitationText: precipitation + "%" ?? "--"
++    readonly property string precipitationText: (precipitation !== undefined && precipitation !== null) ? (precipitation + "%") : "--"
++    readonly property bool hasPrecip: (precipitation ?? 0) > 0
+
+     readonly property var visibility: WeatherService.formatVisibility(root.forecastData?.visibility)
+     readonly property string visibilityText: visibility ?? "--"
+
+     readonly property var values: daily ? [] : [
+         {
+-            "name"//     'name': "Temperature",
+-            :
+-            //     'text': root.tempText,
+-            //     'icon': "thermometer"
+-            // }, {
+-            //     'name': "Feels Like",
+-            //     'text': root.feelsLikeText,
+-            //     'icon': "thermostat"
+-            // }, {
+-            I18n.tr("Humidity"),
++            "name": I18n.tr("Humidity"),
+             "text": root.humidityText,
+             "icon": "humidity_low"
+         },
+@@ -103,52 +96,66 @@
+         }
+     ]
+
+-    color: isCurrent ? Theme.withAlpha(Theme.primary, 0.1) : Theme.nestedSurface
+-    border.color: isCurrent ? Theme.withAlpha(Theme.primary, 0.3) : Theme.withAlpha(Theme.primary, 0)
+-    border.width: isCurrent ? 1 : 0
++    color: isCurrent ? Theme.primaryHover : Theme.nestedSurface
++    border.width: 0
++
++    Behavior on color {
++        ColorAnimation {
++            duration: Theme.shortDuration
++            easing.type: Theme.standardEasing
++        }
++    }
+
+     Column {
+         anchors.centerIn: parent
+-        spacing: Theme.spacingXS
++        spacing: Theme.spacingXXS
+
+         StyledText {
+             text: root.forecastData != null ? root.dateText : I18n.tr("Forecast Not Available")
+             font.pixelSize: Theme.fontSizeSmall
+-            color: root.isCurrent ? Theme.primary : (root.forecastData ? Theme.surfaceText : Theme.outline)
++            color: root.isCurrent ? Theme.primary : (root.forecastData ? Theme.surfaceVariantText : Theme.surfaceVariantText)
+             font.weight: root.isCurrent ? Font.Medium : Font.Normal
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+
+         Row {
+             anchors.horizontalCenter: parent.horizontalCenter
+-            spacing: Theme.spacingM
++            spacing: Theme.spacingS
+             visible: root.forecastData != null
+
+             Column {
+-                spacing: Theme.spacingXS
++                spacing: Theme.spacingXXS
+
+                 DankIcon {
+                     name: root.forecastData ? WeatherService.getWeatherIcon(root.forecastData.wCode || 0, root.forecastData.isDay ?? true) : "cloud"
+                     size: Theme.iconSize
+-                    color: root.isCurrent ? Theme.primary : Theme.withAlpha(Theme.primary, 0.8)
++                    color: root.isCurrent ? Theme.primary : Theme.surfaceText
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+
+                 StyledText {
+                     text: root.daily ? root.minMaxTempText : root.tempText
+                     font.pixelSize: Theme.fontSizeSmall
+-                    color: root.isCurrent ? Theme.primary : Theme.surfaceText
++                    color: Theme.surfaceText
+                     font.weight: Font.Medium
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+
++                // Dense: show precip only when model already has a non-zero chance.
++                StyledText {
++                    text: root.precipitationText
++                    font.pixelSize: Theme.fontSizeSmall - 2
++                    color: Theme.surfaceVariantText
++                    anchors.horizontalCenter: parent.horizontalCenter
++                    visible: root.dense && root.hasPrecip
++                }
++
+                 StyledText {
+                     text: root.feelsLikeText
+                     font.pixelSize: Theme.fontSizeSmall
+-                    color: root.isCurrent ? Theme.primary : Theme.surfaceText
+-                    font.weight: Font.Medium
++                    color: Theme.surfaceVariantText
+                     anchors.horizontalCenter: parent.horizontalCenter
+-                    visible: !root.daily
++                    visible: !root.daily && !root.dense
+                 }
+             }
+
+@@ -188,14 +195,14 @@
+                         DankIcon {
+                             name: root.values[index].icon
+                             size: 8
+-                            color: Theme.withAlpha(Theme.surfaceText, 0.6)
++                            color: Theme.surfaceVariantText
+                             anchors.verticalCenter: parent.verticalCenter
+                         }
+
+                         StyledText {
+                             text: root.values[index].text
+                             font.pixelSize: Theme.fontSizeSmall - 2
+-                            color: Theme.withAlpha(Theme.surfaceText, 0.6)
++                            color: Theme.surfaceVariantText
+                             anchors.verticalCenter: parent.verticalCenter
+                         }
+                     }
+diff -ruN a/Modules/DankDash/Overview/WeatherOverviewCard.qml b/Modules/DankDash/Overview/WeatherOverviewCard.qml
+--- a/Modules/DankDash/Overview/WeatherOverviewCard.qml
++++ b/Modules/DankDash/Overview/WeatherOverviewCard.qml
+@@ -3,6 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
++// Ryoku 6G — weather preview sized for ~48% of right column (~137×136).
+ Card {
+     id: root
+
+@@ -16,20 +17,20 @@
+
+     Column {
+         anchors.centerIn: parent
+-        spacing: Theme.spacingS
++        spacing: Theme.spacingXS
+         visible: !WeatherService.weather.available
+         z: 1
+
+         DankSpinner {
+-            size: 24
++            size: 22
+             visible: WeatherService.weather.loading
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+
+         DankIcon {
+             name: "cloud_off"
+-            size: 24
+-            color: Theme.surfaceTextSecondary
++            size: 22
++            color: Theme.surfaceVariantText
+             visible: !WeatherService.weather.loading
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+@@ -37,60 +38,55 @@
+         StyledText {
+             text: I18n.tr("No Weather")
+             font.pixelSize: Theme.fontSizeSmall
+-            color: Theme.surfaceTextMedium
++            color: Theme.surfaceVariantText
+             visible: !WeatherService.weather.loading
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+-
+-        DankButton {
+-            text: I18n.tr("Refresh")
+-            buttonHeight: 32
+-            visible: !WeatherService.weather.loading
+-            anchors.horizontalCenter: parent.horizontalCenter
+-            onClicked: WeatherService.forceRefresh()
+-        }
+     }
+
+-    Row {
+-        anchors.left: parent.left
+-        anchors.leftMargin: Theme.spacingL
+-        anchors.verticalCenter: parent.verticalCenter
+-        spacing: Theme.spacingL
++    Column {
++        anchors.fill: parent
++        spacing: Theme.spacingXXS
+         visible: WeatherService.weather.available
+
+-        DankIcon {
+-            name: WeatherService.getWeatherIcon(WeatherService.weather.wCode)
+-            size: 48
+-            color: Theme.primary
+-            anchors.verticalCenter: parent.verticalCenter
+-        }
+-
+-        Column {
+-            spacing: Theme.spacingXS
+-            anchors.verticalCenter: parent.verticalCenter
++        Row {
++            width: parent.width
++            spacing: Theme.spacingS
++
++            DankIcon {
++                name: WeatherService.getWeatherIcon(WeatherService.weather.wCode)
++                size: 36
++                color: Theme.primary
++                anchors.verticalCenter: parent.verticalCenter
++            }
+
+             StyledText {
+-                anchors.left: parent.left
++                width: parent.width - 36 - Theme.spacingS
++                anchors.verticalCenter: parent.verticalCenter
+                 text: {
+                     const temp = SettingsData.useFahrenheit ? WeatherService.weather.tempF : WeatherService.weather.temp;
+                     if (temp === undefined || temp === null)
+                         return "--°" + (SettingsData.useFahrenheit ? "F" : "C");
+                     return temp + "°" + (SettingsData.useFahrenheit ? "F" : "C");
+                 }
+-                font.pixelSize: Theme.fontSizeXLarge + 4
++                font.pixelSize: Theme.fontSizeXLarge
++                font.weight: Font.Medium
+                 color: Theme.surfaceText
+-                font.weight: Font.Light
+-            }
+-
+-            StyledText {
+-                text: WeatherService.getWeatherCondition(WeatherService.weather.wCode)
+-                font.pixelSize: Theme.fontSizeSmall
+-                color: Theme.surfaceTextMedium
+                 elide: Text.ElideRight
+-                width: parent.parent.parent.width - 48 - Theme.spacingL * 2
+-                horizontalAlignment: Text.AlignLeft
++                maximumLineCount: 1
++                wrapMode: Text.NoWrap
+             }
+         }
++
++        StyledText {
++            width: parent.width
++            text: WeatherService.getWeatherCondition(WeatherService.weather.wCode)
++            font.pixelSize: Theme.fontSizeSmall
++            color: Theme.surfaceVariantText
++            elide: Text.ElideRight
++            wrapMode: Text.WordWrap
++            maximumLineCount: 2
++        }
+     }
+
+     MouseArea {
+diff -ruN a/Modules/DankDash/Overview/UserInfoCard.qml b/Modules/DankDash/Overview/UserInfoCard.qml
+--- a/Modules/DankDash/Overview/UserInfoCard.qml
++++ b/Modules/DankDash/Overview/UserInfoCard.qml
+@@ -3,6 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
++// Ryoku 6G — user utility sized for ~52% of right column (~149×136).
+ Card {
+     id: root
+
+@@ -12,56 +13,56 @@
+     Component.onCompleted: DgopService.addRef("system")
+     Component.onDestruction: DgopService.removeRef("system")
+
++    readonly property real textColWidth: Math.max(40, width - pad * 2 - 44 - Theme.spacingS)
++
+     Row {
+-        anchors.left: parent.left
+-        anchors.leftMargin: Theme.spacingM
+-        anchors.verticalCenter: parent.verticalCenter
+-        spacing: Theme.spacingM
++        anchors.fill: parent
++        spacing: Theme.spacingS
+
+         DankCircularImage {
+             id: avatarContainer
+-
+-            width: 77
+-            height: 77
++            width: 44
++            height: 44
+             anchors.verticalCenter: parent.verticalCenter
+             imageSource: {
+                 if (PortalService.profileImage === "")
+                     return "";
+-
+                 if (PortalService.profileImage.startsWith("/"))
+                     return "file://" + PortalService.profileImage;
+-
+                 return PortalService.profileImage;
+             }
+             fallbackIcon: "person"
+         }
+
+         Column {
+-            spacing: Theme.spacingS
++            width: root.textColWidth
++            spacing: Theme.spacingXXS
+             anchors.verticalCenter: parent.verticalCenter
+
+             StyledText {
++                width: parent.width
+                 text: UserInfoService.username || I18n.tr("brandon")
+-                font.pixelSize: Theme.fontSizeLarge
++                font.pixelSize: Theme.fontSizeMedium
+                 font.weight: Font.Medium
+                 color: Theme.surfaceText
+                 elide: Text.ElideRight
+-                width: parent.parent.parent.width - avatarContainer.width - Theme.spacingM * 3
+-                horizontalAlignment: Text.AlignLeft
++                maximumLineCount: 1
++                wrapMode: Text.NoWrap
+             }
+
+             Row {
+-                anchors.left: parent.left
+-                spacing: Theme.spacingS
++                width: parent.width
++                spacing: Theme.spacingXS
+
+                 SystemLogo {
+-                    width: 16
+-                    height: 16
++                    width: 14
++                    height: 14
+                     anchors.verticalCenter: parent.verticalCenter
+                     colorOverride: Theme.primary
+                 }
+
+                 StyledText {
++                    width: parent.width - 14 - Theme.spacingXS
+                     text: {
+                         if (CompositorService.isNiri)
+                             return I18n.tr("on Niri");
+@@ -78,30 +79,34 @@
+                         return "";
+                     }
+                     font.pixelSize: Theme.fontSizeSmall
+-                    color: Theme.surfaceTextMedium
++                    color: Theme.surfaceVariantText
+                     anchors.verticalCenter: parent.verticalCenter
+                     elide: Text.ElideRight
+-                    width: parent.parent.parent.parent.width - avatarContainer.width - Theme.spacingM * 3 - 16 - Theme.spacingS
+-                    horizontalAlignment: Text.AlignLeft
++                    maximumLineCount: 1
++                    wrapMode: Text.NoWrap
+                 }
+             }
+
+             Row {
+-                anchors.left: parent.left
+-                spacing: Theme.spacingS
++                width: parent.width
++                spacing: Theme.spacingXS
+
+                 DankIcon {
+                     name: "schedule"
+-                    size: 16
++                    size: 14
+                     color: Theme.primary
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+
+                 StyledText {
++                    width: parent.width - 14 - Theme.spacingXS
+                     text: DgopService.shortUptime ? I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + DgopService.shortUptime.slice(2) : I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'")
+                     font.pixelSize: Theme.fontSizeSmall
+-                    color: Theme.surfaceTextMedium
++                    color: Theme.surfaceVariantText
+                     anchors.verticalCenter: parent.verticalCenter
++                    elide: Text.ElideRight
++                    maximumLineCount: 1
++                    wrapMode: Text.NoWrap
+                 }
+             }
+         }
+diff -ruN a/Modules/DankDash/Overview/SystemMonitorCard.qml b/Modules/DankDash/Overview/SystemMonitorCard.qml
+--- a/Modules/DankDash/Overview/SystemMonitorCard.qml
++++ b/Modules/DankDash/Overview/SystemMonitorCard.qml
+@@ -3,6 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
++// Ryoku 6G — compact monitor for right column (~294×112); labeled metrics.
+ Card {
+     id: root
+
+@@ -15,174 +16,182 @@
+
+     Row {
+         anchors.fill: parent
+-        anchors.margins: Theme.spacingS
+-        spacing: Theme.spacingM
++        spacing: Theme.spacingS
+
+-        // CPU Bar
++        // CPU
+         Column {
+-            width: (parent.width - 2 * Theme.spacingM) / 3
++            width: (parent.width - Theme.spacingS * 2) / 3
+             height: parent.height
+-            spacing: Theme.spacingS
++            spacing: Theme.spacingXXS
+
+-            Rectangle {
+-                width: 8
+-                height: parent.height - Theme.iconSizeSmall - Theme.spacingS
+-                radius: 4
+-                anchors.horizontalCenter: parent.horizontalCenter
+-                color: Theme.outlineHeavy
++            StyledText {
++                width: parent.width
++                text: I18n.tr("CPU")
++                font.pixelSize: Theme.fontSizeSmall
++                font.weight: Font.Medium
++                color: Theme.surfaceVariantText
++                horizontalAlignment: Text.AlignHCenter
++            }
++
++            Item {
++                width: parent.width
++                height: parent.height - Theme.fontSizeSmall * 2.6 - Theme.spacingXXS * 2
+
+                 Rectangle {
+-                    width: parent.width
+-                    height: parent.height * Math.min((DgopService.cpuUsage || 6) / 100, 1)
+-                    radius: parent.radius
+-                    anchors.bottom: parent.bottom
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    color: {
+-                        if (DgopService.cpuUsage > 80)
+-                            return Theme.error;
+-                        if (DgopService.cpuUsage > 60)
+-                            return Theme.warning;
+-                        return Theme.primary;
+-                    }
++                    width: 10
++                    height: parent.height
++                    radius: 5
++                    anchors.horizontalCenter: parent.horizontalCenter
++                    color: Theme.outlineHeavy
++
++                    Rectangle {
++                        width: parent.width
++                        height: parent.height * Math.min((DgopService.cpuUsage || 0) / 100, 1)
++                        radius: parent.radius
++                        anchors.bottom: parent.bottom
++                        anchors.horizontalCenter: parent.horizontalCenter
++                        color: {
++                            if (DgopService.cpuUsage > 80)
++                                return Theme.error;
++                            if (DgopService.cpuUsage > 60)
++                                return Theme.warning;
++                            return Theme.primary;
++                        }
+
+-                    Behavior on height {
+-                        NumberAnimation {
+-                            duration: Theme.shortDuration
+-                            easing.type: Theme.standardEasing
++                        Behavior on height {
++                            NumberAnimation {
++                                duration: Theme.shortDuration
++                                easing.type: Theme.standardEasing
++                            }
+                         }
+                     }
+                 }
+             }
+
+-            Item {
++            StyledText {
+                 width: parent.width
+-                height: Theme.iconSizeSmall
+-
+-                DankIcon {
+-                    name: "memory"
+-                    size: Theme.iconSizeSmall
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    anchors.bottom: parent.bottom
+-                    color: {
+-                        if (DgopService.cpuUsage > 80)
+-                            return Theme.error;
+-                        if (DgopService.cpuUsage > 60)
+-                            return Theme.warning;
+-                        return Theme.primary;
+-                    }
+-                }
++                text: Math.round(DgopService.cpuUsage || 0) + "%"
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceText
++                horizontalAlignment: Text.AlignHCenter
+             }
+         }
+
+-        // Temperature Bar
++        // RAM
+         Column {
+-            width: (parent.width - 2 * Theme.spacingM) / 3
++            width: (parent.width - Theme.spacingS * 2) / 3
+             height: parent.height
+-            spacing: Theme.spacingS
++            spacing: Theme.spacingXXS
++
++            StyledText {
++                width: parent.width
++                text: I18n.tr("RAM")
++                font.pixelSize: Theme.fontSizeSmall
++                font.weight: Font.Medium
++                color: Theme.surfaceVariantText
++                horizontalAlignment: Text.AlignHCenter
++            }
+
+-            Rectangle {
+-                width: 8
+-                height: parent.height - Theme.iconSizeSmall - Theme.spacingS
+-                radius: 4
+-                anchors.horizontalCenter: parent.horizontalCenter
+-                color: Theme.outlineHeavy
++            Item {
++                width: parent.width
++                height: parent.height - Theme.fontSizeSmall * 2.6 - Theme.spacingXXS * 2
+
+                 Rectangle {
+-                    width: parent.width
+-                    height: parent.height * Math.min(Math.max((DgopService.cpuTemperature || 40) / 100, 0), 1)
+-                    radius: parent.radius
+-                    anchors.bottom: parent.bottom
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    color: {
+-                        if (DgopService.cpuTemperature > 85)
+-                            return Theme.error;
+-                        if (DgopService.cpuTemperature > 69)
+-                            return Theme.warning;
+-                        return Theme.primary;
+-                    }
++                    width: 10
++                    height: parent.height
++                    radius: 5
++                    anchors.horizontalCenter: parent.horizontalCenter
++                    color: Theme.outlineHeavy
++
++                    Rectangle {
++                        width: parent.width
++                        height: parent.height * Math.min((DgopService.memoryUsage || 0) / 100, 1)
++                        radius: parent.radius
++                        anchors.bottom: parent.bottom
++                        anchors.horizontalCenter: parent.horizontalCenter
++                        color: {
++                            if (DgopService.memoryUsage > 90)
++                                return Theme.error;
++                            if (DgopService.memoryUsage > 75)
++                                return Theme.warning;
++                            return Theme.primary;
++                        }
+
+-                    Behavior on height {
+-                        NumberAnimation {
+-                            duration: Theme.shortDuration
+-                            easing.type: Theme.standardEasing
++                        Behavior on height {
++                            NumberAnimation {
++                                duration: Theme.shortDuration
++                                easing.type: Theme.standardEasing
++                            }
+                         }
+                     }
+                 }
+             }
+
+-            Item {
++            StyledText {
+                 width: parent.width
+-                height: Theme.iconSizeSmall
+-
+-                DankIcon {
+-                    name: "device_thermostat"
+-                    size: Theme.iconSizeSmall
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    anchors.bottom: parent.bottom
+-                    color: {
+-                        if (DgopService.cpuTemperature > 85)
+-                            return Theme.error;
+-                        if (DgopService.cpuTemperature > 69)
+-                            return Theme.warning;
+-                        return Theme.primary;
+-                    }
+-                }
++                text: Math.round(DgopService.memoryUsage || 0) + "%"
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceText
++                horizontalAlignment: Text.AlignHCenter
+             }
+         }
+
+-        // RAM Bar
++        // TEMP
+         Column {
+-            width: (parent.width - 2 * Theme.spacingM) / 3
++            width: (parent.width - Theme.spacingS * 2) / 3
+             height: parent.height
+-            spacing: Theme.spacingS
++            spacing: Theme.spacingXXS
+
+-            Rectangle {
+-                width: 8
+-                height: parent.height - Theme.iconSizeSmall - Theme.spacingS
+-                radius: 4
+-                anchors.horizontalCenter: parent.horizontalCenter
+-                color: Theme.outlineHeavy
++            StyledText {
++                width: parent.width
++                text: I18n.tr("TEMP")
++                font.pixelSize: Theme.fontSizeSmall
++                font.weight: Font.Medium
++                color: Theme.surfaceVariantText
++                horizontalAlignment: Text.AlignHCenter
++            }
++
++            Item {
++                width: parent.width
++                height: parent.height - Theme.fontSizeSmall * 2.6 - Theme.spacingXXS * 2
+
+                 Rectangle {
+-                    width: parent.width
+-                    height: parent.height * Math.min((DgopService.memoryUsage || 42) / 100, 1)
+-                    radius: parent.radius
+-                    anchors.bottom: parent.bottom
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    color: {
+-                        if (DgopService.memoryUsage > 90)
+-                            return Theme.error;
+-                        if (DgopService.memoryUsage > 75)
+-                            return Theme.warning;
+-                        return Theme.primary;
+-                    }
++                    width: 10
++                    height: parent.height
++                    radius: 5
++                    anchors.horizontalCenter: parent.horizontalCenter
++                    color: Theme.outlineHeavy
++
++                    Rectangle {
++                        width: parent.width
++                        height: parent.height * Math.min(Math.max((DgopService.cpuTemperature || 0) / 100, 0), 1)
++                        radius: parent.radius
++                        anchors.bottom: parent.bottom
++                        anchors.horizontalCenter: parent.horizontalCenter
++                        color: {
++                            if (DgopService.cpuTemperature > 85)
++                                return Theme.error;
++                            if (DgopService.cpuTemperature > 69)
++                                return Theme.warning;
++                            return Theme.primary;
++                        }
+
+-                    Behavior on height {
+-                        NumberAnimation {
+-                            duration: Theme.shortDuration
+-                            easing.type: Theme.standardEasing
++                        Behavior on height {
++                            NumberAnimation {
++                                duration: Theme.shortDuration
++                                easing.type: Theme.standardEasing
++                            }
+                         }
+                     }
+                 }
+             }
+
+-            Item {
++            StyledText {
+                 width: parent.width
+-                height: Theme.iconSizeSmall
+-
+-                DankIcon {
+-                    name: "developer_board"
+-                    size: Theme.iconSizeSmall
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    anchors.bottom: parent.bottom
+-                    color: {
+-                        if (DgopService.memoryUsage > 90)
+-                            return Theme.error;
+-                        if (DgopService.memoryUsage > 75)
+-                            return Theme.warning;
+-                        return Theme.primary;
+-                    }
+-                }
++                text: Math.round(DgopService.cpuTemperature || 0) + "°"
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceText
++                horizontalAlignment: Text.AlignHCenter
+             }
+         }
+     }
+diff -ruN a/Modules/DankDash/Overview/MediaOverviewCard.qml b/Modules/DankDash/Overview/MediaOverviewCard.qml
+--- a/Modules/DankDash/Overview/MediaOverviewCard.qml
++++ b/Modules/DankDash/Overview/MediaOverviewCard.qml
+@@ -4,115 +4,103 @@
+ import qs.Services
+ import qs.Widgets
+
++// Ryoku 6G — media preview for ~294×146; art stays inside card (no 300ms Timer).
+ Card {
+     id: root
+-    clip: false
++    clip: true
+
+     signal clicked
+
+     property MprisPlayer activePlayer: MprisController.activePlayer
+-    property real currentPosition: activePlayer?.positionSupported ? activePlayer.position : 0
+-    property real displayPosition: currentPosition
+-
+-    readonly property real ratio: {
+-        const len = MprisController.activePlayerStableLength;
+-        if (!activePlayer || !activePlayer.lengthSupported || len <= 0)
+-            return 0;
+-        const pos = displayPosition % Math.max(1, len);
+-        const calculatedRatio = pos / len;
+-        return Math.max(0, Math.min(1, calculatedRatio));
+-    }
+-
+-    onActivePlayerChanged: {
+-        if (activePlayer?.positionSupported) {
+-            currentPosition = Qt.binding(() => activePlayer?.position || 0);
+-        } else {
+-            currentPosition = 0;
+-        }
+-    }
+-
+-    Timer {
+-        interval: 300
+-        running: activePlayer?.playbackState === MprisPlaybackState.Playing && !isSeeking
+-        repeat: true
+-        onTriggered: activePlayer?.positionSupported && activePlayer.positionChanged()
+-    }
+-
+     property bool isSeeking: false
+
+     Column {
+         anchors.centerIn: parent
+-        spacing: Theme.spacingS
++        spacing: Theme.spacingXS
+         visible: !activePlayer
+
+         DankIcon {
+             name: "music_note"
+             size: Theme.iconSize
+-            color: Theme.surfaceTextSecondary
++            color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+
+         StyledText {
+             text: I18n.tr("No Media")
+             font.pixelSize: Theme.fontSizeSmall
+-            color: Theme.surfaceTextMedium
++            color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+     }
+
+     Column {
+-        anchors.centerIn: parent
+-        width: parent.width - Theme.spacingXS * 2
+-        spacing: Theme.spacingL
+-        visible: activePlayer
++        anchors.fill: parent
++        spacing: Theme.spacingXS
++        visible: !!activePlayer
+
+         Item {
+-            width: 140
+-            height: 110
+-            anchors.horizontalCenter: parent.horizontalCenter
+-            clip: false
++            width: parent.width
++            height: 64
+
+-            DankAlbumArt {
+-                width: 110
+-                height: 80
+-                anchors.centerIn: parent
+-                activePlayer: root.activePlayer
+-                albumSize: 76
+-                animationScale: 1.05
+-            }
+-        }
++            Row {
++                anchors.fill: parent
++                spacing: Theme.spacingS
+
+-        Column {
+-            width: parent.width
+-            spacing: Theme.spacingXS
+-            topPadding: Theme.spacingL
++                Item {
++                    width: 64
++                    height: 64
++                    clip: true
+
+-            StyledText {
+-                text: MprisController.stableTitle || I18n.tr("Unknown")
+-                font.pixelSize: Theme.fontSizeSmall
+-                font.weight: Font.Medium
+-                color: Theme.surfaceText
+-                width: parent.width
+-                elide: Text.ElideRight
+-                maximumLineCount: 1
+-                horizontalAlignment: Text.AlignHCenter
++                    DankAlbumArt {
++                        anchors.centerIn: parent
++                        width: 64
++                        height: 64
++                        activePlayer: root.activePlayer
++                        albumSize: 56
++                        animationScale: 1.0
++                    }
++                }
++
++                Column {
++                    width: parent.width - 64 - Theme.spacingS
++                    anchors.verticalCenter: parent.verticalCenter
++                    spacing: Theme.spacingXXS
++
++                    StyledText {
++                        width: parent.width
++                        text: MprisController.stableTitle || I18n.tr("Unknown")
++                        font.pixelSize: Theme.fontSizeSmall
++                        font.weight: Font.Medium
++                        color: Theme.surfaceText
++                        elide: Text.ElideRight
++                        maximumLineCount: 2
++                        wrapMode: Text.WordWrap
++                    }
++
++                    StyledText {
++                        width: parent.width
++                        text: MprisController.stableArtist || I18n.tr("Unknown Artist")
++                        font.pixelSize: Theme.fontSizeSmall
++                        color: Theme.surfaceVariantText
++                        elide: Text.ElideRight
++                        maximumLineCount: 1
++                        wrapMode: Text.NoWrap
++                    }
++                }
+             }
+
+-            StyledText {
+-                text: MprisController.stableArtist || I18n.tr("Unknown Artist")
+-                font.pixelSize: Theme.fontSizeSmall
+-                color: Theme.surfaceTextMedium
+-                width: parent.width
+-                elide: Text.ElideRight
+-                maximumLineCount: 1
+-                horizontalAlignment: Text.AlignHCenter
++            MouseArea {
++                anchors.fill: parent
++                hoverEnabled: true
++                cursorShape: Qt.PointingHandCursor
++                onClicked: root.clicked()
+             }
+         }
+
+         DankSeekbar {
+-            width: parent.width + 4
+-            height: 20
+-            x: -2
++            width: parent.width
++            height: 18
+             activePlayer: root.activePlayer
+             isSeeking: root.isSeeking
+             onIsSeekingChanged: root.isSeeking = isSeeking
+@@ -120,18 +108,18 @@
+
+         Item {
+             width: parent.width
+-            height: 32
++            height: 28
+
+             Row {
+-                spacing: Theme.spacingS
++                spacing: Theme.spacingXS
+                 anchors.centerIn: parent
+
+                 Rectangle {
+-                    width: 28
+-                    height: 28
+-                    radius: 14
++                    width: 26
++                    height: 26
++                    radius: 13
+                     anchors.verticalCenter: playPauseButton.verticalCenter
+-                    color: prevArea.containsMouse ? Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency) : Theme.withAlpha(Theme.surfaceContainerHigh, 0)
++                    color: prevArea.containsMouse ? Theme.primaryHoverLight : "transparent"
+
+                     DankIcon {
+                         anchors.centerIn: parent
+@@ -151,15 +139,15 @@
+
+                 Rectangle {
+                     id: playPauseButton
+-                    width: 32
+-                    height: 32
+-                    radius: 16
++                    width: 28
++                    height: 28
++                    radius: 14
+                     color: MediaAccentService.accent
+
+                     DankIcon {
+                         anchors.centerIn: parent
+                         name: activePlayer?.playbackState === MprisPlaybackState.Playing ? "pause" : "play_arrow"
+-                        size: 16
++                        size: 14
+                         color: MediaAccentService.onAccent
+                     }
+
+@@ -172,11 +160,11 @@
+                 }
+
+                 Rectangle {
+-                    width: 28
+-                    height: 28
+-                    radius: 14
++                    width: 26
++                    height: 26
++                    radius: 13
+                     anchors.verticalCenter: playPauseButton.verticalCenter
+-                    color: nextArea.containsMouse ? Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency) : Theme.withAlpha(Theme.surfaceContainerHigh, 0)
++                    color: nextArea.containsMouse ? Theme.primaryHoverLight : "transparent"
+
+                     DankIcon {
+                         anchors.centerIn: parent
+@@ -197,15 +185,4 @@
+         }
+     }
+
+-    MouseArea {
+-        anchors.top: parent.top
+-        anchors.left: parent.left
+-        anchors.right: parent.right
+-        anchors.bottom: parent.bottom
+-        anchors.bottomMargin: 123
+-        hoverEnabled: true
+-        cursorShape: Qt.PointingHandCursor
+-        onClicked: root.clicked()
+-        visible: activePlayer
+-    }
+ }
