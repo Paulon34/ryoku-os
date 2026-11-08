@@ -3,6 +3,7 @@
   pkgs,
   lib,
   dankMaterialShell,
+  nixGL,
   ...
 }:
 
@@ -90,17 +91,17 @@ in
     };
   };
 
-  # Start DMS with the compositor session (Niri).
-  systemd.user.services.ryoku-dms = {
-    Unit = {
-      Description = "Ryoku DankMaterialShell";
-      PartOf = [ "graphical-session.target" ];
-      After = [ "graphical-session.target" ];
-    };
-    Service = {
-      ExecStart = "${dmsPackage}/bin/dms run --session";
-      Restart = "on-failure";
-    };
-    Install.WantedBy = [ "graphical-session.target" ];
+  # The tested GDM session invokes 'niri --session' directly, not via
+  # niri-session / niri.service; graphical-session.target is not guaranteed
+  # active in that case. Spawn DMS from Niri after WAYLAND_DISPLAY is ready.
+  # Do NOT also enable a competing systemd user service (double instance).
+  # Quickshell needs the same Mesa wrapper as the Nix-built compositor on Debian.
+  home.file.".local/bin/ryoku-start-dms" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      exec "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsPackage}/bin/dms" run
+    '';
   };
 }
