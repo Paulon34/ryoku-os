@@ -9,6 +9,7 @@
 # nixGL / dankMaterialShell arrive via extraSpecialArgs into their modules.
 {
   imports = [
+    ../modules
     ./niri.nix
     ./kitty.nix
     ./fuzzel.nix

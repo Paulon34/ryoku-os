@@ -37,4 +37,4 @@ Niri config: `distro/flake/home/niri.nix` (ENTREGA A/B).
 | Quattro (default) | Flat bar, radius 8, Omarchy-inspired | Same via patched DMS 1.5.3 + `ryoku.shellStyle` |
 | Islands | Floating capsules | Same |
 
-Set via HM: `ryoku.shellStyle = "quattro" | "islands";` in `distro/flake/home/dms.nix`.
+Set via HM: `ryoku.profile.shellStyle = "quattro" | "islands";` (see `distro/flake/modules/profiles.nix`).
