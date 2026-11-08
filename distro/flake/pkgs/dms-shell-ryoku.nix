@@ -13,10 +13,15 @@ dms-shell.overrideAttrs (old: {
   postInstall =
     (old.postInstall or "")
     + ''
-      if [ "${old.version}" != "1.5.3" ]; then
-        echo "error: Ryoku DMS patches are pinned to dms-shell 1.5.3 (got ${old.version})" >&2
-        exit 1
-      fi
+      # Nixpkgs decorates release version with a source date/commit suffix,
+      # e.g. 1.5.3+date=2026-07-27_069ddab. It is still DMS 1.5.3.
+      case "${old.version}" in
+        1.5.3|1.5.3+*) ;;
+        *)
+          echo "error: Ryoku DMS patches require dms-shell 1.5.3 (got ${old.version})" >&2
+          exit 1
+          ;;
+      esac
       echo "Applying Ryoku DMS patches for ${old.version} (style=${ryokuShellStyle})..."
       chmod -R u+w "$out/share/quickshell/dms"
       patch_dir=${../patches/dms/1.5.3}
