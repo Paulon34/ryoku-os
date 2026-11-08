@@ -35,3 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           nix eval --raw --show-trace ./distro/flake#homeConfigurations.ryoku.activationPackage.drvPath
+
+      - name: Build Ryoku-patched DMS Quattro package
+        run: |
+          set -euo pipefail
+          nix build --no-link --show-trace ./distro/flake#dms-shell-ryoku
