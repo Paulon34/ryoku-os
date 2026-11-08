@@ -46,7 +46,6 @@ pipewire-pulse
 pipewire-audio
 wireplumber
 libspa-0.2-bluetooth
-policykit-1
 polkitd
 pkexec
 rtkit
