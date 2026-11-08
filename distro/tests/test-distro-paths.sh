@@ -42,8 +42,10 @@ require distro/tests/test-hm-hosts.sh
 require distro/tests/test-debian13-regressions.sh
 require distro/tests/test-dms-bar-merge.sh
 require distro/tests/test-dms-ipc-path.sh
+require distro/tests/test-dms-bar-surface.sh
 require distro/docs/COMPOSITOR.md
 require distro/docs/SERVICE_OWNERSHIP.md
+require distro/docs/DMS_BAR_SURFACE.md
 require distro/docs/RYOKU_PROFILE_MVP.md
 require distro/docs/NIXOS_TO_DEBIAN_MIGRATION_MATRIX.md
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
@@ -81,6 +83,7 @@ bash -n "$ROOT/distro/tests/test-distro-paths.sh"
 bash -n "$ROOT/distro/tests/test-debian13-regressions.sh"
 bash -n "$ROOT/distro/tests/test-dms-bar-merge.sh"
 bash -n "$ROOT/distro/tests/test-dms-ipc-path.sh"
+bash -n "$ROOT/distro/tests/test-dms-bar-surface.sh"
 echo "ok: bash -n syntax"
 
 [[ "$fail" -eq 0 ]]

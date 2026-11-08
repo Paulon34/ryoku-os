@@ -171,6 +171,14 @@ grep -Fq 'visible = true' "$DMS_MODULE" ||
   fail "Quattro bar must declaratively set visible = true"
 grep -Fq 'autoHide = false' "$DMS_MODULE" ||
   fail "Quattro bar must declaratively disable autoHide"
+# VM 201: IPC visible + reveal OK but niri msg layers had no Top quickshell surface.
+# ShellCore Loader requires enabled=true; position int 0 = Top for getPosition.
+grep -Fq 'enabled = true' "$DMS_MODULE" ||
+  fail "Quattro bar must set enabled=true or DankBar never creates a layer-shell window"
+grep -Fq 'position = 0' "$DMS_MODULE" ||
+  fail "Quattro bar must set position=0 (Top) or getPosition returns unknown"
+grep -Fq 'screenPreferences = [ "all" ]' "$DMS_MODULE" ||
+  fail "Quattro bar must bind screenPreferences all for Virtual-1 / single monitors"
 # Immutable store symlink would block DMS first-run persistence + bar merges.
 ! grep -Fq 'xdg.configFile."DankMaterialShell/settings.json"' "$DMS_MODULE" ||
   fail "DMS settings.json must stay mutable (no xdg.configFile symlink)"

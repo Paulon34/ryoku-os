@@ -9,6 +9,7 @@ on:
       - cursor/debian-dms-visual-fidelity-81bd
       - cursor/debian-master-stabilize-81bd
       - cursor/debian-dms-bar-diag-81bd
+      - cursor/debian-dms-bar-surface-81bd
     paths:
       - "distro/flake/**"
       - "distro/session/**"
@@ -20,6 +21,7 @@ on:
       - cursor/debian-foundation-distro-88e9
       - cursor/debian-dms-visual-fidelity-81bd
       - cursor/debian-master-stabilize-81bd
+      - cursor/debian-dms-bar-diag-81bd
     paths:
       - "distro/flake/**"
       - "distro/session/**"
