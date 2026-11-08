@@ -24,9 +24,9 @@ Niri config: `distro/flake/home/niri.nix` (ENTREGA A/B).
 | Screenshot region | Print → grim\|swappy | `Print` → ryoku-screenshot region | B (no swappy) |
 | Screenshot full | `$mod, Print` | `Mod+Print` → full | B |
 | Clipboard hist | `$mod, C` cliphist\|rofi | `Mod+C` → ryoku-clipboard | B |
-| Notifications | (DMS) | `Mod+N` → dms notifications | B |
-| Power menu | (DMS) | `Mod+X` → dms powermenu | B |
-| Lock | `$mod, X` hyprlock / `$mod, L` dms lock | `Mod+Shift+X` → dms lock | B |
+| Notifications | (DMS) | `Mod+N` → `ryoku-dms-ipc` notifications | B |
+| Power menu | (DMS) | `Mod+X` → `ryoku-dms-ipc` powermenu | B |
+| Lock | `$mod, X` hyprlock / `$mod, L` dms lock | `Mod+Shift+X` → `ryoku-dms-ipc` lock | B |
 | Volume | XF86Audio* → wpctl | XF86Audio* → wpctl | Parity |
 | Brightness | XF86MonBrightness* | XF86MonBrightness* → brightnessctl | B |
 
@@ -34,7 +34,9 @@ Niri config: `distro/flake/home/niri.nix` (ENTREGA A/B).
 
 | Style | Hyprland/DMS (ryoku-desktop) | Niri/DMS (Debian) |
 |-------|------------------------------|-------------------|
-| Quattro (default) | Flat bar, radius 8, Omarchy-inspired | Same via patched DMS 1.5.3 + `ryoku.shellStyle` |
+| Quattro (default) | Flat bar, radius 8, Omarchy-inspired | Same via patched DMS 1.5.3 + `ryoku.profile.shellStyle` |
 | Islands | Floating capsules | Same |
+| Quattro workspace QML | Custom `Hyprland.*` strip | Stock DMS switcher on Niri (`CompositorService.isHyprland` gate) |
+| Matugen compositor colors | `hyprland-colors.conf` | `~/.config/niri/colors.kdl` |
 
-Set via HM: `ryoku.shellStyle = "quattro" | "islands";` in `distro/flake/home/dms.nix`.
+Set via host profile: `shellStyle = "quattro" | "islands";` in `distro/flake/hosts/<user>/default.nix`.

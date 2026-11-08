@@ -7,7 +7,7 @@
 
   xdg.configFile."fuzzel/fuzzel.ini".text = ''
     [main]
-    font=DejaVu Sans:size=12
+    font=JetBrainsMono Nerd Font:size=12
     dpi-aware=yes
     fields=filename,name,generic
     terminal=kitty -e

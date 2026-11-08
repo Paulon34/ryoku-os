@@ -14,6 +14,11 @@ export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-niri}"
 # a NixOS-only location, and leave a blank display on Proxmox.
 HM_BIN="${HOME}/.local/state/nix/profiles/home-manager/home-path/bin"
 NIX_BIN="${HOME}/.nix-profile/bin"
+LOCAL_BIN="${HOME}/.local/bin"
+
+# GDM does not source Home Manager's session PATH. Prepend HM/Nix bins so
+# Niri spawn-at-startup and keybind helpers resolve dms/qs/matugen/fuzzel.
+export PATH="${LOCAL_BIN}:${HM_BIN}:${NIX_BIN}:${PATH}"
 
 HM_NIRI="${HM_BIN}/niri"
 NIX_NIRI="${NIX_BIN}/niri"

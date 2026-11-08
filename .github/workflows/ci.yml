@@ -183,5 +183,8 @@ jobs:
       - name: Real Debian 13 regression guards (no guest)
         run: bash ./distro/tests/test-debian13-regressions.sh
 
+      - name: DMS Quattro barConfigs merge regressions (no guest)
+        run: bash ./distro/tests/test-dms-bar-merge.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

@@ -102,10 +102,11 @@ let
         Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "region"; }
         Mod+Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "full"; }
 
-        Mod+N { spawn "dms" "ipc" "call" "notifications" "toggle"; }
-        Mod+Comma { spawn "dms" "ipc" "call" "settings" "toggle"; }
-        Mod+X { spawn "dms" "ipc" "call" "powermenu" "toggle"; }
-        Mod+Shift+X { spawn "dms" "ipc" "call" "lock" "lock"; }
+        // Absolute HM helpers — GDM→niri --session often lacks nix profile PATH.
+        Mod+N { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "notifications" "toggle"; }
+        Mod+Comma { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "settings" "toggle"; }
+        Mod+X { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "powermenu" "toggle"; }
+        Mod+Shift+X { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "lock" "lock"; }
 
         XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"; }
         XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-"; }
@@ -123,6 +124,10 @@ in
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
+      ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
+      if [[ -x "$ipc" ]]; then
+        exec "$ipc" spotlight toggle
+      fi
       if command -v dms >/dev/null 2>&1; then
         exec dms ipc call spotlight toggle
       fi
@@ -135,6 +140,11 @@ in
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
+      ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
+      if [[ -x "$ipc" ]]; then
+        exec "$ipc" clipboard toggle 2>/dev/null || true
+        exit 0
+      fi
       if command -v dms >/dev/null 2>&1; then
         exec dms ipc call clipboard toggle 2>/dev/null || true
       fi
