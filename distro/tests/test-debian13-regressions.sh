@@ -61,6 +61,31 @@ grep -Fq '[[ -f /usr/share/dbus-1/session.conf ]]' "$BOOTSTRAP" ||
   fail "missing Debian session.conf preflight before HM activation"
 pass "D-Bus session for Home Manager dconfSettings"
 
+# First real GDM/Niri login failed on "unexpected node prefers-no-csd".
+NIRI_KDL="$ROOT/distro/flake/home/niri.nix"
+grep -Fq '    prefer-no-csd' "$NIRI_KDL" || fail "correct Niri KDL node missing"
+! grep -Fq 'prefers-no-csd' "$NIRI_KDL" || fail "invalid prefers-no-csd still present"
+grep -Fq '"$niri_bin" validate' "$BOOTSTRAP" ||
+  fail "bootstrap does not validate Niri KDL after HM activation"
+pass "Niri KDL syntax regression guarded"
+
+# Verify Nix-installed compositor gets a Mesa wrapper rather than running
+# directly (previously tried the NixOS-only /run/opengl-driver GBM location).
+SESSION="$ROOT/distro/session/ryoku-niri-session"
+TEST_HOME=$(mktemp -d)
+trap 'rm -rf "$TEST_HOME"' EXIT
+TEST_BIN="$TEST_HOME/.local/state/nix/profiles/home-manager/home-path/bin"
+mkdir -p "$TEST_BIN"
+printf '#!/bin/sh\nexit 97\n' > "$TEST_BIN/niri"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "$RYOKU_TEST_SESSION_LOG"\n' > "$TEST_BIN/nixGLIntel"
+chmod +x "$TEST_BIN/niri" "$TEST_BIN/nixGLIntel"
+HOME="$TEST_HOME" RYOKU_TEST_SESSION_LOG="$TEST_HOME/session.log" bash "$SESSION" ||
+  fail "Niri session wrapper failed"
+EXPECTED="$TEST_BIN/niri --session"
+[[ "$(cat "$TEST_HOME/session.log")" == "$EXPECTED" ]] ||
+  fail "Niri session didn't invoke nixGLIntel with Niri --session"
+pass "Niri starts through Mesa nixGLIntel"
+
 bash -n "$BOOTSTRAP" || fail "bootstrap bash syntax"
 bash -n "$ROOT/distro/session/ryoku-niri-session" || fail "session shell syntax"
 pass "shell syntax"
