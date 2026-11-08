@@ -164,5 +164,8 @@ jobs:
       - name: HM hosts + preflight checks
         run: ./distro/tests/test-hm-hosts.sh
 
+      - name: Real Debian 13 regression guards (no guest)
+        run: bash ./distro/tests/test-debian13-regressions.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes
