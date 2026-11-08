@@ -86,6 +86,19 @@ EXPECTED="$TEST_BIN/niri --session"
   fail "Niri session didn't invoke nixGLIntel with Niri --session"
 pass "Niri starts through Mesa nixGLIntel"
 
+# Ryoku DMS needs to autostart in the GDM direct-niri --session mode:
+# that mode does not necessarily start graphical-session.target.
+DMS_MODULE="$ROOT/distro/flake/home/dms.nix"
+grep -Fq 'spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-start-dms"' "$NIRI_KDL" ||
+  fail "Niri must start DMS directly for the tested Debian GDM session"
+grep -Fq 'home.file.".local/bin/ryoku-start-dms"' "$DMS_MODULE" ||
+  fail "DMS launcher missing from Home Manager"
+grep -q 'nixGLIntel' "$DMS_MODULE" ||
+  fail "DMS launcher missing pure Mesa wrapper"
+! grep -Fq 'systemd.user.services.ryoku-dms' "$DMS_MODULE" ||
+  fail "DMS may double-start via systemd user and Niri startup"
+pass "Ryoku DMS startup wired for direct GDM Niri"
+
 bash -n "$BOOTSTRAP" || fail "bootstrap bash syntax"
 bash -n "$ROOT/distro/session/ryoku-niri-session" || fail "session shell syntax"
 pass "shell syntax"
