@@ -1,0 +1,83 @@
+diff --git a/Widgets/DankPopoutStandalone.qml b/Widgets/DankPopoutStandalone.qml
+index 1576826..6e3c325 100644
+--- a/Widgets/DankPopoutStandalone.qml
++++ b/Widgets/DankPopoutStandalone.qml
+@@ -685,8 +685,8 @@ Item {
+             readonly property bool revealClipActive: root.fluidStandaloneActive
+
+             // Blur tracks the surface's scaled rect, matching the connected backend
+-            blurX: revealClipActive ? contentContainer.x : contentContainer.x + contentContainer.width * (1 - visibleScale) * 0.5 + Theme.snap(contentContainer.animX, root.dpr)
+-            blurY: revealClipActive ? contentContainer.y : contentContainer.y + contentContainer.height * (1 - visibleScale) * 0.5 + Theme.snap(contentContainer.animY, root.dpr)
++            blurX: revealClipActive ? contentContainer.x : contentContainer.x + contentContainer.width * (1 - visibleScale) * 0.5 + Theme.snap(contentContainer.animX + contentContainer.growShiftX, root.dpr)
++            blurY: revealClipActive ? contentContainer.y : contentContainer.y + contentContainer.height * (1 - visibleScale) * 0.5 + Theme.snap(contentContainer.animY + contentContainer.growShiftY, root.dpr)
+             blurWidth: root.shouldBeVisible ? (revealClipActive ? contentContainer.width : contentContainer.width * visibleScale) : 0
+             blurHeight: root.shouldBeVisible ? (revealClipActive ? contentContainer.height : contentContainer.height * visibleScale) : 0
+             blurRadius: Theme.cornerRadius
+@@ -822,6 +822,24 @@ Item {
+             // Ryoku depth (Cinematic): the card swings in about its X axis from the
+             // bar side while opening/closing; 0 at rest, so text stays unfiltered.
+             readonly property real tiltAngle: root.fluidStandaloneActive ? 0 : RyokuVisual.tiltDegrees * (1 - morph.openProgress) * (barBottom ? -1 : 1)
++            // Quattro: the card grows out of the point on its bar-facing edge
++            // nearest the icon it hangs from. Scaling about that point equals
++            // scaling about the centre plus this shift, so every sibling that
++            // mirrors contentWrapper (shadow, frame, blur) follows it.
++            readonly property point growOrigin: {
++                const w = width, h = height;
++                const cx = Math.max(0, Math.min(w, root.triggerX + root.triggerWidth / 2 - root.alignedX));
++                const cy = Math.max(0, Math.min(h, root.triggerY - root.alignedY));
++                if (barBottom)
++                    return Qt.point(cx, h);
++                if (barLeft)
++                    return Qt.point(0, cy);
++                if (barRight)
++                    return Qt.point(w, cy);
++                return Qt.point(cx, 0);
++            }
++            readonly property real growShiftX: RyokuVisual.quattro && !root.fluidStandaloneActive ? (1 - scaleValue) * (growOrigin.x - width / 2) : 0
++            readonly property real growShiftY: RyokuVisual.quattro && !root.fluidStandaloneActive ? (1 - scaleValue) * (growOrigin.y - height / 2) : 0
+             readonly property real clampedAnimX: Math.max(-width, Math.min(animX, width))
+             readonly property real clampedAnimY: Math.max(-height, Math.min(animY, height))
+             readonly property real revealWidth: {
+@@ -920,8 +938,8 @@ Item {
+                         visible: _renderActive
+                         scale: contentContainer.scaleValue
+                         transformOrigin: Item.Center
+-                        x: Theme.snap(contentContainer.animX + (rollOutAdjuster.baseWidth - width) * (1 - contentContainer.scaleValue) * 0.5, root.dpr)
+-                        y: Theme.snap(contentContainer.animY + (rollOutAdjuster.baseHeight - height) * (1 - contentContainer.scaleValue) * 0.5, root.dpr)
++                        x: Theme.snap(contentContainer.animX + contentContainer.growShiftX + (rollOutAdjuster.baseWidth - width) * (1 - contentContainer.scaleValue) * 0.5, root.dpr)
++                        y: Theme.snap(contentContainer.animY + contentContainer.growShiftY + (rollOutAdjuster.baseHeight - height) * (1 - contentContainer.scaleValue) * 0.5, root.dpr)
+
+                         transform: Rotation {
+                             origin.x: contentWrapper.width / 2
+@@ -998,13 +1016,30 @@ Item {
+                             axis { x: 1; y: 0; z: 0 }
+                             angle: contentContainer.tiltAngle
+                         }
+-                        visible: contentWrapper.visible
++                        visible: contentWrapper.visible && !RyokuVisual.quattro
+                         radius: Theme.cornerRadius
+                         color: "transparent"
+                         border.color: BlurService.borderColor
+                         border.width: BlurService.borderWidth
+                         z: 100
+                     }
++
++                    RyokuFrame {
++                        width: rollOutAdjuster.baseWidth
++                        height: rollOutAdjuster.baseHeight
++                        x: root.fluidStandaloneActive ? 0 : contentWrapper.x
++                        y: root.fluidStandaloneActive ? 0 : contentWrapper.y
++                        opacity: contentWrapper.publishedOpacity
++                        scale: root.fluidStandaloneActive ? 1 : contentWrapper.scale
++                        transform: Rotation {
++                            origin.x: rollOutAdjuster.baseWidth / 2
++                            origin.y: rollOutAdjuster.baseHeight / 2
++                            axis { x: 1; y: 0; z: 0 }
++                            angle: contentContainer.tiltAngle
++                        }
++                        visible: contentWrapper.visible && RyokuVisual.quattro
++                        z: 100
++                    }
+                 }
+             }
+         }

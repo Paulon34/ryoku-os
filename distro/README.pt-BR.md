@@ -49,7 +49,7 @@ sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER"
 
 | Entrega | Conteúdo |
 |---------|----------|
-| B | Port visual ryoku-desktop → Niri/DMS |
+| B | Port visual ryoku-desktop → Niri/DMS (patches 1.5.3, Matugen, wallpapers) |
 | C | Perfis Lite/Balanced/Ultra + Minimal/Full |
 | D | ryoku-cli / Jarvis bridge (Rust; off no Minimal) |
 | E | ISO live-build + Calamares (só após desktop ok) |

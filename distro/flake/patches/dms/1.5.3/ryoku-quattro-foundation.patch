@@ -1,0 +1,196 @@
+diff --git a/Common/RyokuVisual.qml b/Common/RyokuVisual.qml
+index 55a640f..160a8da 100644
+--- a/Common/RyokuVisual.qml
++++ b/Common/RyokuVisual.qml
+@@ -21,11 +21,27 @@ import qs.Services
+ // Motion tokens mirror apps/ryoku-settings RyokuTheme (fast / standard /
+ // emphasized / exit). No timers, no polling: everything is a binding or a
+ // one-shot hyprctl call when the effective state changes.
++//
++// The Quattro tokens reproduce the behaviour documented in Omarchy's
++// agents/skills/motion.md and default/themed/shell.toml.tpl
++// (github.com/omacom/omarchy, branch quattro, MIT); no Omarchy code is copied.
+ Singleton {
+     id: root
+
+     readonly property string settingsPath: "@RYOKU_SETTINGS_JSON@"
+
++    // ── Shell style (appearance.shellStyle, baked at build time) ─────────
++    // "quattro": flat edge-to-edge bar, opaque cards framed by the Hyprland
++    // active-border gradient, grow-from-the-icon motion (after Omarchy
++    // Quattro, MIT). "islands": the floating pill bar of earlier Ryoku.
++    // Constant per build, so bar config (Home Manager) and QML change together.
++    readonly property string shellStyle: "@RYOKU_SHELL_STYLE@" === "islands" ? "islands" : "quattro"
++    readonly property bool quattro: shellStyle === "quattro"
++
++    // Quattro chrome: monospace bar/launcher/OSD text, 2px frame.
++    readonly property string chromeFont: "JetBrainsMono Nerd Font"
++    readonly property real frameWidth: 2
++
+     property string configuredProfile: "balanced"
+     property bool autoEnabled: false
+
+@@ -53,31 +69,42 @@ Singleton {
+     }
+
+     // ── Motion tokens ────────────────────────────────────────────────────
++    // Quattro follows Omarchy's motion rules: entrances 180 ms, exits two
++    // thirds of that, one strong ease-out (no ease-in on UI, no overshoot),
++    // scale from 0.97 and never from 0.
+     readonly property int fastDuration: economy ? 90 : 120
+-    readonly property int enterDuration: economy ? 120 : (cinematic ? 260 : 200)
+-    readonly property int emphasizedDuration: economy ? 160 : (cinematic ? 320 : 280)
+-    readonly property int exitDuration: economy ? 100 : (cinematic ? 150 : 140)
++    readonly property int enterDuration: quattro ? (economy ? 120 : (cinematic ? 220 : 180)) : (economy ? 120 : (cinematic ? 260 : 200))
++    readonly property int emphasizedDuration: quattro ? (economy ? 160 : (cinematic ? 280 : 240)) : (economy ? 160 : (cinematic ? 320 : 280))
++    readonly property int exitDuration: quattro ? (economy ? 90 : (cinematic ? 150 : 120)) : (economy ? 100 : (cinematic ? 150 : 140))
+
+-    // Material 3 curves — no overshoot anywhere (no bounce).
+-    readonly property list<real> enterCurve: economy ? [0, 0, 0, 1, 1, 1] : [0.05, 0.7, 0.1, 1, 1, 1]
+-    readonly property list<real> exitCurve: [0.3, 0, 0.8, 0.15, 1, 1]
++    readonly property list<real> easeOut: [0.23, 1, 0.32, 1, 1, 1]
++    readonly property list<real> enterCurve: economy ? [0, 0, 0, 1, 1, 1] : (quattro ? easeOut : [0.05, 0.7, 0.1, 1, 1, 1])
++    readonly property list<real> exitCurve: quattro ? easeOut : [0.3, 0, 0.8, 0.15, 1, 1]
+
+     // Depth: Economy = fade only; Balanced = fade + scale; Cinematic = + X tilt.
+-    readonly property real scaleCollapsed: economy ? 1.0 : (cinematic ? 0.94 : 0.96)
+-    readonly property real animOffset: economy ? 0 : (cinematic ? 16 : 10)
+-    readonly property real tiltDegrees: cinematic ? 4 : 0
+-    readonly property real osdScaleCollapsed: economy ? 1.0 : (cinematic ? 0.9 : 0.94)
+-
+-    // Elevation and effects.
+-    readonly property bool shadowsEnabled: !economy
++    readonly property real scaleCollapsed: economy ? 1.0 : (quattro ? (cinematic ? 0.95 : 0.97) : (cinematic ? 0.94 : 0.96))
++    readonly property real animOffset: economy ? 0 : (quattro ? (cinematic ? 6 : 0) : (cinematic ? 16 : 10))
++    readonly property real tiltDegrees: cinematic ? (quattro ? 3 : 4) : 0
++    readonly property real osdScaleCollapsed: economy || quattro ? 1.0 : (cinematic ? 0.9 : 0.94)
++
++    // Summoned by one keystroke many times a day (launcher, power menu, OSD):
++    // Quattro shows and hides them at once, except in Cinematic.
++    readonly property bool instantSurfaces: quattro && !cinematic
++
++    // Elevation and effects. Quattro surfaces are opaque and flat, so blur and
++    // shadows only come back in Cinematic.
++    readonly property bool shadowsEnabled: quattro ? cinematic : !economy
+     readonly property int popoutElevation: cinematic ? 3 : 2
+     readonly property int modalElevation: cinematic ? 4 : 3
+-    readonly property bool blurAllowed: !economy
++    readonly property bool blurAllowed: quattro ? cinematic : !economy
+
+-    // Material state layers (hover / pressed / focus).
+-    readonly property real stateHover: 0.06
+-    readonly property real statePressed: 0.10
+-    readonly property real stateFocus: 0.10
++    // State layers (hover / pressed / focus). Quattro uses Omarchy's control
++    // fills: hover 8 %, pressed 22 %, selected 18 %.
++    readonly property real stateHover: quattro ? 0.08 : 0.06
++    readonly property real statePressed: quattro ? 0.22 : 0.10
++    readonly property real stateFocus: quattro ? 0.08 : 0.10
++    readonly property real stateSelected: 0.18
++    readonly property real pressScale: 0.9
+
+     // Projected rect of a card tilted `degrees` about its X axis, as a fraction
+     // of its untilted size. Qt's Rotation projects with distanceToPlane 1024:
+@@ -129,10 +156,14 @@ Singleton {
+         else
+             blur = videoWallpaperActive ? [5, 1, 0.17] : [6, 2, 0.17];
+         const shadowRange = cinematic ? 22 : 14;
++        // Quattro keeps window blur for translucent apps (kitty) but drops
++        // window shadows outside Cinematic, like Omarchy's flat default.
++        const shadows = quattro ? cinematic : true;
+         return "keyword decoration:blur:enabled true; keyword decoration:blur:size " + blur[0]
+             + "; keyword decoration:blur:passes " + blur[1]
+             + "; keyword decoration:blur:vibrancy " + blur[2]
+-            + "; keyword decoration:shadow:enabled true; keyword decoration:shadow:range " + shadowRange;
++            + "; keyword decoration:shadow:enabled " + shadows
++            + (shadows ? "; keyword decoration:shadow:range " + shadowRange : "");
+     }
+
+     property string _appliedBatch: ""
+@@ -176,6 +207,7 @@ Singleton {
+         function status(): string {
+             return JSON.stringify({
+                 "profile": root.profile,
++                "shellStyle": root.shellStyle,
+                 "configured": root.configuredProfile,
+                 "auto": root.autoEnabled,
+                 "powerSaver": root.powerSaver,
+diff --git a/Common/Theme.qml b/Common/Theme.qml
+index b5723ae..eff1767 100644
+--- a/Common/Theme.qml
++++ b/Common/Theme.qml
+@@ -1264,7 +1264,8 @@ Singleton {
+     property real fontSizeMedium: Math.round(fontScale * 14)
+     property real fontSizeLarge: Math.round(fontScale * 16)
+     property real fontSizeXLarge: Math.round(fontScale * 20)
+-    property real barHeight: 48
++    // Ryoku Quattro: a slim strip; every bar-clearance formula derives from this.
++    property real barHeight: RyokuVisual.quattro ? 40 : 48
+     property real iconSize: 24
+     property real iconSizeSmall: 16
+     property real iconSizeLarge: 32
+diff --git a/Widgets/RyokuFrame.qml b/Widgets/RyokuFrame.qml
+new file mode 100644
+index 0000000..e7fede8
+--- /dev/null
++++ b/Widgets/RyokuFrame.qml
+@@ -0,0 +1,59 @@
++import QtQuick
++import QtQuick.Shapes
++import qs.Common
++
++// Quattro surface frame: a ring in the Hyprland active-border gradient, drawn
++// over a card's own fill. Same tones as home/matugen/templates/
++// ryoku-hyprland-quattro.conf (surface_tint → tertiary_fixed_dim at 45°), so
++// shell surfaces and windows share one border. A static Shape — repainted
++// only when the card's size or palette changes.
++Shape {
++    id: root
++
++    property real frameWidth: RyokuVisual.frameWidth
++    property real radius: Theme.cornerRadius
++    property color startColor: Theme.currentThemeData.surfaceTint ? Theme.surfaceTint : Theme.primary
++    property color endColor: Theme.getMatugenColor("tertiary_fixed_dim", Theme.tertiary)
++    property real alpha: 0.93
++
++    readonly property real _inner: Math.max(0, radius - frameWidth)
++
++    visible: width > frameWidth * 2 && height > frameWidth * 2
++    preferredRendererType: Shape.CurveRenderer
++
++    ShapePath {
++        strokeWidth: -1
++        strokeColor: "transparent"
++        fillRule: ShapePath.OddEvenFill
++        fillGradient: LinearGradient {
++            x1: 0
++            y1: root.height
++            x2: root.width
++            y2: 0
++            GradientStop {
++                position: 0
++                color: Theme.withAlpha(root.startColor, root.alpha)
++            }
++            GradientStop {
++                position: 1
++                color: Theme.withAlpha(root.endColor, root.alpha)
++            }
++        }
++
++        PathRectangle {
++            x: 0
++            y: 0
++            width: root.width
++            height: root.height
++            radius: root.radius
++        }
++
++        PathRectangle {
++            x: root.frameWidth
++            y: root.frameWidth
++            width: root.width - root.frameWidth * 2
++            height: root.height - root.frameWidth * 2
++            radius: root._inner
++        }
++    }
++}

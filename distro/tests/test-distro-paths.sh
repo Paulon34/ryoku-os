@@ -27,6 +27,12 @@ require distro/flake/home/kitty.nix
 require distro/flake/home/fuzzel.nix
 require distro/flake/home/theme.nix
 require distro/flake/home/nixgl.nix
+require distro/flake/home/dms.nix
+require distro/flake/home/matugen.nix
+require distro/flake/pkgs/dms-shell-ryoku.nix
+require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
+require distro/assets/wallpapers/ryoku-night.jpg
+require distro/LICENSES/MIT-DankMaterialShell.txt
 require distro/session/ryoku-niri.desktop
 require distro/session/ryoku-niri-session
 require distro/tests/test-bootstrap-policy.sh

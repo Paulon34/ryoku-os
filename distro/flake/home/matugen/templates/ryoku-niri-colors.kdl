@@ -1,0 +1,9 @@
+// Ryoku Appearance Engine — Niri focus-ring colors (Matugen).
+// Do not edit by hand.
+layout {
+    focus-ring {
+        width 2
+        active-color "{{colors.surface_tint.default.hex}}"
+        inactive-color "{{colors.surface_variant.default.hex}}"
+    }
+}

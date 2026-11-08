@@ -1,11 +1,12 @@
 { config, pkgs, lib, ... }:
 
-# Minimal Niri config adapted from Ryoku Desktop Hyprland binds (ENTREGA A).
-# Full DMS/Quattro/Islands port lands in ENTREGA B.
+# Niri foundation + DMS-oriented binds (ENTREGA B).
+# Matrix: docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 let
   conf = ''
-    // Ryoku Niri — foundation session (ENTREGA A)
-    // Keybind matrix vs Hyprland: docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
+    // Ryoku Niri — desktop port (ENTREGA B)
+    // Optional Matugen colors (created by change-wallpaper / matugen):
+    include optional=true "colors.kdl"
 
     input {
         keyboard {
@@ -36,7 +37,7 @@ let
     }
 
     spawn-at-startup "nm-applet" "--indicator"
-    spawn-at-startup "${pkgs.kitty}/bin/kitty"
+    // DMS is started via systemd user unit ryoku-dms; kitty on demand.
 
     prefers-no-csd
 
@@ -48,7 +49,8 @@ let
 
     binds {
         Mod+Return { spawn "${pkgs.kitty}/bin/kitty"; }
-        Mod+Space { spawn "fuzzel"; }
+        // DMS spotlight when available; fuzzel fallback via script
+        Mod+Space { spawn "${config.home.homeDirectory}/.local/bin/ryoku-launcher"; }
         Mod+E { spawn "thunar"; }
 
         Mod+Q { close-window; }
@@ -93,21 +95,78 @@ let
 
         Mod+Shift+E { quit; }
 
+        Mod+W { spawn "${config.home.homeDirectory}/.local/bin/change-wallpaper"; }
+        Mod+C { spawn "${config.home.homeDirectory}/.local/bin/ryoku-clipboard"; }
+        Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "region"; }
+        Mod+Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "full"; }
+
+        Mod+N { spawn "dms" "ipc" "call" "notifications" "toggle"; }
+        Mod+Comma { spawn "dms" "ipc" "call" "settings" "toggle"; }
+        Mod+X { spawn "dms" "ipc" "call" "powermenu" "toggle"; }
+        Mod+Shift+X { spawn "dms" "ipc" "call" "lock" "lock"; }
+
         XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"; }
         XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-"; }
         XF86AudioMute { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
-    }
-
-    debug {
-        // Keep XWayland available for legacy apps.
+        XF86MonBrightnessUp { spawn "brightnessctl" "set" "+5%"; }
+        XF86MonBrightnessDown { spawn "brightnessctl" "set" "5%-"; }
     }
   '';
 in
 {
-  # Write config for the session; Niri reads ~/.config/niri/config.kdl by default.
   xdg.configFile."niri/config.kdl".text = conf;
 
-  # Ensure Pictures/Screenshots exists via activation.
+  home.file.".local/bin/ryoku-launcher" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if command -v dms >/dev/null 2>&1; then
+        exec dms ipc call spotlight toggle
+      fi
+      exec fuzzel
+    '';
+  };
+
+  home.file.".local/bin/ryoku-clipboard" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if command -v dms >/dev/null 2>&1; then
+        exec dms ipc call clipboard toggle 2>/dev/null || true
+      fi
+      if command -v cliphist >/dev/null 2>&1; then
+        cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
+      fi
+    '';
+  };
+
+  home.file.".local/bin/ryoku-screenshot" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      mode=''${1:-region}
+      dir="$HOME/Pictures/Screenshots"
+      mkdir -p "$dir"
+      out="$dir/ryoku-$(date +%Y%m%d-%H%M%S).png"
+      case "$mode" in
+        region) grim -g "$(slurp)" "$out" ;;
+        full) grim "$out" ;;
+        *) echo "usage: ryoku-screenshot region|full" >&2; exit 2 ;;
+      esac
+      echo "$out"
+    '';
+  };
+
+  home.packages = with pkgs; [
+    grim
+    slurp
+    brightnessctl
+    cliphist
+  ];
+
   home.activation.ryokuScreenshotsDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p "${config.home.homeDirectory}/Pictures/Screenshots"
   '';

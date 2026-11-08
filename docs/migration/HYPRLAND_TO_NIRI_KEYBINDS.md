@@ -1,34 +1,40 @@
 # Hyprland → Niri keybind matrix
 
-Source of truth for Ryoku Desktop Hyprland binds: [Paulon34/ryoku-desktop](https://github.com/Paulon34/ryoku-desktop) `home/hyprland.nix`.
+Source: [Paulon34/ryoku-desktop](https://github.com/Paulon34/ryoku-desktop) `home/hyprland.nix` + `home/dms.nix`.
 
-Niri foundation config: `distro/flake/home/niri.nix` (ENTREGA A).
+Niri config: `distro/flake/home/niri.nix` (ENTREGA A/B).
 
-| Action | Hyprland (ryoku-desktop) | Niri (Ryoku Debian A) | Notes |
-|--------|--------------------------|------------------------|-------|
+| Action | Hyprland (ryoku-desktop) | Niri (Ryoku Debian) | Status |
+|--------|--------------------------|---------------------|--------|
 | Terminal | `$mod, RETURN` → kitty | `Mod+Return` → kitty | Parity |
-| Launcher | `$mod, SPACE` → DMS/rofi menu | `Mod+Space` → fuzzel | DMS launcher = ENTREGA B |
-| File manager | `$mod, E` → fileManager | `Mod+E` → thunar | Parity |
-| Close window | `$mod, Q` killactive | `Mod+Q` close-window | Parity |
-| Fullscreen | `$mod, F` fullscreen | `Mod+F` maximize-column; `Mod+Shift+F` fullscreen-window | Niri distinguishes maximize vs fullscreen |
-| Toggle float | `$mod, V` togglefloating | — | Niri is tiling/columns; float TBD B |
-| Pseudo | `$mod, P` pseudo | — | Hyprland-only |
-| Exit compositor | `$mod SHIFT, E` exit | `Mod+Shift+E` quit | Parity |
-| Focus L/R/U/D | arrows + HJKL | arrows + HJKL (column/window) | Mapped to columns/windows |
-| Move window | `$mod SHIFT` + HJKL | `Mod+Shift` + HJKL | Column/window move |
+| Launcher | `$mod, SPACE` → DMS/rofi | `Mod+Space` → `ryoku-launcher` (DMS spotlight → fuzzel) | B |
+| File manager | `$mod, E` | `Mod+E` → thunar | Parity |
+| Close window | `$mod, Q` | `Mod+Q` | Parity |
+| Fullscreen | `$mod, F` | `Mod+F` maximize; `Mod+Shift+F` fullscreen | Mapped |
+| Toggle float | `$mod, V` | — | Niri columns; N/A |
+| Pseudo | `$mod, P` | — | Hyprland-only |
+| Notepad (DMS) | (DMS) | `Mod+Comma` settings; notepad via DMS UI | Partial |
+| Exit compositor | `$mod SHIFT, E` | `Mod+Shift+E` quit | Parity |
+| Focus L/R/U/D | arrows + HJKL | arrows + HJKL | Parity |
+| Move window | `$mod SHIFT` + HJKL | `Mod+Shift` + HJKL | Parity |
 | Workspace 1–10 | `$mod, 0-9` | `Mod+0-9` | Parity |
 | Move to workspace | `$mod SHIFT, 0-9` | `Mod+Shift+0-9` | Parity |
-| Mouse workspace | mouse_down/up | — | Optional B |
-| Wallpaper | `$mod, W` change-wallpaper | — | Matugen/wallpaper = B |
-| Screenshot region | Print → grim\|swappy | — | Optional B (grim/slurp packaged) |
-| Screenshot full | `$mod, Print` | — | Optional B |
-| Clipboard hist | `$mod, C` cliphist\|rofi | — | Optional B |
-| Lock | `$mod, X` hyprlock / `$mod, L` dms lock | — | DMS lock = B |
+| Mouse workspace | mouse_down/up | — | Optional later |
+| Wallpaper | `$mod, W` | `Mod+W` → change-wallpaper + Matugen | B |
+| Screenshot region | Print → grim\|swappy | `Print` → ryoku-screenshot region | B (no swappy) |
+| Screenshot full | `$mod, Print` | `Mod+Print` → full | B |
+| Clipboard hist | `$mod, C` cliphist\|rofi | `Mod+C` → ryoku-clipboard | B |
+| Notifications | (DMS) | `Mod+N` → dms notifications | B |
+| Power menu | (DMS) | `Mod+X` → dms powermenu | B |
+| Lock | `$mod, X` hyprlock / `$mod, L` dms lock | `Mod+Shift+X` → dms lock | B |
 | Volume | XF86Audio* → wpctl | XF86Audio* → wpctl | Parity |
-| Brightness | XF86MonBrightness* | — | Optional laptop profile C |
+| Brightness | XF86MonBrightness* | XF86MonBrightness* → brightnessctl | B |
 
-## ENTREGA B follow-ups
+## Shell styles
 
-- Port DankMaterialShell (Quattro/Islands) onto Niri
-- Restore lock, wallpaper, clipboard, screenshot binds
-- Document any Niri-only scroll/column gestures that replace Hyprland mouse workspace binds
+| Style | Hyprland/DMS (ryoku-desktop) | Niri/DMS (Debian) |
+|-------|------------------------------|-------------------|
+| Quattro (default) | Flat bar, radius 8, Omarchy-inspired | Same via patched DMS 1.5.3 + `ryoku.shellStyle` |
+| Islands | Floating capsules | Same |
+
+Set via HM: `ryoku.shellStyle = "quattro" | "islands";` in `distro/flake/home/dms.nix`.

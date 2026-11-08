@@ -1,0 +1,371 @@
+diff --git a/Common/AnimVariants.qml b/Common/AnimVariants.qml
+index b006722..e4ca6c1 100644
+--- a/Common/AnimVariants.qml
++++ b/Common/AnimVariants.qml
+@@ -25,8 +25,11 @@ Singleton {
+     readonly property var _effectScaleCollapsed: [0.96, 1.0, 0.88]
+     readonly property var _effectAnimOffsets: [16, 144, 56]
+
+-    readonly property list<real> variantEnterCurve: _enterCurves[_variant] || _enterCurves[0]
+-    readonly property list<real> variantExitCurve: _exitCurves[_variant] || _exitCurves[0]
++    // Ryoku: enter/exit motion follows RyokuVisual (profile tokens, no overshoot)
++    // unless a directional/connected effect is in use.
++    readonly property bool _ryokuMotion: !isDirectionalEffect
++    readonly property list<real> variantEnterCurve: _ryokuMotion ? RyokuVisual.enterCurve : (_enterCurves[_variant] || _enterCurves[0])
++    readonly property list<real> variantExitCurve: _ryokuMotion ? RyokuVisual.exitCurve : (_exitCurves[_variant] || _exitCurves[0])
+
+     readonly property list<real> variantModalEnterCurve: isDirectionalEffect && _variant !== 0 ? (_enterCurves[_variant] || _enterCurves[0]) : variantEnterCurve
+     readonly property list<real> variantModalExitCurve: isDirectionalEffect ? (_directionalExitCurves[_variant] || _exitCurves[0]) : variantExitCurve
+@@ -34,11 +37,12 @@ Singleton {
+     readonly property list<real> variantPopoutEnterCurve: isDirectionalEffect ? (_variant === 0 ? Anims.standardDecel : (_enterCurves[_variant] || _enterCurves[0])) : variantEnterCurve
+     readonly property list<real> variantPopoutExitCurve: isDirectionalEffect ? (_directionalExitCurves[_variant] || _exitCurves[0]) : variantExitCurve
+
+-    readonly property real variantEnterDurationFactor: _enterDurationFactors[_variant] !== undefined ? _enterDurationFactors[_variant] : 1.0
+-    readonly property real variantExitDurationFactor: _exitDurationFactors[_variant] !== undefined ? _exitDurationFactors[_variant] : 1.0
++    readonly property real variantEnterDurationFactor: _ryokuMotion ? 1.0 : (_enterDurationFactors[_variant] !== undefined ? _enterDurationFactors[_variant] : 1.0)
++    // Ryoku: exits are shorter than entries (exit / enter token ratio).
++    readonly property real variantExitDurationFactor: _ryokuMotion ? RyokuVisual.exitDuration / Math.max(1, RyokuVisual.enterDuration) : (_exitDurationFactors[_variant] !== undefined ? _exitDurationFactors[_variant] : 1.0)
+
+     // Fluent: opacity at ~55% of duration; Material/Dynamic: 1:1 with position
+-    readonly property real variantOpacityDurationScale: _variant === 1 ? 0.55 : 1.0
++    readonly property real variantOpacityDurationScale: !_ryokuMotion && _variant === 1 ? 0.55 : 1.0
+
+     function variantDuration(baseDuration, entering) {
+         const factor = entering ? variantEnterDurationFactor : variantExitDurationFactor;
+@@ -57,6 +61,6 @@ Singleton {
+     readonly property bool isDepthEffect: _effect === 2
+     readonly property bool isConnectedEffect: (typeof FrameTransitionState !== "undefined") && FrameTransitionState.effectiveConnectedFrameModeActive
+
+-    readonly property real effectScaleCollapsed: _effectScaleCollapsed[_effect] !== undefined ? _effectScaleCollapsed[_effect] : 0.96
+-    readonly property real effectAnimOffset: _effectAnimOffsets[_effect] !== undefined ? _effectAnimOffsets[_effect] : 16
++    readonly property real effectScaleCollapsed: _ryokuMotion && _effect === 0 ? RyokuVisual.scaleCollapsed : (_effectScaleCollapsed[_effect] !== undefined ? _effectScaleCollapsed[_effect] : 0.96)
++    readonly property real effectAnimOffset: _ryokuMotion && _effect === 0 ? RyokuVisual.animOffset : (_effectAnimOffsets[_effect] !== undefined ? _effectAnimOffsets[_effect] : 16)
+ }
+diff --git a/Common/RyokuVisual.qml b/Common/RyokuVisual.qml
+new file mode 100644
+index 0000000..55a640f
+--- /dev/null
++++ b/Common/RyokuVisual.qml
+@@ -0,0 +1,197 @@
++pragma Singleton
++pragma ComponentBehavior: Bound
++
++import QtQuick
++import Quickshell
++import Quickshell.Io
++import Quickshell.Hyprland
++import Quickshell.Services.UPower
++import qs.Common
++import qs.Services
++
++// Ryoku visual profile — resident, event-driven.
++//
++// Source of truth: ryoku/settings.json (appearance.visualProfile /
++// appearance.visualProfileAuto), watched with inotify via FileView; the path
++// is substituted by Nix at build time. AUTO follows UPower / power-profiles-
++// daemon signals, so it works with Ryoku Settings closed. Video wallpaper is
++// detected from DMS's own state: the Ryoku video unit hides the DMS wallpaper
++// layer (screenPreferences.wallpaper = []) while mpvpaper renders.
++//
++// Motion tokens mirror apps/ryoku-settings RyokuTheme (fast / standard /
++// emphasized / exit). No timers, no polling: everything is a binding or a
++// one-shot hyprctl call when the effective state changes.
++Singleton {
++    id: root
++
++    readonly property string settingsPath: "@RYOKU_SETTINGS_JSON@"
++
++    property string configuredProfile: "balanced"
++    property bool autoEnabled: false
++
++    // ── Power state (UPower / power-profiles-daemon) ─────────────────────
++    readonly property bool powerSaver: typeof PowerProfiles !== "undefined"
++                                       && PowerProfiles.profile === PowerProfile.PowerSaver
++    readonly property bool onBattery: BatteryService.batteryAvailable && !BatteryService.isPluggedIn
++    readonly property bool batteryLow: onBattery && BatteryService.batteryLevel <= 20
++    // AUTO: power-saver or low battery → Economy; on battery, Cinematic → Balanced.
++    readonly property bool autoEconomy: autoEnabled && (powerSaver || batteryLow)
++
++    readonly property string profile: {
++        if (autoEconomy)
++            return "economy";
++        if (autoEnabled && onBattery && configuredProfile === "cinematic")
++            return "balanced";
++        return configuredProfile;
++    }
++    readonly property bool economy: profile === "economy"
++    readonly property bool cinematic: profile === "cinematic"
++
++    readonly property bool videoWallpaperActive: {
++        const prefs = SettingsData.screenPreferences;
++        return !!prefs && Array.isArray(prefs.wallpaper) && prefs.wallpaper.length === 0;
++    }
++
++    // ── Motion tokens ────────────────────────────────────────────────────
++    readonly property int fastDuration: economy ? 90 : 120
++    readonly property int enterDuration: economy ? 120 : (cinematic ? 260 : 200)
++    readonly property int emphasizedDuration: economy ? 160 : (cinematic ? 320 : 280)
++    readonly property int exitDuration: economy ? 100 : (cinematic ? 150 : 140)
++
++    // Material 3 curves — no overshoot anywhere (no bounce).
++    readonly property list<real> enterCurve: economy ? [0, 0, 0, 1, 1, 1] : [0.05, 0.7, 0.1, 1, 1, 1]
++    readonly property list<real> exitCurve: [0.3, 0, 0.8, 0.15, 1, 1]
++
++    // Depth: Economy = fade only; Balanced = fade + scale; Cinematic = + X tilt.
++    readonly property real scaleCollapsed: economy ? 1.0 : (cinematic ? 0.94 : 0.96)
++    readonly property real animOffset: economy ? 0 : (cinematic ? 16 : 10)
++    readonly property real tiltDegrees: cinematic ? 4 : 0
++    readonly property real osdScaleCollapsed: economy ? 1.0 : (cinematic ? 0.9 : 0.94)
++
++    // Elevation and effects.
++    readonly property bool shadowsEnabled: !economy
++    readonly property int popoutElevation: cinematic ? 3 : 2
++    readonly property int modalElevation: cinematic ? 4 : 3
++    readonly property bool blurAllowed: !economy
++
++    // Material state layers (hover / pressed / focus).
++    readonly property real stateHover: 0.06
++    readonly property real statePressed: 0.10
++    readonly property real stateFocus: 0.10
++
++    // Projected rect of a card tilted `degrees` about its X axis, as a fraction
++    // of its untilted size. Qt's Rotation projects with distanceToPlane 1024:
++    // the far edge shrinks by d / (d + h/2·sinθ). Blur regions use this inner
++    // rect so they never extend past the tilted card's corners.
++    function tiltInset(height, degrees) {
++        if (!degrees)
++            return 1;
++        const d = 1024;
++        const rad = Math.abs(degrees) * Math.PI / 180;
++        return d / (d + height * 0.5 * Math.sin(rad)) * Math.cos(rad);
++    }
++
++    // ── ryoku/settings.json ──────────────────────────────────────────────
++    function _parse(text) {
++        let profile = "balanced";
++        let auto = false;
++        try {
++            const appearance = (JSON.parse(text) || {}).appearance || {};
++            if (["economy", "balanced", "cinematic"].indexOf(appearance.visualProfile) >= 0)
++                profile = appearance.visualProfile;
++            auto = appearance.visualProfileAuto === true;
++        } catch (e) {
++            console.warn("RyokuVisual: unreadable", settingsPath, e);
++        }
++        configuredProfile = profile;
++        autoEnabled = auto;
++    }
++
++    FileView {
++        id: settingsFile
++        path: root.settingsPath.startsWith("@") ? "" : root.settingsPath
++        watchChanges: true
++        printErrors: false
++        onFileChanged: reload()
++        onLoaded: root._parse(text())
++        onLoadFailed: root._parse("{}")
++    }
++
++    // ── Hyprland projection (blur / shadows) ─────────────────────────────
++    // Balanced on a static wallpaper equals home/hyprland.nix. Blur over a video
++    // wallpaper is re-rendered every video frame, so it is capped one level lower.
++    readonly property string hyprBatch: {
++        if (economy)
++            return "keyword decoration:blur:enabled false; keyword decoration:shadow:enabled false";
++        let blur;
++        if (cinematic)
++            blur = videoWallpaperActive ? [6, 2, 0.17] : [8, 3, 0.2];
++        else
++            blur = videoWallpaperActive ? [5, 1, 0.17] : [6, 2, 0.17];
++        const shadowRange = cinematic ? 22 : 14;
++        return "keyword decoration:blur:enabled true; keyword decoration:blur:size " + blur[0]
++            + "; keyword decoration:blur:passes " + blur[1]
++            + "; keyword decoration:blur:vibrancy " + blur[2]
++            + "; keyword decoration:shadow:enabled true; keyword decoration:shadow:range " + shadowRange;
++    }
++
++    property string _appliedBatch: ""
++
++    function applyHyprland(force) {
++        if (!CompositorService.isHyprland)
++            return;
++        if (!force && hyprBatch === _appliedBatch)
++            return;
++        if (hyprProc.running) {
++            Qt.callLater(root.applyHyprland, force);
++            return;
++        }
++        _appliedBatch = hyprBatch;
++        hyprProc.command = ["hyprctl", "--batch", hyprBatch];
++        hyprProc.running = true;
++    }
++
++    onHyprBatchChanged: Qt.callLater(root.applyHyprland, false)
++    Component.onCompleted: Qt.callLater(root.applyHyprland, true)
++
++    Process {
++        id: hyprProc
++        stderr: StdioCollector {
++            onStreamFinished: if (text.trim().length > 0)
++                console.warn("RyokuVisual: hyprctl:", text.trim())
++        }
++    }
++
++    // `dms ipc call ryoku refreshSettings` — used by ryoku-video-wallpaper after
++    // it rewrites screenPreferences; `dms ipc call ryoku status` for diagnostics.
++    IpcHandler {
++        target: "ryoku"
++
++        function refreshSettings(): string {
++            SettingsData.ryokuReloadFromDisk();
++            settingsFile.reload();
++            return "ok";
++        }
++
++        function status(): string {
++            return JSON.stringify({
++                "profile": root.profile,
++                "configured": root.configuredProfile,
++                "auto": root.autoEnabled,
++                "powerSaver": root.powerSaver,
++                "onBattery": root.onBattery,
++                "videoWallpaper": root.videoWallpaperActive,
++                "hyprland": root._appliedBatch
++            });
++        }
++    }
++
++    // A config reload resets runtime keywords to home/hyprland.nix (Balanced).
++    Connections {
++        target: CompositorService.isHyprland ? Hyprland : null
++        function onRawEvent(event) {
++            if (event.name === "configreloaded")
++                root.applyHyprland(true);
++        }
++    }
++}
+diff --git a/Common/SettingsData.qml b/Common/SettingsData.qml
+index f26b4f3..bcd6bc3 100644
+--- a/Common/SettingsData.qml
++++ b/Common/SettingsData.qml
+@@ -1725,6 +1725,13 @@ Singleton {
+         Spec.set(root, key, value, saveSettings, _hooks);
+     }
+
++    // Ryoku: re-read settings.json from disk (same debounce as the file watcher).
++    // Called through `dms ipc call ryoku refreshSettings` by tools that edit the
++    // file atomically, so a missed inotify event can't leave stale state.
++    function ryokuReloadFromDisk() {
++        settingsFileReloadDebounce.restart();
++    }
++
+     function loadSettings() {
+         _loading = true;
+         _parseError = false;
+diff --git a/Common/Theme.qml b/Common/Theme.qml
+index 0648b0c..b5723ae 100644
+--- a/Common/Theme.qml
++++ b/Common/Theme.qml
+@@ -767,7 +767,7 @@ Singleton {
+     property color shadowMedium: Qt.rgba(0, 0, 0, 0.08)
+     property color shadowStrong: Qt.rgba(0, 0, 0, 0.3)
+
+-    readonly property bool elevationEnabled: typeof SettingsData !== "undefined" && (SettingsData.m3ElevationEnabled ?? true)
++    readonly property bool elevationEnabled: typeof SettingsData !== "undefined" && (SettingsData.m3ElevationEnabled ?? true) && RyokuVisual.shadowsEnabled
+     readonly property real elevationBlurMax: typeof SettingsData !== "undefined" && SettingsData.m3ElevationIntensity !== undefined ? Math.min(128, Math.max(32, SettingsData.m3ElevationIntensity * 2)) : 64
+
+     readonly property real _elevMult: typeof SettingsData !== "undefined" && SettingsData.m3ElevationIntensity !== undefined ? SettingsData.m3ElevationIntensity / 12 : 1
+@@ -1138,13 +1138,14 @@ Singleton {
+         }
+
+         const baseDuration = currentAnimationBaseDuration;
++        // Ryoku: spatial motion uses the visual-profile tokens (0 still means "None").
+         return {
+             "fast": baseDuration * 0.4,
+             "normal": baseDuration * 0.8,
+             "large": baseDuration * 1.2,
+             "extraLarge": baseDuration * 2.0,
+-            "expressiveFastSpatial": baseDuration * 0.7,
+-            "expressiveDefaultSpatial": baseDuration,
++            "expressiveFastSpatial": baseDuration === 0 ? 0 : RyokuVisual.enterDuration,
++            "expressiveDefaultSpatial": baseDuration === 0 ? 0 : RyokuVisual.emphasizedDuration,
+             "expressiveEffects": baseDuration * 0.4
+         };
+     }
+@@ -1194,33 +1195,28 @@ Singleton {
+     readonly property real notificationCardPadding: spacingM
+     readonly property real notificationCardPaddingCompact: spacingS
+
+-    readonly property real stateLayerHover: 0.08
+-    readonly property real stateLayerFocus: 0.12
+-    readonly property real stateLayerPressed: 0.12
++    // Ryoku: Material state layers (hover 6%, pressed/focus 10%).
++    readonly property real stateLayerHover: RyokuVisual.stateHover
++    readonly property real stateLayerFocus: RyokuVisual.stateFocus
++    readonly property real stateLayerPressed: RyokuVisual.statePressed
+     readonly property real stateLayerDrag: 0.16
+
++    // Ryoku: popouts/modals follow the visual-profile enter token; a DMS speed
++    // of "None" still disables motion.
+     readonly property int popoutAnimationDuration: {
+         if (typeof SettingsData === "undefined")
+             return 150;
+-        if (SettingsData.syncComponentAnimationSpeeds) {
+-            return Math.min(currentAnimationBaseDuration, 1000);
+-        }
+-        const presetMap = [0, 150, 300, 500];
+-        if (SettingsData.popoutAnimationSpeed === SettingsData.AnimationSpeed.Custom)
+-            return SettingsData.popoutCustomAnimationDuration;
+-        return presetMap[SettingsData.popoutAnimationSpeed] ?? 150;
++        if (SettingsData.syncComponentAnimationSpeeds)
++            return currentAnimationBaseDuration === 0 ? 0 : RyokuVisual.enterDuration;
++        return SettingsData.popoutAnimationSpeed === SettingsData.AnimationSpeed.None ? 0 : RyokuVisual.enterDuration;
+     }
+
+     readonly property int modalAnimationDuration: {
+         if (typeof SettingsData === "undefined")
+             return 150;
+-        if (SettingsData.syncComponentAnimationSpeeds) {
+-            return Math.min(currentAnimationBaseDuration, 1000);
+-        }
+-        const presetMap = [0, 150, 300, 500];
+-        if (SettingsData.modalAnimationSpeed === SettingsData.AnimationSpeed.Custom)
+-            return SettingsData.modalCustomAnimationDuration;
+-        return presetMap[SettingsData.modalAnimationSpeed] ?? 150;
++        if (SettingsData.syncComponentAnimationSpeeds)
++            return currentAnimationBaseDuration === 0 ? 0 : RyokuVisual.enterDuration;
++        return SettingsData.modalAnimationSpeed === SettingsData.AnimationSpeed.None ? 0 : RyokuVisual.enterDuration;
+     }
+
+     property real cornerRadius: {
+diff --git a/Services/BlurService.qml b/Services/BlurService.qml
+index 4fd4844..ab2fadc 100644
+--- a/Services/BlurService.qml
++++ b/Services/BlurService.qml
+@@ -13,7 +13,8 @@ Singleton {
+
+     property bool compositorSupported: false
+     readonly property bool available: compositorSupported
+-    readonly property bool enabled: available && (SettingsData.blurEnabled ?? false)
++    // Ryoku: the Economy visual profile turns surface blur off.
++    readonly property bool enabled: available && (SettingsData.blurEnabled ?? false) && RyokuVisual.blurAllowed
+
+     // These settings predate non-blurred surface borders, so keep their keys for compatibility.
+     readonly property color borderColor: {
+diff --git a/Widgets/StateLayer.qml b/Widgets/StateLayer.qml
+index 9c7b4a2..f288609 100644
+--- a/Widgets/StateLayer.qml
++++ b/Widgets/StateLayer.qml
+@@ -9,9 +9,10 @@ MouseArea {
+     property real cornerRadius: parent && parent.radius !== undefined ? parent.radius : Theme.cornerRadius
+     property var tooltipText: null
+     property string tooltipSide: "bottom"
+-    property bool enableRipple: typeof SettingsData !== "undefined" ? (SettingsData.enableRippleEffects ?? true) : true
++    // Ryoku: no ripple in the Economy profile.
++    property bool enableRipple: (typeof SettingsData !== "undefined" ? (SettingsData.enableRippleEffects ?? true) : true) && !RyokuVisual.economy
+
+-    readonly property real stateOpacity: disabled ? 0 : pressed ? 0.12 : containsMouse ? 0.08 : 0
++    readonly property real stateOpacity: disabled ? 0 : pressed ? Theme.stateLayerPressed : containsMouse ? Theme.stateLayerHover : 0
+
+     anchors.fill: parent
+     cursorShape: disabled ? undefined : Qt.PointingHandCursor

@@ -25,11 +25,19 @@ This tree adds Debian + Nix desktop glue. It **does not vendor** Hyprland DMS pa
 | Mesa / XWayland | Graphics (APT) | MIT / X11-style |
 | xwayland-satellite | XWayland helper (Nix) | MPL-2.0 |
 
-## Visual / UX reference (ENTREGA B+)
+## Included from ryoku-desktop / DMS (ENTREGA B)
 
-[Paulon34/ryoku-desktop](https://github.com/Paulon34/ryoku-desktop) (MIT for original Ryoku code; see that repo’s `THIRD_PARTY_NOTICES.md` for DMS patches, SDDM astronaut GPL-3.0-or-later QML, Material Symbols Apache-2.0, Omarchy behaviour reference MIT).
+| Path | Origin | Licence |
+|------|--------|---------|
+| `distro/flake/patches/dms/1.5.3/*.patch` | Ryoku patches on DankMaterialShell 1.5.3 | MIT — `distro/LICENSES/MIT-DankMaterialShell.txt` (+ Ryoku MIT) |
+| `distro/assets/wallpapers/ryoku-*.jpg` | ryoku-desktop public wallpapers | CC0-1.0 (`distro/assets/wallpapers/LICENSE`) |
+| Behaviour reference Omarchy Quattro | No code copied | MIT — `distro/LICENSES/MIT-Omarchy.txt` |
 
-ENTREGA A only adapts **keybind intent** and architecture notes — no DMS patch files are copied yet.
+## Visual / UX reference
+
+[Paulon34/ryoku-desktop](https://github.com/Paulon34/ryoku-desktop) · [AvengeMedia/DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) `v1.5.3` (flake input).
+
+SDDM astronaut GPL-3.0-or-later QML from ryoku-desktop is **not** vendored here (GDM session instead).
 
 ## Generated / local files (not licensed as redistributable product)
 

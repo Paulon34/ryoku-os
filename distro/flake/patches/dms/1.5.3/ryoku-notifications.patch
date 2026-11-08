@@ -1,0 +1,267 @@
+diff -ruN a/Modules/Notifications/Popup/NotificationPopup.qml b/Modules/Notifications/Popup/NotificationPopup.qml
+--- a/Modules/Notifications/Popup/NotificationPopup.qml
++++ b/Modules/Notifications/Popup/NotificationPopup.qml
+@@ -116,14 +116,22 @@
+
+     readonly property bool compactMode: SettingsData.notificationCompactMode
+     readonly property real cardPadding: compactMode ? Theme.notificationCardPaddingCompact : Theme.notificationCardPadding
+-    readonly property real popupIconSize: compactMode ? Theme.notificationIconSizeCompact : Theme.notificationIconSizeNormal
++    // Ryoku: popup-only icon size (history cards keep the Theme tokens).
++    readonly property real popupIconSize: compactMode ? 36 : 40
+     readonly property real contentSpacing: compactMode ? Theme.spacingXS : Theme.spacingS
+     readonly property real contentBottomClearance: 8
+     readonly property real actionButtonHeight: compactMode ? 20 : 24
+-    readonly property real collapsedContentHeight: Math.max(popupIconSize, Theme.fontSizeSmall * 1.2 + Theme.fontSizeMedium * 1.2 + Theme.fontSizeSmall * 1.2 * (compactMode ? 1 : 2)) + contentBottomClearance
++    readonly property int actionCount: notificationData ? (notificationData.actions || []).length : 0
++    readonly property bool hasActions: actionCount > 0
++    // Height is reserved only for rows that exist: no empty action strip, no blank body lines.
++    readonly property real actionRowHeight: hasActions ? actionButtonHeight + Theme.spacingXS : 0
++    readonly property real bodyLineHeight: Theme.fontSizeSmall * 1.2
++    readonly property int bodyReserveLines: bodyText.text.length > 0 ? Math.max(1, Math.min(bodyText.lineCount, compactMode ? 1 : 2)) : 0
++    readonly property int maxExpandedBodyLines: 8
++    readonly property real collapsedContentHeight: Math.max(popupIconSize, Theme.fontSizeSmall * 1.2 + Theme.fontSizeMedium * 1.2 + bodyLineHeight * bodyReserveLines) + contentBottomClearance
+     readonly property real privacyCollapsedContentHeight: Math.max(popupIconSize, Theme.fontSizeSmall * 1.2 + Theme.fontSizeMedium * 1.2) + contentBottomClearance
+-    readonly property real basePopupHeight: cardPadding * 2 + collapsedContentHeight + actionButtonHeight + contentSpacing
+-    readonly property real basePopupHeightPrivacy: cardPadding * 2 + privacyCollapsedContentHeight + actionButtonHeight + contentSpacing
++    readonly property real basePopupHeight: cardPadding * 2 + collapsedContentHeight + actionRowHeight
++    readonly property real basePopupHeightPrivacy: cardPadding * 2 + privacyCollapsedContentHeight + actionRowHeight
+
+     signal entered
+     signal exitStarted
+@@ -205,7 +213,7 @@
+         if (!descriptionExpanded)
+             return basePopupHeight;
+         const bodyTextHeight = expandedBodyMeasure.contentHeight || bodyText.contentHeight || 0;
+-        const collapsedBodyHeight = Theme.fontSizeSmall * 1.2 * (compactMode ? 1 : 2);
++        const collapsedBodyHeight = bodyLineHeight * bodyReserveLines;
+         if (bodyTextHeight > collapsedBodyHeight + 2)
+             return basePopupHeight + bodyTextHeight - collapsedBodyHeight;
+         return basePopupHeight;
+@@ -606,14 +614,8 @@
+         visible: !win._finalized && !chromeOnlyExit
+         transformOrigin: Item.Center
+
+-        property real chromeScale: (!win.inlineHeightAnimating && cardHoverHandler.hovered) ? 1.01 : 1.0
+-
+-        Behavior on chromeScale {
+-            NumberAnimation {
+-                duration: Theme.shortDuration
+-                easing.type: Theme.standardEasing
+-            }
+-        }
++        // Ryoku: no hover zoom (it resamples text); hover feedback is elevation + controls.
++        readonly property real chromeScale: 1.0
+
+         property real swipeOffset: 0
+         property real swipeDismissDirection: 1
+@@ -740,6 +742,14 @@
+             anchors.margins: content.cardInset
+             clip: true
+
++            // Ryoku: faint primary tint over the glass surface (Material You surface tint).
++            Rectangle {
++                anchors.fill: parent
++                radius: win.connectedFrameMode ? Theme.connectedSurfaceRadius : Theme.cornerRadius
++                color: Theme.withAlpha(Theme.primary, 0.04)
++                z: -2
++            }
++
+             HoverHandler {
+                 id: cardHoverHandler
+             }
+@@ -814,9 +824,9 @@
+                 text: notificationData ? (notificationData.htmlBody || "") : ""
+                 textFormat: Text.StyledText
+                 font.pixelSize: Theme.fontSizeSmall
+-                elide: Text.ElideNone
++                elide: Text.ElideRight
+                 horizontalAlignment: Text.AlignLeft
+-                maximumLineCount: -1
++                maximumLineCount: win.maxExpandedBodyLines
+                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+             }
+
+@@ -824,7 +834,7 @@
+                 id: notificationContent
+
+                 readonly property real expandedTextHeight: expandedBodyMeasure.contentHeight || bodyText.contentHeight || 0
+-                readonly property real collapsedBodyHeight: Theme.fontSizeSmall * 1.2 * (compactMode ? 1 : 2)
++                readonly property real collapsedBodyHeight: win.bodyLineHeight * win.bodyReserveLines
+                 readonly property real effectiveCollapsedHeight: (SettingsData.notificationPopupPrivacyMode && !descriptionExpanded) ? win.privacyCollapsedContentHeight : win.collapsedContentHeight
+                 readonly property real extraHeight: (descriptionExpanded && expandedTextHeight > collapsedBodyHeight + 2) ? (expandedTextHeight - collapsedBodyHeight) : 0
+
+@@ -864,7 +874,7 @@
+                             return Math.max(0, headerSummary / 2 - popupIconSize / 2);
+                         }
+                         if (descriptionExpanded)
+-                            return Math.max(0, Theme.fontSizeSmall * 1.2 + (Theme.fontSizeMedium * 1.2 + Theme.fontSizeSmall * 1.2 * (compactMode ? 1 : 2)) / 2 - popupIconSize / 2);
++                            return Math.max(0, Theme.fontSizeSmall * 1.2 + (Theme.fontSizeMedium * 1.2 + win.bodyLineHeight * win.bodyReserveLines) / 2 - popupIconSize / 2);
+                         return Math.max(0, Theme.fontSizeSmall * 1.2 + (textContainer.height - Theme.fontSizeSmall * 1.2) / 2 - popupIconSize / 2);
+                     }
+
+@@ -958,7 +968,7 @@
+                         text: notificationData ? (notificationData.summary || "") : ""
+                         color: Theme.surfaceText
+                         font.pixelSize: SettingsData.notificationSummaryFontSize || Theme.fontSizeMedium
+-                        font.weight: Font.Medium
++                        font.weight: Font.DemiBold
+                         width: parent.width
+                         elide: Text.ElideRight
+                         horizontalAlignment: Text.AlignLeft
+@@ -975,9 +985,9 @@
+                         color: Theme.surfaceVariantText
+                         font.pixelSize: SettingsData.notificationBodyFontSize || Theme.fontSizeSmall
+                         width: parent.width
+-                        elide: descriptionExpanded ? Text.ElideNone : Text.ElideRight
++                        elide: Text.ElideRight
+                         horizontalAlignment: Text.AlignLeft
+-                        maximumLineCount: descriptionExpanded ? -1 : (compactMode ? 1 : 2)
++                        maximumLineCount: descriptionExpanded ? win.maxExpandedBodyLines : (compactMode ? 1 : 2)
+                         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                         visible: text.length > 0
+                         opacity: (SettingsData.notificationPopupPrivacyMode && !descriptionExpanded) ? 0 : 1
+@@ -1025,8 +1035,17 @@
+                 iconName: "close"
+                 iconSize: compactMode ? 14 : 16
+                 buttonSize: compactMode ? 20 : 24
++                iconColor: cardHoverHandler.hovered ? Theme.surfaceText : Theme.surfaceVariantText
++                opacity: cardHoverHandler.hovered ? 1 : 0.55
+                 z: 15
+
++                Behavior on opacity {
++                    NumberAnimation {
++                        duration: Theme.mediumDuration
++                        easing.type: Theme.standardEasing
++                    }
++                }
++
+                 onClicked: {
+                     dismissPopupReliably();
+                 }
+@@ -1051,43 +1070,53 @@
+                 }
+             }
+
++            // Ryoku: actions are always visible as tonal chips aligned with the text column,
++            // so a notification with actions never looks action-less. Chips share the row
++            // width evenly and elide, so 3+ actions stay on one organized line.
+             Row {
+-                visible: cardHoverHandler.hovered
+-                opacity: visible ? 1 : 0
+-                anchors.right: clearButton.visible ? clearButton.left : parent.right
+-                anchors.rightMargin: clearButton.visible ? contentSpacing : Theme.spacingL
++                id: actionRow
++
++                readonly property real availableWidth: Math.max(0, parent.width - anchors.leftMargin - Theme.spacingL - (clearButton.visible ? clearButton.width + spacing : 0))
++                readonly property real chipMaxWidth: win.actionCount > 0 ? (availableWidth - spacing * (win.actionCount - 1)) / win.actionCount : 0
++
++                visible: win.hasActions
++                anchors.left: parent.left
++                anchors.leftMargin: Theme.spacingL + popupIconSize + Theme.spacingM
+                 anchors.top: notificationContent.bottom
+-                anchors.topMargin: contentSpacing
+-                spacing: contentSpacing
++                anchors.topMargin: Theme.spacingXS
++                spacing: Theme.spacingXS
+                 z: 20
+
+-                Behavior on opacity {
+-                    NumberAnimation {
+-                        duration: Theme.shortDuration
+-                        easing.type: Theme.standardEasing
+-                    }
+-                }
+-
+                 Repeater {
+                     model: notificationData ? (notificationData.actions || []) : []
+
+                     Rectangle {
+                         property bool isHovered: false
+
+-                        width: Math.max(actionText.implicitWidth + Theme.spacingM, Theme.notificationActionMinWidth)
++                        width: Math.min(Math.max(actionText.implicitWidth + Theme.spacingM * 2, Theme.notificationActionMinWidth), actionRow.chipMaxWidth)
+                         height: actionButtonHeight
+                         radius: Theme.notificationButtonCornerRadius
+-                        color: isHovered ? Theme.withAlpha(Theme.primary, Theme.stateLayerHover) : Theme.withAlpha(Theme.primary, 0)
++                        color: Theme.withAlpha(Theme.primary, isHovered ? 0.20 : 0.12)
++
++                        Behavior on color {
++                            ColorAnimation {
++                                duration: Theme.mediumDuration
++                                easing.type: Theme.standardEasing
++                            }
++                        }
+
+                         StyledText {
+                             id: actionText
+
+                             text: modelData.text || "Open"
+-                            color: parent.isHovered ? Theme.primary : Theme.surfaceVariantText
++                            color: Theme.primary
+                             font.pixelSize: Theme.fontSizeSmall
+                             font.weight: Font.Medium
+                             anchors.centerIn: parent
++                            width: Math.max(0, parent.width - Theme.spacingS * 2)
++                            horizontalAlignment: Text.AlignHCenter
+                             elide: Text.ElideRight
++                            maximumLineCount: 1
+                         }
+
+                         MouseArea {
+@@ -1107,24 +1136,26 @@
+                 }
+             }
+
++            // Hover-revealed secondary dismiss next to 1–2 actions. Its slot is always
++            // reserved (opacity only), so revealing it never reflows the action chips.
++            // Without actions the close button is enough and no row is reserved.
+             Rectangle {
+                 id: clearButton
+
+                 property bool isHovered: false
+-                readonly property int actionCount: notificationData ? (notificationData.actions || []).length : 0
+
+-                visible: actionCount < 3 && cardHoverHandler.hovered
+-                opacity: visible ? 1 : 0
++                visible: win.hasActions && win.actionCount < 3
++                opacity: cardHoverHandler.hovered ? 1 : 0
+                 Behavior on opacity {
+                     NumberAnimation {
+-                        duration: Theme.shortDuration
++                        duration: Theme.mediumDuration
+                         easing.type: Theme.standardEasing
+                     }
+                 }
+                 anchors.right: parent.right
+                 anchors.rightMargin: Theme.spacingL
+                 anchors.top: notificationContent.bottom
+-                anchors.topMargin: contentSpacing
++                anchors.topMargin: Theme.spacingXS
+                 width: Math.max(clearTextLabel.implicitWidth + Theme.spacingM, Theme.notificationActionMinWidth)
+                 height: actionButtonHeight
+                 radius: Theme.notificationButtonCornerRadius
+@@ -1143,9 +1174,12 @@
+
+                 MouseArea {
+                     anchors.fill: parent
++                    enabled: cardHoverHandler.hovered
+                     hoverEnabled: true
+                     cursorShape: Qt.PointingHandCursor
+                     acceptedButtons: Qt.LeftButton
++                    onEnabledChanged: if (!enabled)
++                        clearButton.isHovered = false
+                     onEntered: clearButton.isHovered = true
+                     onExited: clearButton.isHovered = false
+                     onClicked: {
+diff -ruN a/Modules/Notifications/Popup/NotificationPopupManager.qml b/Modules/Notifications/Popup/NotificationPopupManager.qml
+--- a/Modules/Notifications/Popup/NotificationPopupManager.qml
++++ b/Modules/Notifications/Popup/NotificationPopupManager.qml
+@@ -296,7 +296,7 @@
+         const x = p.getContentX ? p.getContentX() : 0;
+         const y = p.getContentY ? p.getContentY() : 0;
+         const w = p.alignedWidth || 0;
+-        const h = Math.max(p.alignedHeight || 0, baseNotificationHeight);
++        const h = p.alignedHeight > 0 ? p.alignedHeight : baseNotificationHeight;
+         if (w <= 0 || h <= 0)
+             return null;
+         const rect = {
