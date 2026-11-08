@@ -41,8 +41,11 @@ require distro/tests/test-bootstrap-policy.sh
 require distro/tests/test-hm-hosts.sh
 require distro/tests/test-debian13-regressions.sh
 require distro/tests/test-dms-bar-merge.sh
+require distro/tests/test-dms-ipc-path.sh
 require distro/docs/COMPOSITOR.md
 require distro/docs/SERVICE_OWNERSHIP.md
+require distro/docs/RYOKU_PROFILE_MVP.md
+require distro/docs/NIXOS_TO_DEBIAN_MIGRATION_MATRIX.md
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 
 # Standalone HM: modules must not take/use osConfig (comments mentioning the ban are OK).
@@ -77,6 +80,7 @@ bash -n "$ROOT/distro/tests/test-bootstrap-policy.sh"
 bash -n "$ROOT/distro/tests/test-distro-paths.sh"
 bash -n "$ROOT/distro/tests/test-debian13-regressions.sh"
 bash -n "$ROOT/distro/tests/test-dms-bar-merge.sh"
+bash -n "$ROOT/distro/tests/test-dms-ipc-path.sh"
 echo "ok: bash -n syntax"
 
 [[ "$fail" -eq 0 ]]
