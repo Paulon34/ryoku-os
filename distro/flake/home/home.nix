@@ -9,12 +9,21 @@
 # nixGL arrives via extraSpecialArgs into ./nixgl.nix only.
 {
   imports = [
+    # profiles.nix is pulled via flake modules = [ ./modules ... ]; keep home lean.
     ./niri.nix
     ./kitty.nix
     ./fuzzel.nix
     ./theme.nix
     ./nixgl.nix
   ];
+
+  # Surface Jarvis default for shells / later ryoku-cli.
+  home.sessionVariables.RYOKU_JARVIS = lib.mkDefault (
+    if config.ryoku.profile.jarvis then "1" else "0"
+  );
+  home.sessionVariables.RYOKU_EDITION = config.ryoku.profile.edition;
+  home.sessionVariables.RYOKU_VISUAL_PROFILE = config.ryoku.profile.visual;
+  home.sessionVariables.RYOKU_SHELL_STYLE = config.ryoku.profile.shellStyle;
 
   home.stateVersion = "25.11";
 

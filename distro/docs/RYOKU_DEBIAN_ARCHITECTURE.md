@@ -50,7 +50,18 @@ After apply alone, guest desktop status remains **`GUEST_NOT_RUN`** until a huma
 
 ## Home Manager standalone
 
-`distro/flake/` is a flake exposing `homeConfigurations.ryoku`. Modules under `distro/flake/home/` **must not** reference `osConfig` or NixOS options. System concerns (DM, NM, PipeWire packages) stay on APT + systemd.
+`distro/flake/` exposes `homeConfigurations.<user>` from **`hosts/<user>/default.nix`**
+(plain attrsets with `username`, `homeDirectory`, `profile`). Bootstrap writes that
+file and `git add`s it so pure flakes see it — **no gitignored overlay**.
+
+```bash
+home-manager switch --flake ./distro/flake#alice   # as user alice
+```
+
+Modules under `distro/flake/home/` **must not** reference `osConfig` / NixOS options.
+System concerns (DM, NM, PipeWire packages) stay on APT + systemd.
+HM switch always runs as `--user` so `$HOME` is correct and not root-owned.
+
 
 ## Graphics
 

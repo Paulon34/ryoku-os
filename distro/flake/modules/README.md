@@ -1,4 +1,7 @@
-# Shared modules (ENTREGA C+)
+# Shared modules
 
-Placeholders for Lite/Balanced/Ultra and Minimal/Full profiles.
-ENTREGA A ships only the standalone Home Manager flake under `../home/`.
+| Module | Role |
+|--------|------|
+| `profiles.nix` | `ryoku.profile.{edition,visual,shellStyle,jarvis}` |
+
+Host files under `hosts/<user>/default.nix` set these options. Jarvis defaults to **false**.

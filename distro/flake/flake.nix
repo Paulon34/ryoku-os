@@ -1,8 +1,7 @@
 {
   description = "Ryoku Debian — standalone Home Manager + Niri (no NixOS/osConfig)";
 
-  # Pins are commit SHAs so guests can `nix flake lock` reproducibly even when
-  # flake.lock is regenerated. Prefer regenerating lock on the Debian guest.
+  # Pins are commit SHAs so guests can `nix flake lock` reproducibly.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/f9a75f41be3a74eab55d3a7679d34ad6cc0da977";
 
@@ -24,8 +23,22 @@
       pkgs = nixpkgs.legacyPackages.${system};
       lib = nixpkgs.lib;
 
+      # Host files under ./hosts/<name>/default.nix (plain attrsets, not gitignored).
+      hostNames = lib.optionals (builtins.pathExists ./hosts) (
+        lib.attrNames (
+          lib.filterAttrs (
+            name: type:
+            type == "directory" && builtins.pathExists (./hosts + "/${name}/default.nix")
+          ) (builtins.readDir ./hosts)
+        )
+      );
+
       mkHome =
-        { username, homeDirectory }:
+        {
+          username,
+          homeDirectory,
+          profile ? { },
+        }:
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
@@ -35,38 +48,54 @@
             };
           };
           modules = [
+            ./modules
             ./home/home.nix
             {
               home.username = username;
               home.homeDirectory = homeDirectory;
+              ryoku.profile = {
+                edition = profile.edition or "minimal";
+                visual = profile.visual or "balanced";
+                shellStyle = profile.shellStyle or "quattro";
+                jarvis = profile.jarvis or false;
+              };
             }
           ];
         };
+
+      homeFromHost =
+        name:
+        let
+          host = import (./hosts + "/${name}");
+          username = host.username or name;
+          homeDirectory = host.homeDirectory or "/home/${name}";
+          profile = host.profile or { };
+        in
+        mkHome {
+          inherit username homeDirectory profile;
+        };
     in
     {
-      # Default attribute used by bootstrap: .#ryoku
-      homeConfigurations.ryoku = mkHome {
-        username = "ryoku";
-        homeDirectory = "/home/ryoku";
-      };
-
-      # Generic helper: bootstrap rewrites a thin host overlay when --user differs.
-      homeConfigurations.default = self.homeConfigurations.ryoku;
+      # One attr per hosts/<name> — bootstrap targets .#<user>, never a fixed wrong HOME.
+      homeConfigurations = lib.genAttrs hostNames homeFromHost;
 
       packages.${system} = {
-        # Expose niri for smoke checks: nix build .#niri
         niri = pkgs.niri;
         nixGLIntel = nixGL.packages.${system}.nixGLIntel;
         nixGLDefault = nixGL.packages.${system}.nixGLDefault;
       };
 
-      # Documentation / tooling markers for CI path checks.
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
         test -f ${./home/home.nix}
         test -f ${./home/niri.nix}
+        test -f ${./hosts/ryoku/default.nix}
+        test -f ${./modules/profiles.nix}
         mkdir -p $out
         echo ok > $out/result
       '';
+
+      # Expose builder for docs/tests (not a homeConfiguration by itself).
+      lib.mkRyokuHome = mkHome;
 
       formatter.${system} = pkgs.nixfmt-rfc-style;
     };

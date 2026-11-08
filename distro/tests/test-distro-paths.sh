@@ -27,9 +27,12 @@ require distro/flake/home/kitty.nix
 require distro/flake/home/fuzzel.nix
 require distro/flake/home/theme.nix
 require distro/flake/home/nixgl.nix
+require distro/flake/modules/profiles.nix
+require distro/flake/hosts/ryoku/default.nix
 require distro/session/ryoku-niri.desktop
 require distro/session/ryoku-niri-session
 require distro/tests/test-bootstrap-policy.sh
+require distro/tests/test-hm-hosts.sh
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 
 # Standalone HM: modules must not take/use osConfig (comments mentioning the ban are OK).

@@ -15,10 +15,12 @@ Alvo: Debian 13 Trixie amd64 utilizável com APT + Nix multiusuário (`nix-setup
 git clone https://github.com/Paulon34/ryoku-os.git
 cd ryoku-os
 
-# 2) Pré-visualizar (não escreve nada durable)
+# 2) Pré-visualizar / preflight (não escreve nada durable)
 ./distro/scripts/ryoku-bootstrap --dry-run --user "$USER"
 
 # 3) Aplicar (pede confirmação APPLY; use --yes em automação revisada)
+#    Escreve distro/flake/hosts/$USER/default.nix, faz git add, e
+#    roda home-manager switch --flake …#$USER **como esse usuário**.
 sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER"
 
 # 4) Logout → GDM → sessão "Ryoku (Niri)"

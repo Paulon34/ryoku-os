@@ -33,6 +33,6 @@ ENTREGA A only adapts **keybind intent** and architecture notes — no DMS patch
 
 ## Generated / local files (not licensed as redistributable product)
 
-- `distro/flake/.ryoku-user.nix` — local HM username overlay from bootstrap (do not commit)
+- `distro/flake/hosts/<user>/default.nix` — generated/updated by bootstrap; staged with `git add` for pure flake eval (may be committed per machine)
 - `flake.lock` — generated on guest by `nix flake lock` during `--apply`
 - Backup trees under `/var/backups/ryoku-bootstrap-*`
