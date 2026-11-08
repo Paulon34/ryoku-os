@@ -8,6 +8,8 @@ curl
 git
 sudo
 dbus
+dbus-daemon
+dbus-session-bus-common
 dbus-user-session
 
 # Nix (Debian packages — prefer over upstream installer)
