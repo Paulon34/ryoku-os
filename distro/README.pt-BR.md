@@ -45,6 +45,13 @@ passou a tratá-los automaticamente:
 - **nixGL:** usar o wrapper Mesa (`nixGLIntel`) na flake pura. O antigo
   `nixGLDefault` tenta usar `builtins.currentTime` ao detectar NVIDIA e
   bloqueia a avaliação pura do Home Manager.
+- **dconf + D-Bus:** o primeiro `home-manager switch` da VM compilou a
+  geração, mas falhou na ativação `dconfSettings` porque o dbus-daemon da
+  Nix store procurou `/etc/dbus-1/session.conf` (o Debian 13 usa
+  `/usr/share/dbus-1/session.conf`). O bootstrap agora chama
+  `/usr/bin/dbus-run-session -- nix ...` **como usuário de desktop**.
+  Isso fornece `DBUS_SESSION_BUS_ADDRESS` ao Home Manager sem alterar
+  a configuração global do D-Bus.
 
 A VM de laboratório tem 25 GiB de disco virtual; acompanhar `df -h /`
 durante a ativação das gerações do Nix. Nenhum desses testes significa
