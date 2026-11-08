@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ryoku Niri session wrapper — sourced by the display manager (.desktop Exec).
+# Ryoku Niri session wrapper — Exec= target for the GDM .desktop file.
 # Starts a Niri session from the Home Manager / Nix profile when available,
 # falling back to PATH. Does not touch bootloaders or partitions.
 set -euo pipefail
@@ -7,6 +7,22 @@ set -euo pipefail
 export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-niri:Ryoku}"
 export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
 export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-niri}"
+
+# Wayland/Ozone/Qt hints that Home Manager sessionVariables would set on a
+# login shell — GDM does not source ~/.profile for this Exec path.
+export NIXOS_OZONE_WL="${NIXOS_OZONE_WL:-1}"
+export MOZ_ENABLE_WAYLAND="${MOZ_ENABLE_WAYLAND:-1}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}"
+
+# Never invent WAYLAND_DISPLAY / XDG_RUNTIME_DIR. pam_systemd + Niri own them.
+# Hardcoding wayland-1 or /run/user/1000 breaks multi-seat and non-uid-1000 users.
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+  echo "ryoku-niri-session: XDG_RUNTIME_DIR unset (pam_systemd / logind required)" >&2
+  exit 1
+fi
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  echo "ryoku-niri-session: noting pre-set WAYLAND_DISPLAY=${WAYLAND_DISPLAY}" >&2
+fi
 
 # On Debian (non-NixOS), Nix-built Niri must load the matching Mesa GBM/DRI
 # libraries. The Home Manager nixGLIntel package sets GBM_BACKENDS_PATH and

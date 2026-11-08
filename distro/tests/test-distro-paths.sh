@@ -41,6 +41,8 @@ require distro/tests/test-bootstrap-policy.sh
 require distro/tests/test-hm-hosts.sh
 require distro/tests/test-debian13-regressions.sh
 require distro/tests/test-dms-bar-merge.sh
+require distro/docs/COMPOSITOR.md
+require distro/docs/SERVICE_OWNERSHIP.md
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 
 # Standalone HM: modules must not take/use osConfig (comments mentioning the ban are OK).
