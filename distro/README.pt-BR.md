@@ -67,8 +67,9 @@ passou a tratá-los automaticamente:
   no hipervisor depois de preservar o acesso SSH e um snapshot.
 
 A VM de laboratório tem 25 GiB de disco virtual; acompanhar `df -h /`
-durante a ativação das gerações do Nix. Nenhum desses testes significa
-que o login Niri já foi verificado.
+durante a ativação das gerações do Nix. A fundação Niri + Kitty já foi
+verificada manualmente na VM Proxmox 201 (monitor virtual e janela no IPC).
+Isso NÃO valida DMS, Quattro, widgets nem paridade visual com o NixOS.
 
 Se uma tentativa antiga parou após APT/Nix e foi atualizado o checkout
 para uma versão corrigida da mesma branch, é possível retomar sem
@@ -94,8 +95,9 @@ bash ./distro/tests/test-debian13-regressions.sh
 | Checagem | Status |
 |----------|--------|
 | Testes de path/policy | devem passar no CI |
-| Guest Debian + login Niri | **`GUEST_NOT_RUN`** até evidência manual |
-| `PASS_MANUAL` | **não inventar** |
+| Guest Debian + Niri/Kitty | **`PASS_MANUAL` limitado** (compositor, monitor e Kitty) |
+| DMS/Quattro/Matugen no guest | **`GUEST_NOT_RUN`** até teste visual real |
+| Home Manager pure eval + build DMS 1.5.3 Quattro | **PASS CI** (não equivale a GUI verificada) |
 
 ## Documentação
 
@@ -107,6 +109,10 @@ bash ./distro/tests/test-debian13-regressions.sh
 
 Esta branch integra o trabalho visual do PR #20 sobre a fundação validada no
 Proxmox: DMS 1.5.3 com patches Ryoku, wallpapers, Matugen e atalhos Niri.
+O build de `.#dms-shell-ryoku` e a avaliação pura do Home Manager passaram no
+GitHub Actions; ainda é necessário testar a UI na VM. Siga
+[distro/docs/RYOKU_DMS_VM_TEST.md](docs/RYOKU_DMS_VM_TEST.md) para usar
+um worktree isolado e ter um rollback seguro.
 A instalação da fundação (GDM/Niri/Kitty) teve verificação manual positiva,
 mas o DMS/Quattro, wallpaper, launcher e os serviços de sessão ainda devem
 ser verificados dentro da VM antes de marcar a Entrega B como aprovada.
