@@ -33,6 +33,7 @@ require distro/session/ryoku-niri.desktop
 require distro/session/ryoku-niri-session
 require distro/tests/test-bootstrap-policy.sh
 require distro/tests/test-hm-hosts.sh
+require distro/tests/test-debian13-regressions.sh
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 
 # Standalone HM: modules must not take/use osConfig (comments mentioning the ban are OK).
@@ -65,6 +66,7 @@ bash -n "$ROOT/distro/scripts/ryoku-bootstrap"
 bash -n "$ROOT/distro/session/ryoku-niri-session"
 bash -n "$ROOT/distro/tests/test-bootstrap-policy.sh"
 bash -n "$ROOT/distro/tests/test-distro-paths.sh"
+bash -n "$ROOT/distro/tests/test-debian13-regressions.sh"
 echo "ok: bash -n syntax"
 
 [[ "$fail" -eq 0 ]]
