@@ -8,6 +8,7 @@ on:
       - cursor/debian-niri-desktop-port-88e9
       - cursor/debian-dms-visual-fidelity-81bd
       - cursor/debian-master-stabilize-81bd
+      - cursor/debian-dms-bar-diag-81bd
     paths:
       - "distro/flake/**"
       - "distro/session/**"
@@ -18,6 +19,7 @@ on:
       - cursor/debian-niri-desktop-port-88e9
       - cursor/debian-foundation-distro-88e9
       - cursor/debian-dms-visual-fidelity-81bd
+      - cursor/debian-master-stabilize-81bd
     paths:
       - "distro/flake/**"
       - "distro/session/**"
