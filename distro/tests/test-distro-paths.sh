@@ -32,6 +32,11 @@ require distro/flake/home/matugen.nix
 require distro/flake/modules/profiles.nix
 require distro/flake/modules/features/visual.nix
 require distro/flake/pkgs/dms-shell-ryoku.nix
+require distro/core/Cargo.toml
+require distro/core/ryoku-cli/Cargo.toml
+require distro/core/ryoku-jarvis-bridge/Cargo.toml
+require distro/docs/LIVE_ISO.md
+require distro/docs/PROFILES.md
 require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
 require distro/assets/wallpapers/ryoku-night.jpg
 require distro/LICENSES/MIT-DankMaterialShell.txt
