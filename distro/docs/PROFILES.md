@@ -19,7 +19,8 @@ sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER" \
   --profile full --visual ultra --shell-style islands --jarvis
 ```
 
-Writes `distro/flake/.ryoku-user.nix` (gitignored) with the selected knobs.
+Writes `distro/flake/hosts/<user>/default.nix` (git-add for pure flake eval) and
+runs `home-manager switch --flake …#<user>` as that user.
 
 ## Module map
 

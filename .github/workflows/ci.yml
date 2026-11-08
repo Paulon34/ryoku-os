@@ -165,6 +165,9 @@ jobs:
       - name: Bootstrap policy checks (no guest / no QEMU)
         run: ./distro/tests/test-bootstrap-policy.sh
 
+      - name: HM hosts + preflight checks
+        run: ./distro/tests/test-hm-hosts.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes
 

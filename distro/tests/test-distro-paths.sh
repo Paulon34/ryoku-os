@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Path / structure checks for the distro/ tree (ENTREGA A).
+# Path / structure checks for the distro/ tree (ENTREGA A/B).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -40,9 +40,12 @@ require distro/docs/PROFILES.md
 require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
 require distro/assets/wallpapers/ryoku-night.jpg
 require distro/LICENSES/MIT-DankMaterialShell.txt
+require distro/flake/modules/profiles.nix
+require distro/flake/hosts/ryoku/default.nix
 require distro/session/ryoku-niri.desktop
 require distro/session/ryoku-niri-session
 require distro/tests/test-bootstrap-policy.sh
+require distro/tests/test-hm-hosts.sh
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 
 # Standalone HM: modules must not take/use osConfig (comments mentioning the ban are OK).

@@ -9,7 +9,7 @@
 # nixGL / dankMaterialShell arrive via extraSpecialArgs into their modules.
 {
   imports = [
-    ../modules
+    # profiles.nix is pulled via flake modules = [ ./modules ... ]; keep home lean.
     ./niri.nix
     ./kitty.nix
     ./fuzzel.nix
@@ -42,6 +42,10 @@
     MOZ_ENABLE_WAYLAND = "1";
     QT_QPA_PLATFORM = "wayland;xcb";
     RYOKU_NIXGL_WRAPPER = "${config.home.homeDirectory}/.local/bin/ryoku-nixgl";
+    RYOKU_JARVIS = lib.mkDefault (if config.ryoku.profile.jarvis then "1" else "0");
+    RYOKU_EDITION = config.ryoku.profile.edition;
+    RYOKU_VISUAL_PROFILE = config.ryoku.profile.visual;
+    RYOKU_SHELL_STYLE = config.ryoku.profile.shellStyle;
   };
 
   home.file.".local/bin/ryoku-niri-session" = {
