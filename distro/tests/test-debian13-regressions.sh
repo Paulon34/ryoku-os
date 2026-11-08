@@ -32,6 +32,16 @@ grep -Fq 'sudo -u "$TARGET_USER" tee "$path"' "$BOOTSTRAP" ||
   fail "old root-owned host directory logic still present"
 pass "HM host permissions"
 
+# Pure Nix flakes read only tracked/staged Git files. In linked worktrees,
+# .git is a FILE; testing -d .git silently skips the newly generated host.
+grep -Fq 'rev-parse --is-inside-work-tree' "$BOOTSTRAP" ||
+  fail "bootstrap does not recognize Git linked worktrees"
+grep -Fq 'ls-files --error-unmatch' "$BOOTSTRAP" ||
+  fail "bootstrap does not verify the generated host reached the Git index"
+! grep -Fq '[[ -d "$REPO_ROOT/.git" ]]' "$BOOTSTRAP" ||
+  fail "bootstrap still ignores linked worktrees"
+pass "Git linked worktree HM host staging"
+
 # On Debian, nix-setup-systemd may have an active service and inactive socket.
 grep -q 'is-active --quiet nix-daemon.service' "$BOOTSTRAP" ||
   fail "active nix-daemon.service not recognized"
