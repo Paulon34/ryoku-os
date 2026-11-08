@@ -34,4 +34,4 @@ jobs:
       - name: Evaluate Ryoku host Home Manager activation (pure)
         run: |
           set -euo pipefail
-          nix eval --raw --show-trace .#homeConfigurations.ryoku.activationPackage.drvPath
+          nix eval --raw --show-trace ./distro/flake#homeConfigurations.ryoku.activationPackage.drvPath
