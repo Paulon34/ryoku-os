@@ -88,7 +88,8 @@
       packages.${system} = {
         niri = pkgs.niri;
         nixGLIntel = nixGL.packages.${system}.nixGLIntel;
-        nixGLDefault = nixGL.packages.${system}.nixGLDefault;
+        # Pure Mesa default: automatic NVIDIA detection requires impure currentTime.
+        nixGLDefault = nixGL.packages.${system}.nixGLIntel;
         dms-shell = dankMaterialShell.packages.${system}.dms-shell;
       };
 

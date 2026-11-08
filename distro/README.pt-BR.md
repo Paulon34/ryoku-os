@@ -26,11 +26,67 @@ sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER"
 # 4) Logout → GDM → sessão "Ryoku (Niri)"
 ```
 
+### Aprendizados do primeiro teste real (Debian 13 no Proxmox)
+
+O primeiro bootstrap encontrou problemas **reproduzidos na VM**, e a fundação
+passou a tratá-los automaticamente:
+
+- **APT:** `policykit-1` não existe no Debian 13; usar `polkitd` + `pkexec`.
+- **Nix daemon:** se `nix-daemon.service` já estiver ativo, não tentar ativar
+  `nix-daemon.socket` ao mesmo tempo. Autorizar o usuário de desktop no grupo
+  `nix-users` (nova sessão SSH para atualizar os grupos).
+- **GDM:** o alias `gdm.service` é estático; conferir `display-manager.service`
+  e selecionar `graphical.target` para a próxima inicialização quando o
+  alvo anterior for `multi-user.target`. Não iniciar a GUI durante o SSH.
+- **PipeWire:** `systemctl --user` requer sessão e barramento D-Bus do usuário.
+  Deixar a ativação dos serviços de áudio para o login da sessão gráfica.
+- **Home Manager:** criar `distro/flake/hosts/<user>` como usuário de desktop,
+  nunca como root seguido de `tee` sob um usuário sem permissão.
+- **nixGL:** usar o wrapper Mesa (`nixGLIntel`) na flake pura. O antigo
+  `nixGLDefault` tenta usar `builtins.currentTime` ao detectar NVIDIA e
+  bloqueia a avaliação pura do Home Manager.
+- **dconf + D-Bus:** o primeiro `home-manager switch` da VM compilou a
+  geração, mas falhou na ativação `dconfSettings` porque o dbus-daemon da
+  Nix store procurou `/etc/dbus-1/session.conf` (o Debian 13 usa
+  `/usr/share/dbus-1/session.conf`). O bootstrap agora chama
+  `/usr/bin/dbus-run-session -- nix ...` **como usuário de desktop**.
+  Isso fornece `DBUS_SESSION_BUS_ADDRESS` ao Home Manager sem alterar
+  a configuração global do D-Bus.
+- **Primeiro login GDM / Niri 26.04:** o GDM autenticou e iniciou Niri,
+  mas o compositor rejeitou o KDL em `config.kdl:35`:
+  `unexpected node prefers-no-csd`. Corrigido para `prefer-no-csd`;
+  o bootstrap passa a executar `niri validate` como usuário após o
+  Home Manager para barrar novos erros antes do login gráfico.
+- **GBM / Mesa no Debian:** o mesmo boot mostrou
+  `/run/opengl-driver/lib/gbm/dri_gbm.so` ausente. Esse caminho
+  pertence ao ambiente NixOS, não ao Debian; o lançador
+  `ryoku-niri-session` agora invoca o Niri do Nix via `nixGLIntel`
+  para configurar o caminho de drivers Mesa. Isso ainda precisa de
+  reteste real, pois o adaptador da VM era Bochs VGA (`1234:1111`).
+  O Niri recomenda aceleração 3D para VMs; configurar a GPU virtual
+  no hipervisor depois de preservar o acesso SSH e um snapshot.
+
+A VM de laboratório tem 25 GiB de disco virtual; acompanhar `df -h /`
+durante a ativação das gerações do Nix. Nenhum desses testes significa
+que o login Niri já foi verificado.
+
+Se uma tentativa antiga parou após APT/Nix e foi atualizado o checkout
+para uma versão corrigida da mesma branch, é possível retomar sem
+reinstalar os pacotes:
+
+```bash
+sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER" \
+  --skip-apt --skip-nix --profile minimal --visual balanced --shell-style quattro
+```
+
+Para instalações limpas, **não** usar esses `--skip-*`.
+
 ### Testes automáticos (host CI / sem guest)
 
 ```bash
 ./distro/tests/test-distro-paths.sh
 ./distro/tests/test-bootstrap-policy.sh
+bash ./distro/tests/test-debian13-regressions.sh
 ```
 
 ### Status de verificação
@@ -46,6 +102,19 @@ sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER"
 - [Arquitetura](docs/RYOKU_DEBIAN_ARCHITECTURE.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Hyprland → Niri keybinds](../docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md)
+
+## ENTREGA B — shell Ryoku (Quattro / Islands)
+
+Esta branch integra o trabalho visual do PR #20 sobre a fundação validada no
+Proxmox: DMS 1.5.3 com patches Ryoku, wallpapers, Matugen e atalhos Niri.
+A instalação da fundação (GDM/Niri/Kitty) teve verificação manual positiva,
+mas o DMS/Quattro, wallpaper, launcher e os serviços de sessão ainda devem
+ser verificados dentro da VM antes de marcar a Entrega B como aprovada.
+
+O Niri 26.04 aceita `include optional=true "colors.kdl"` e exige
+`prefer-no-csd` (não `prefers-no-csd`). O bootstrap valida o KDL após
+a ativação do Home Manager. Para testes com Proxmox, usar GPU virtual com
+renderização disponível e conferir o console/SSH antes de novas mudanças.
 
 ## Próximas entregas
 

@@ -148,6 +148,22 @@ jobs:
           grep -q 'README.en.md' README.md
           grep -q 'README.md' README.en.md
 
+  apt-trixie:
+    name: debian13-apt-simulation
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie-slim
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate APT packages on actual Debian 13
+        run: |
+          set -eu
+          apt-get update
+          grep -vE '^[[:space:]]*(#|$)' distro/apt/packages-base.txt |
+            xargs -r apt-get --simulate install --no-install-recommends
+
   distro:
     name: distro-debian-foundation
     runs-on: ubuntu-24.04
@@ -163,6 +179,9 @@ jobs:
 
       - name: HM hosts + preflight checks
         run: ./distro/tests/test-hm-hosts.sh
+
+      - name: Real Debian 13 regression guards (no guest)
+        run: bash ./distro/tests/test-debian13-regressions.sh
 
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

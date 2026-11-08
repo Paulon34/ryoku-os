@@ -39,7 +39,7 @@ let
     spawn-at-startup "nm-applet" "--indicator"
     // DMS is started via systemd user unit ryoku-dms; kitty on demand.
 
-    prefers-no-csd
+    prefer-no-csd
 
     screenshot-path "~/Pictures/Screenshots/ryoku-%Y%m%d-%H%M%S.png"
 

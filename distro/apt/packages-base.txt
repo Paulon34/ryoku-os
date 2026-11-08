@@ -8,6 +8,8 @@ curl
 git
 sudo
 dbus
+dbus-daemon
+dbus-session-bus-common
 dbus-user-session
 
 # Nix (Debian packages — prefer over upstream installer)
@@ -46,7 +48,6 @@ pipewire-pulse
 pipewire-audio
 wireplumber
 libspa-0.2-bluetooth
-policykit-1
 polkitd
 pkexec
 rtkit
