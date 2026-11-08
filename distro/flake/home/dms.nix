@@ -9,7 +9,7 @@
 # DankMaterialShell on Niri — standalone HM (no osConfig).
 # Visual styles Quattro (default) / Islands via settings + patched package.
 let
-  shellStyle = config.ryoku.shellStyle or "quattro";
+  shellStyle = config.ryoku.profile.shellStyle;
   quattro = shellStyle == "quattro";
 
   dmsPkgs = dankMaterialShell.packages.${pkgs.stdenv.hostPlatform.system};
@@ -67,12 +67,6 @@ let
       };
 in
 {
-  options.ryoku.shellStyle = lib.mkOption {
-    type = lib.types.enum [ "quattro" "islands" ];
-    default = "quattro";
-    description = "Ryoku shell style (Quattro flat bar vs Islands capsules).";
-  };
-
   home.packages = [
     dmsPackage
     pkgs.matugen
