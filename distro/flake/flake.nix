@@ -27,9 +27,24 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      lib = nixpkgs.lib;
+
+      # Host files under ./hosts/<name>/default.nix (plain attrsets, not gitignored).
+      hostNames = lib.optionals (builtins.pathExists ./hosts) (
+        lib.attrNames (
+          lib.filterAttrs (
+            name: type:
+            type == "directory" && builtins.pathExists (./hosts + "/${name}/default.nix")
+          ) (builtins.readDir ./hosts)
+        )
+      );
 
       mkHome =
-        { username, homeDirectory }:
+        {
+          username,
+          homeDirectory,
+          profile ? { },
+        }:
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
@@ -39,21 +54,36 @@
             };
           };
           modules = [
+            ./modules
             ./home/home.nix
             {
               home.username = username;
               home.homeDirectory = homeDirectory;
+              ryoku.profile = {
+                edition = profile.edition or "minimal";
+                visual = profile.visual or "balanced";
+                shellStyle = profile.shellStyle or "quattro";
+                jarvis = profile.jarvis or false;
+              };
             }
           ];
         };
+
+      homeFromHost =
+        name:
+        let
+          host = import (./hosts + "/${name}");
+          username = host.username or name;
+          homeDirectory = host.homeDirectory or "/home/${name}";
+          profile = host.profile or { };
+        in
+        mkHome {
+          inherit username homeDirectory profile;
+        };
     in
     {
-      homeConfigurations.ryoku = mkHome {
-        username = "ryoku";
-        homeDirectory = "/home/ryoku";
-      };
-
-      homeConfigurations.default = self.homeConfigurations.ryoku;
+      # One attr per hosts/<name> — bootstrap targets .#<user>, never a fixed wrong HOME.
+      homeConfigurations = lib.genAttrs hostNames homeFromHost;
 
       packages.${system} = {
         niri = pkgs.niri;
@@ -67,9 +97,13 @@
         test -f ${./home/niri.nix}
         test -f ${./home/dms.nix}
         test -f ${./patches/dms/1.5.3/ryoku-quattro-foundation.patch}
+        test -f ${./hosts/ryoku/default.nix}
+        test -f ${./modules/profiles.nix}
         mkdir -p $out
         echo ok > $out/result
       '';
+
+      lib.mkRyokuHome = mkHome;
 
       formatter.${system} = pkgs.nixfmt-rfc-style;
     };

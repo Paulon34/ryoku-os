@@ -77,10 +77,14 @@ check "mentions GUEST_NOT_RUN" grep -q 'GUEST_NOT_RUN' "$BOOTSTRAP"
 check_fail "no qemu references in bootstrap" grep -qiE 'qemu-system|qemu-img' "$BOOTSTRAP"
 
 # Apply on fixture should not require host debian and should not touch real /etc.
+# Use a throwaway flake-dir so hosts/alice is not written into the real tree.
+FLAKE_TMP="$TMP/flake-policy"
+mkdir -p "$FLAKE_TMP"
+cp -a "$ROOT/distro/flake/." "$FLAKE_TMP/"
 check "debian fixture apply (no host mutate)" \
   "$BOOTSTRAP" --apply --sysroot "$FIX/pretend-debian" --user alice --yes \
+  --flake-dir "$FLAKE_TMP" \
   --log-dir "$TMP/logs-apply" --backup-dir "$TMP/backup-apply" --skip-hm
-
 # Fixture apply should have written session under sysroot... but our install paths
 # use SYSROOT prefix — verify desktop landed under fixture.
 if [[ -f "$FIX/pretend-debian/usr/share/wayland-sessions/ryoku-niri.desktop" ]] || \
@@ -96,6 +100,20 @@ else
     echo "FAIL: fixture apply produced no recovery notes" >&2
     fail=$((fail + 1))
   fi
+fi
+
+# Dry-run must not create hosts/<user> under the real flake.
+HOST_PROBE="$ROOT/distro/flake/hosts/dryrun-probe-user/default.nix"
+rm -rf "$ROOT/distro/flake/hosts/dryrun-probe-user" 2>/dev/null || true
+"$BOOTSTRAP" --dry-run --sysroot "$FIX/pretend-debian" --user dryrun-probe-user \
+  --log-dir "$TMP/logs-probe" --backup-dir "$TMP/backup-probe" >/dev/null
+if [[ -e "$HOST_PROBE" ]]; then
+  echo "FAIL: dry-run wrote $HOST_PROBE" >&2
+  fail=$((fail + 1))
+  rm -rf "$ROOT/distro/flake/hosts/dryrun-probe-user"
+else
+  echo "PASS: dry-run host no-op"
+  pass=$((pass + 1))
 fi
 
 # Cleanup fixture mutations under pretend-debian (keep os-release only).
