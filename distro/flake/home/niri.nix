@@ -2,11 +2,20 @@
 
 # Niri foundation + DMS-oriented binds (ENTREGA B).
 # Matrix: docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
+# Islands vs Quattro: reuse ryoku-desktop hyprland.nix gaps_out (10) for
+# floating capsules; Quattro keeps a tighter strip feel (8). Window blur /
+# shadow / inactive opacity stay Hyprland-only — Niri has no equivalent.
 let
+  islands = config.ryoku.profile.shellStyle == "islands";
+  gaps = if islands then 10 else 8;
+
   conf = ''
-    // Ryoku Niri — desktop port (ENTREGA B)
-    // Optional Matugen colors (created by change-wallpaper / matugen):
+    // Ryoku Niri — desktop port (Islands/Quattro shellStyle-aware)
+    // colors.kdl = HM/user-matugen fallback; dms/colors.kdl = DMS Material You
+    // (stock DMS matugen writes CONFIG_DIR/niri/dms/colors.kdl on wallpaper set).
+    // Later include wins overlapping keys when both exist.
     include optional=true "colors.kdl"
+    include optional=true "dms/colors.kdl"
 
     input {
         keyboard {
@@ -21,7 +30,7 @@ let
     }
 
     layout {
-        gaps 8
+        gaps ${toString gaps}
         center-focused-column "never"
         preset-column-widths {
             proportion 0.33333

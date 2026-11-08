@@ -10,7 +10,8 @@ Install legend: **APT** | **Nix/HM** | **Flatpak** | **N/A**
 | Compositor | Hyprland (HM) | **Nix/HM** Niri | binds matrix | nixGL Mesa | Working foundation | Quattro Hypr workspaces N/A |
 | Shell | DMS 1.5.3 + patches | **Nix/HM** `dms-shell-ryoku` | settings merge | quickshell, jq | Patches reused | Visual Quattro guest TBD |
 | Quickshell | via DMS | **Nix/HM** `pkgs.quickshell` | — | PATH wrapper | Required for ipc | SSH PATH was gap (fixed) |
-| Matugen | HM templates → hypr colors | **Nix/HM** → `niri/colors.kdl` | templates | wallpaper dir | Seeded | Live palette guest TBD |
+| Matugen | HM templates → hypr colors | **Nix/HM** → `niri/colors.kdl` + DMS `niri/dms/colors.kdl` | templates | wallpaper dir | Seeded | Guest live palette TBD |
+| Islands bar | DMS patches + styleBar | Same patches + `hosts/ryoku-islands` | HM merge | #26 enabled | Code ready | Guest screenshot TBD |
 | Wallpapers | assets CC0 | **HM** file tree | same assets | — | OK | — |
 | Kitty | HM + JetBrainsMono | **APT** pkg + **HM** config/font | kitty.nix | nerd-fonts Nix | OK | Fish shell optional |
 | File manager | (varies) | **APT** Thunar | — | — | OK | — |
