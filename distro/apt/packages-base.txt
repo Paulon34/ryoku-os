@@ -43,6 +43,8 @@ xdg-desktop-portal-wlr
 
 # Network / audio / auth
 network-manager
+# nm-applet (Niri spawn-at-startup); without this the tray spawn fails every login.
+network-manager-gnome
 pipewire
 pipewire-pulse
 pipewire-audio
@@ -51,6 +53,8 @@ libspa-0.2-bluetooth
 polkitd
 pkexec
 rtkit
+# GUI polkit agent for pkexec prompts under Niri (GNOME Shell is not present).
+mate-polkit
 
 # Fonts / themes (minimal)
 fonts-dejavu-core

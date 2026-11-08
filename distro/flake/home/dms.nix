@@ -331,11 +331,30 @@ in
       # GDM/Niri may not inherit the Home Manager profile PATH. The DMS Go
       # launcher spawns 'qs', while QML subprocesses also call 'dms' by name
       # (auth/blur/IPC). Export BOTH binaries to the entire child process tree.
-      export PATH="${lib.makeBinPath [ pkgs.quickshell dmsPackage ]}:$PATH"
-      # Ensure a session bus exists for portal/auth helpers when possible.
-      if [[ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ]] && command -v dbus-launch >/dev/null 2>&1; then
+      export PATH="${lib.makeBinPath [ pkgs.quickshell dmsPackage pkgs.matugen pkgs.jq ]}:$PATH"
+
+      # Do not invent WAYLAND_DISPLAY — Niri sets it. Refuse empty runtime dir.
+      if [[ -z "''${XDG_RUNTIME_DIR:-}" ]]; then
+        echo "ryoku-start-dms: XDG_RUNTIME_DIR unset" >&2
+        exit 1
+      fi
+      if [[ -z "''${WAYLAND_DISPLAY:-}" ]]; then
+        echo "ryoku-start-dms: WAYLAND_DISPLAY unset (is Niri up?)" >&2
+        exit 1
+      fi
+      if [[ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
         echo "ryoku-start-dms: warning: DBUS_SESSION_BUS_ADDRESS unset" >&2
       fi
+
+      # Idempotent reentry: Niri may re-fire spawn-at-startup; never double-shell.
+      # Use the login uid (never hardcode 1000). Do not probe with mutating IPC.
+      uid=$(${pkgs.coreutils}/bin/id -u)
+      if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- '${dmsBin}' >/dev/null 2>&1 \
+        || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
+        echo "ryoku-start-dms: DMS/Quickshell already running for uid $uid; skipping" >&2
+        exit 0
+      fi
+
       # Apply Quattro bar after DMS writes/loads settings (best-effort).
       (
         sleep 2

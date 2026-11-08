@@ -75,12 +75,19 @@ SESSION="$ROOT/distro/session/ryoku-niri-session"
 TEST_HOME=$(mktemp -d)
 trap 'rm -rf "$TEST_HOME"' EXIT
 TEST_BIN="$TEST_HOME/.local/state/nix/profiles/home-manager/home-path/bin"
-mkdir -p "$TEST_BIN"
+mkdir -p "$TEST_BIN" "$TEST_HOME/runtime"
 printf '#!/bin/sh\nexit 97\n' > "$TEST_BIN/niri"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "$RYOKU_TEST_SESSION_LOG"\n' > "$TEST_BIN/nixGLIntel"
 chmod +x "$TEST_BIN/niri" "$TEST_BIN/nixGLIntel"
-HOME="$TEST_HOME" RYOKU_TEST_SESSION_LOG="$TEST_HOME/session.log" bash "$SESSION" ||
+# pam_systemd provides XDG_RUNTIME_DIR in real GDM sessions; the wrapper must
+# refuse to invent /run/user/1000, so the harness supplies a temp runtime dir.
+HOME="$TEST_HOME" XDG_RUNTIME_DIR="$TEST_HOME/runtime" \
+  RYOKU_TEST_SESSION_LOG="$TEST_HOME/session.log" bash "$SESSION" ||
   fail "Niri session wrapper failed"
+# Guard: missing runtime dir must fail closed (no hardcoded /run/user/1000).
+if HOME="$TEST_HOME" env -u XDG_RUNTIME_DIR bash "$SESSION" 2>/dev/null; then
+  fail "session started without XDG_RUNTIME_DIR"
+fi
 EXPECTED="$TEST_BIN/niri --session"
 [[ "$(cat "$TEST_HOME/session.log")" == "$EXPECTED" ]] ||
   fail "Niri session didn't invoke nixGLIntel with Niri --session"
@@ -190,6 +197,36 @@ grep -Fq 'nerd-fonts.jetbrains-mono' "$KITTY" ||
 grep -Fq 'platformTheme.name = "adwaita"' "$THEME" ||
   fail "Qt Adwaita platform theme missing"
 pass "theme and font parity seeds"
+
+# Master stabilize: no hardcoded seat sockets / uids; clear service ownership.
+HARDCODE_HITS=$(
+  grep -RInE 'wayland-1|/run/user/1000' "$ROOT/distro/session" "$ROOT/distro/flake/home" \
+    --include='*.nix' --include='*.sh' --include='*.desktop' 2>/dev/null |
+    grep -Ev 'Hardcod|hardcod|Never invent|never hardcode|Do not invent|ban' || true
+)
+[[ -z "$HARDCODE_HITS" ]] || {
+  echo "$HARDCODE_HITS" >&2
+  fail "hardcoded WAYLAND_DISPLAY or /run/user/1000 in session/HM sources"
+}
+grep -Fq 'XDG_RUNTIME_DIR unset' "$SESSION" ||
+  fail "session must require pam XDG_RUNTIME_DIR"
+grep -Fq 'already running' "$DMS_MODULE" ||
+  fail "ryoku-start-dms must be idempotent against double spawn"
+grep -qx 'network-manager-gnome' "$APT_LIST" ||
+  fail "network-manager-gnome required for nm-applet tray"
+grep -qx 'mate-polkit' "$APT_LIST" ||
+  fail "mate-polkit required for GUI pkexec under Niri"
+grep -Fq 'ryoku-nm-applet' "$NIRI_KDL" ||
+  fail "NM tray must use optional wrapper, not bare nm-applet only"
+grep -Fq 'ryoku-polkit-agent' "$NIRI_KDL" ||
+  fail "polkit agent must autostart under Niri"
+grep -Fq 'ryoku-cliphist-text' "$NIRI_KDL" ||
+  fail "cliphist text watcher missing (empty clipboard DB / timeouts)"
+! grep -Eiq 'spawn-at-startup.*(mako|dunst|swaync)' "$NIRI_KDL" ||
+  fail "DMS owns notifications — do not also spawn mako/dunst/swaync"
+! grep -E 'usermod.*\binput\b|[[:space:]]-G[[:space:]]+input' "$BOOTSTRAP" ||
+  fail "bootstrap must never auto-add users to the input group"
+pass "session ownership, PATH hygiene, and security guards"
 
 bash -n "$BOOTSTRAP" || fail "bootstrap bash syntax"
 bash -n "$ROOT/distro/session/ryoku-niri-session" || fail "session shell syntax"

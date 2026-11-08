@@ -67,9 +67,27 @@ HM switch always runs as `--user` so `$HOME` is correct and not root-owned.
 
 Host Mesa from APT. Nix-built GL/Vulkan apps should use `ryoku-nixgl` (nixGL) wrappers installed by HM.
 
-## Profiles (ENTREGA C)
+## Profiles (ENTREGA C+)
 
-Lite / Balanced / Ultra × Minimal / Full — shared modules under `distro/flake/modules/` (stub in A).
+Combinable axes (not mutually exclusive “SKU” silos):
+
+| Axis | Values | Notes |
+|------|--------|-------|
+| `edition` | minimal / full | Package breadth |
+| `visual` | lite / balanced / ultra | Perf/visual budget for DMS |
+| `shellStyle` | quattro / islands | DMS patched look |
+| `jarvis` | bool (default off) | Bridge opt-in |
+| `compositor` | niri (only wired) / hyprland (reserved) | See `COMPOSITOR.md` |
+
+Future labels like developer/server/security should be **feature sets on top of these axes**, not a second parallel matrix that forks the desktop stack.
+
+## Session ownership
+
+See `SERVICE_OWNERSHIP.md`. DMS owns notifications; Niri spawns NM/polkit/cliphist/DMS; PipeWire stays systemd --user at login.
+
+## Nix future
+
+Current **Architecture A (hybrid APT + Nix HM)** is the stabilization target. Removing Nix (Architecture B) or a refined hybrid (C) is a **future decision** — do not strip Nix while Quattro/desktop is still guest-unproven. See master audit report.
 
 ## Live ISO (ENTREGA E)
 

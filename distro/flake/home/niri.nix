@@ -36,9 +36,16 @@ let
         }
     }
 
-    spawn-at-startup "nm-applet" "--indicator"
-    // Direct GDM Niri session does not guarantee graphical-session.target.
-    // Start the patched DMS/Quattro with Nix Mesa wrapper; kitty on demand.
+    // Service ownership (Niri spawn, not competing systemd user long-runners):
+    // - NM tray: APT network-manager-gnome (wrapper noops if missing)
+    // - Polkit GUI agent: APT mate-polkit (wrapper noops if missing)
+    // - Clipboard store: wl-paste|cliphist (fallback; DMS clipboard is primary)
+    // - Notifications: DMS only (do NOT spawn mako/dunst)
+    // - Shell: ryoku-start-dms (idempotent)
+    spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-nm-applet"
+    spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-polkit-agent"
+    spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-cliphist-text"
+    spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-cliphist-image"
     spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-start-dms"
 
     prefer-no-csd
@@ -118,6 +125,63 @@ let
 in
 {
   xdg.configFile."niri/config.kdl".text = conf;
+
+  # Optional host agents — never fail the session if the APT package is absent.
+  home.file.".local/bin/ryoku-nm-applet" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if command -v nm-applet >/dev/null 2>&1; then
+        exec nm-applet --indicator
+      fi
+      echo "ryoku-nm-applet: nm-applet missing (install network-manager-gnome)" >&2
+      exit 0
+    '';
+  };
+
+  home.file.".local/bin/ryoku-polkit-agent" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Prefer mate-polkit (APT on Debian Modular); fall back to common libexec paths.
+      for cand in \
+        /usr/libexec/polkit-mate-authentication-agent-1 \
+        /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 \
+        /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 \
+        /usr/libexec/polkit-gnome-authentication-agent-1
+      do
+        if [[ -x "$cand" ]]; then
+          exec "$cand"
+        fi
+      done
+      echo "ryoku-polkit-agent: no GUI polkit agent found (install mate-polkit)" >&2
+      exit 0
+    '';
+  };
+
+  home.file.".local/bin/ryoku-cliphist-text" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      command -v wl-paste >/dev/null 2>&1 || exit 0
+      command -v cliphist >/dev/null 2>&1 || exit 0
+      exec wl-paste --type text --watch cliphist store
+    '';
+  };
+
+  home.file.".local/bin/ryoku-cliphist-image" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      command -v wl-paste >/dev/null 2>&1 || exit 0
+      command -v cliphist >/dev/null 2>&1 || exit 0
+      exec wl-paste --type image --watch cliphist store
+    '';
+  };
 
   home.file.".local/bin/ryoku-launcher" = {
     executable = true;
