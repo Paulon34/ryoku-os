@@ -1,0 +1,547 @@
+#!/usr/bin/env bash
+# ryoku-bootstrap — Debian 13 (Trixie) foundation for Ryoku (ENTREGA A)
+#
+# Installs/configures: APT base + Nix multi-user (nix-setup-systemd) +
+# standalone Home Manager flake + Niri session + Wayland DM plumbing.
+#
+# NEVER: partitions disks, edits GRUB/bootloader, installs NixOS, or auto-runs
+# against a developer host without --apply. Refuse NixOS guests.
+#
+# Usage:
+#   ./distro/scripts/ryoku-bootstrap --dry-run
+#   sudo ./distro/scripts/ryoku-bootstrap --apply --user alice
+#
+set -euo pipefail
+
+PROG=$(basename "$0")
+VERSION="0.1.0-entrega-a"
+
+# Resolve repo paths relative to this script.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+DISTRO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(cd "$DISTRO_DIR/.." && pwd)
+FLAKE_DIR="$DISTRO_DIR/flake"
+APT_LIST="$DISTRO_DIR/apt/packages-base.txt"
+SESSION_DESKTOP="$DISTRO_DIR/session/ryoku-niri.desktop"
+SESSION_WRAPPER="$DISTRO_DIR/session/ryoku-niri-session"
+
+# Join sysroot + absolute path without producing '//' when SYSROOT=/.
+sysroot_path() {
+  local rel=$1
+  rel=${rel#/}
+  if [[ "$SYSROOT" == "/" ]]; then
+    echo "/$rel"
+  else
+    echo "$SYSROOT/$rel"
+  fi
+}
+
+MODE="" # dry-run | apply
+TARGET_USER="${SUDO_USER:-${USER:-}}"
+SYSROOT="/"
+LOG_DIR=""
+BACKUP_DIR=""
+SKIP_APT=0
+SKIP_NIX=0
+SKIP_HM=0
+ASSUME_YES=0
+PROFILE="minimal"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+warn() { echo "WARN: $*" >&2; }
+
+usage() {
+  cat <<EOF
+$PROG $VERSION — Ryoku Debian foundation bootstrap
+
+Usage:
+  $PROG --dry-run [options]     Preview plan; write nothing durable
+  $PROG --apply [options]       Apply changes (requires root for APT/Nix/DM)
+
+Options:
+  --user NAME         Desktop user for Home Manager (default: \$SUDO_USER or \$USER)
+  --sysroot PATH      Alternate root for tests (default: /)
+  --log-dir PATH      Log directory (default: /var/log/ryoku-bootstrap or ./logs under sysroot!=/)
+  --backup-dir PATH   Backup directory (default: /var/backups/ryoku-bootstrap-<ts>)
+  --skip-apt          Do not install APT packages
+  --skip-nix          Do not configure Nix daemon / flakes
+  --skip-hm           Do not run home-manager switch
+  --profile NAME      minimal|full (foundation uses minimal; full reserved)
+  --yes               Do not prompt on --apply
+  -h, --help          Show this help
+
+Safety:
+  - Refuses NixOS (\$SYSROOT/etc/NIXOS present)
+  - Never touches GRUB, EFI vars, or partition tables
+  - Never auto-runs; --apply is explicit
+  - Backs up overwritten configs before writing
+
+Guest verification status after this script alone: GUEST_NOT_RUN
+(manual Debian VM login + Niri session still required; do not invent PASS_MANUAL).
+EOF
+}
+
+ts() { date -u +%Y%m%dT%H%M%SZ; }
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+is_nixos() {
+  [[ -e "$SYSROOT/etc/NIXOS" ]]
+}
+
+read_os_release() {
+  local f="$SYSROOT/etc/os-release"
+  [[ -f "$f" ]] || die "missing $f"
+  # shellcheck disable=SC1090
+  set -a
+  # shellcheck source=/dev/null
+  . "$f"
+  set +a
+}
+
+assert_debian_trixie() {
+  read_os_release
+  [[ "${ID:-}" == "debian" ]] || die "refusing non-Debian system (ID=${ID:-unknown})"
+  local ver="${VERSION_ID:-}"
+  local codename="${VERSION_CODENAME:-}"
+  if [[ "$ver" != "13" && "$codename" != "trixie" ]]; then
+    die "refusing Debian != 13/trixie (VERSION_ID=$ver VERSION_CODENAME=$codename)"
+  fi
+  local arch
+  arch=$(uname -m)
+  [[ "$arch" == "x86_64" || "$arch" == "amd64" ]] || die "refusing arch=$arch (need amd64/x86_64)"
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) MODE=dry-run; shift ;;
+      --apply) MODE=apply; shift ;;
+      --user) TARGET_USER=$2; shift 2 ;;
+      --sysroot) SYSROOT=$2; shift 2 ;;
+      --log-dir) LOG_DIR=$2; shift 2 ;;
+      --backup-dir) BACKUP_DIR=$2; shift 2 ;;
+      --skip-apt) SKIP_APT=1; shift ;;
+      --skip-nix) SKIP_NIX=1; shift ;;
+      --skip-hm) SKIP_HM=1; shift ;;
+      --profile) PROFILE=$2; shift 2 ;;
+      --yes) ASSUME_YES=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown argument: $1 (see --help)" ;;
+    esac
+  done
+  [[ -n "$MODE" ]] || die "specify --dry-run or --apply"
+  [[ "$PROFILE" == "minimal" || "$PROFILE" == "full" ]] || die "invalid --profile: $PROFILE"
+  [[ "$TARGET_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "invalid --user: '$TARGET_USER'"
+  [[ "$TARGET_USER" != "root" ]] || die "desktop user cannot be root"
+}
+
+setup_paths() {
+  local stamp
+  stamp=$(ts)
+  if [[ -z "$LOG_DIR" ]]; then
+    if [[ "$SYSROOT" == "/" ]]; then
+      LOG_DIR="/var/log/ryoku-bootstrap"
+    else
+      LOG_DIR="$SYSROOT/var/log/ryoku-bootstrap"
+    fi
+  fi
+  if [[ -z "$BACKUP_DIR" ]]; then
+    if [[ "$SYSROOT" == "/" ]]; then
+      BACKUP_DIR="/var/backups/ryoku-bootstrap-$stamp"
+    else
+      BACKUP_DIR="$SYSROOT/var/backups/ryoku-bootstrap-$stamp"
+    fi
+  fi
+}
+
+apt_packages() {
+  [[ -f "$APT_LIST" ]] || die "missing APT list: $APT_LIST"
+  grep -vE '^\s*(#|$)' "$APT_LIST" | sed 's/[[:space:]]*$//'
+}
+
+plan_summary() {
+  cat <<EOF
+Ryoku bootstrap plan ($MODE)
+  version:     $VERSION
+  sysroot:     $SYSROOT
+  user:        $TARGET_USER
+  profile:     $PROFILE
+  distro dir:  $DISTRO_DIR
+  flake dir:   $FLAKE_DIR
+  log dir:     $LOG_DIR
+  backup dir:  $BACKUP_DIR
+  skip apt/nix/hm: $SKIP_APT / $SKIP_NIX / $SKIP_HM
+
+Steps:
+  1. Refuse NixOS; require Debian 13 Trixie amd64
+  2. Backup existing configs that we may overwrite
+  3. APT install packages from distro/apt/packages-base.txt
+  4. Enable nix-daemon (nix-setup-systemd); enable flakes/nix-command
+  5. Install session wrapper + GDM session desktop
+  6. Enable NetworkManager, PipeWire user services, polkit
+  7. home-manager switch --flake $FLAKE_DIR#ryoku (rewritten user if needed)
+  8. Write recovery notes under backup dir
+
+Out of scope (hard refuse):
+  - GRUB / systemd-boot / EFI variable changes
+  - Partitioning / disk wipe / Calamares
+  - NixOS modules / osConfig
+  - Auto QEMU / inventing PASS_MANUAL
+
+Guest status after apply alone: GUEST_NOT_RUN
+EOF
+}
+
+backup_file() {
+  local src=$1
+  [[ -e "$src" ]] || return 0
+  mkdir -p "$BACKUP_DIR"
+  local rel=${src#"$SYSROOT"}
+  rel=${rel#/}
+  local dest="$BACKUP_DIR/$rel"
+  mkdir -p "$(dirname "$dest")"
+  cp -a "$src" "$dest"
+  info "backed up $src -> $dest"
+}
+
+write_file() {
+  local dest=$1
+  local content=$2
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would write $dest"
+    return 0
+  fi
+  backup_file "$dest"
+  mkdir -p "$(dirname "$dest")"
+  printf '%s' "$content" > "$dest"
+  info "wrote $dest"
+}
+
+copy_file() {
+  local src=$1
+  local dest=$2
+  local mode=${3:-0644}
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would install $src -> $dest (mode $mode)"
+    return 0
+  fi
+  backup_file "$dest"
+  mkdir -p "$(dirname "$dest")"
+  install -m "$mode" "$src" "$dest"
+  info "installed $dest"
+}
+
+run_cmd() {
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] $*"
+    return 0
+  fi
+  info "+ $*"
+  "$@"
+}
+
+ensure_root_for_apply() {
+  [[ "$MODE" == "apply" ]] || return 0
+  [[ "$SYSROOT" == "/" ]] || return 0
+  [[ "$(id -u)" -eq 0 ]] || die "--apply on real sysroot requires root (sudo)"
+}
+
+confirm_apply() {
+  [[ "$MODE" == "apply" ]] || return 0
+  [[ "$ASSUME_YES" -eq 1 ]] && return 0
+  [[ "$SYSROOT" != "/" ]] && return 0
+  echo
+  echo "About to modify this Debian system (APT, Nix daemon, GDM session, HM)."
+  echo "No GRUB/partition changes. Type 'APPLY' to continue:"
+  local ans
+  read -r ans
+  [[ "$ans" == "APPLY" ]] || die "aborted by user"
+}
+
+install_apt() {
+  [[ "$SKIP_APT" -eq 0 ]] || { info "skip APT"; return 0; }
+  local pkgs
+  mapfile -t pkgs < <(apt_packages)
+  info "APT packages (${#pkgs[@]}): ${pkgs[*]}"
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] apt-get update && apt-get install -y ${pkgs[*]}"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    warn "sysroot!=/: skipping real apt (policy/fixture mode)"
+    return 0
+  fi
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y --no-install-recommends "${pkgs[@]}"
+}
+
+configure_nix() {
+  [[ "$SKIP_NIX" -eq 0 ]] || { info "skip Nix"; return 0; }
+  local nix_conf
+  nix_conf=$(sysroot_path /etc/nix/nix.conf)
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] ensure nix-bin + nix-setup-systemd; enable nix-daemon.socket"
+    info "[dry-run] ensure experimental-features = nix-command flakes in $nix_conf"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    mkdir -p "$(dirname "$nix_conf")"
+    if [[ ! -f "$nix_conf" ]]; then
+      printf '%s\n' 'experimental-features = nix-command flakes' > "$nix_conf"
+    fi
+    info "fixture: wrote $nix_conf"
+    return 0
+  fi
+  require_cmd nix
+  systemctl enable --now nix-daemon.socket || systemctl enable --now nix-daemon.service || warn "nix-daemon enable failed"
+  backup_file "$nix_conf"
+  mkdir -p "$(dirname "$nix_conf")"
+  if [[ -f "$nix_conf" ]] && grep -q 'experimental-features' "$nix_conf"; then
+    if ! grep -Eq 'experimental-features.*flakes' "$nix_conf"; then
+      sed -i 's/^experimental-features.*/experimental-features = nix-command flakes/' "$nix_conf"
+    fi
+  else
+    printf '\n%s\n' 'experimental-features = nix-command flakes' >> "$nix_conf"
+  fi
+  # Build users: Debian nix-setup-systemd typically provides daemon; verify.
+  if ! getent group nixbld >/dev/null 2>&1; then
+    warn "group nixbld missing — check nix-bin/nix-setup-systemd package state"
+  fi
+  info "Nix configured (flakes enabled)"
+}
+
+install_session() {
+  local dest_desktop dest_wrapper
+  dest_desktop=$(sysroot_path /usr/share/wayland-sessions/ryoku-niri.desktop)
+  dest_wrapper=$(sysroot_path /usr/local/bin/ryoku-niri-session)
+  copy_file "$SESSION_WRAPPER" "$dest_wrapper" 0755
+  # Point desktop Exec at the system wrapper.
+  local desktop_content
+  desktop_content=$(cat "$SESSION_DESKTOP")
+  write_file "$dest_desktop" "$desktop_content"$'\n'
+  if [[ "$MODE" == "apply" && "$SYSROOT" == "/" ]]; then
+    run_cmd systemctl enable gdm.service || warn "could not enable gdm"
+    # Do not change default target aggressively if already graphical; only ensure.
+    if systemctl get-default 2>/dev/null | grep -q multi-user; then
+      warn "default target is multi-user; not switching to graphical (manual: systemctl set-default graphical.target)"
+    fi
+  fi
+}
+
+enable_services() {
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] systemctl enable NetworkManager; enable pipewire --user for $TARGET_USER"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: skip service enable"
+    return 0
+  fi
+  run_cmd systemctl enable --now NetworkManager.service || warn "NetworkManager enable failed"
+  # PipeWire is typically socket-activated per-user; enable lingering units if present.
+  if id "$TARGET_USER" >/dev/null 2>&1; then
+    run_cmd sudo -u "$TARGET_USER" systemctl --user enable --now pipewire.service pipewire-pulse.service wireplumber.service \
+      || warn "PipeWire user units not enabled (may activate on login)"
+  fi
+}
+
+rewrite_flake_user_overlay() {
+  # When TARGET_USER != ryoku, write a small local overlay consumed by HM switch.
+  local overlay="$FLAKE_DIR/.ryoku-user.nix"
+  local home_dir
+  if [[ "$SYSROOT" == "/" ]] && id "$TARGET_USER" >/dev/null 2>&1; then
+    home_dir=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+  else
+    home_dir="/home/$TARGET_USER"
+  fi
+  local content
+  content=$(cat <<EOF
+# Generated by ryoku-bootstrap — do not commit; local overlay for HM username.
+{
+  home.username = "$TARGET_USER";
+  home.homeDirectory = "$home_dir";
+}
+EOF
+)
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would write user overlay $overlay for $TARGET_USER ($home_dir)"
+    echo "$content"
+    return 0
+  fi
+  printf '%s\n' "$content" > "$overlay"
+  info "wrote $overlay"
+}
+
+activate_home_manager() {
+  [[ "$SKIP_HM" -eq 0 ]] || { info "skip Home Manager"; return 0; }
+  rewrite_flake_user_overlay
+  local flake_attr="ryoku"
+  local switch_cmd=(nix run "home-manager/master" -- switch --flake "$FLAKE_DIR#$flake_attr")
+  # Prefer locked HM from the flake itself once inputs are available:
+  # nix run "$FLAKE_DIR#..." is not an app; use:
+  switch_cmd=(nix run --extra-experimental-features "nix-command flakes" \
+    "github:nix-community/home-manager/2c0c1f01521469cf0271180c453c79782d53c2f6" -- \
+    switch --flake "$FLAKE_DIR#$flake_attr")
+
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would: nix flake lock $FLAKE_DIR"
+    info "[dry-run] would: ${switch_cmd[*]}"
+    info "[dry-run] note: first HM switch builds Niri + deps (network required)"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: skip HM switch"
+    return 0
+  fi
+  require_cmd nix
+  # Ensure flake.lock exists.
+  if [[ ! -f "$FLAKE_DIR/flake.lock" ]]; then
+    run_cmd nix --extra-experimental-features "nix-command flakes" flake lock "$FLAKE_DIR"
+  fi
+  # Apply user overlay by importing it into a temporary module if user != ryoku.
+  if [[ "$TARGET_USER" != "ryoku" ]]; then
+    # Build a temporary flake attr via nix with extra module — use home-manager -b backup
+    # Simplest: patch activation through --impure env + home.username already in overlay
+    # loaded by regenerating homeConfigurations — for foundation, document that default
+    # attr is `ryoku` and operators should create a matching Linux user OR set --user ryoku.
+    warn "TARGET_USER=$TARGET_USER != flake attr 'ryoku'; create user 'ryoku' or extend flake host (ENTREGA C)"
+  fi
+  if id "$TARGET_USER" >/dev/null 2>&1; then
+    run_cmd sudo -u "$TARGET_USER" -H \
+      nix --extra-experimental-features "nix-command flakes" run \
+      "github:nix-community/home-manager/2c0c1f01521469cf0271180c453c79782d53c2f6" -- \
+      switch --flake "$FLAKE_DIR#$flake_attr" -b ryoku-hm-backup \
+      || die "home-manager switch failed"
+  else
+    warn "user $TARGET_USER does not exist; skipped HM switch (create user then re-run --apply --skip-apt --skip-nix)"
+  fi
+}
+
+write_recovery() {
+  local recovery="$BACKUP_DIR/RECOVERY.md"
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would write recovery notes to $BACKUP_DIR/RECOVERY.md"
+    return 0
+  fi
+  mkdir -p "$BACKUP_DIR"
+  cat > "$recovery" <<EOF
+# Ryoku bootstrap recovery
+
+Timestamp: $(ts)
+Mode: $MODE
+User: $TARGET_USER
+
+## What this bootstrap does NOT do
+- No GRUB/systemd-boot/EFI changes
+- No partitioning
+- No NixOS installation
+
+## Roll back configs
+Configs overwritten were copied under:
+  $BACKUP_DIR
+
+Restore example:
+  sudo cp -a $BACKUP_DIR/etc/nix/nix.conf /etc/nix/nix.conf
+
+## Roll back Home Manager
+  home-manager generations
+  home-manager switch -b ryoku-hm-backup --rollback
+
+## Disable Ryoku session
+  sudo rm -f /usr/share/wayland-sessions/ryoku-niri.desktop
+  sudo rm -f /usr/local/bin/ryoku-niri-session
+
+## Nix daemon
+  sudo systemctl disable --now nix-daemon.socket nix-daemon.service
+
+## Guest verification
+Status remains **GUEST_NOT_RUN** until a human boots a Debian 13 VM,
+selects "Ryoku (Niri)", and confirms the session. Do not invent PASS_MANUAL.
+EOF
+  info "recovery notes: $recovery"
+}
+
+init_logging() {
+  if [[ "$MODE" == "dry-run" && "$SYSROOT" == "/" ]]; then
+    # Prefer writable location for dry-run without root.
+    if [[ ! -w "$(dirname "$LOG_DIR")" ]] 2>/dev/null; then
+      LOG_DIR="${TMPDIR:-/tmp}/ryoku-bootstrap-dry-run-logs"
+    fi
+  fi
+  if [[ "$MODE" == "apply" ]]; then
+    mkdir -p "$LOG_DIR"
+  else
+    mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="${TMPDIR:-/tmp}/ryoku-bootstrap-dry-run-logs"
+    mkdir -p "$LOG_DIR"
+  fi
+  local log="$LOG_DIR/bootstrap-$(ts).log"
+  exec > >(tee -a "$log") 2>&1
+  info "logging to $log"
+}
+
+main() {
+  parse_args "$@"
+  setup_paths
+
+  [[ -d "$FLAKE_DIR" ]] || die "flake dir missing: $FLAKE_DIR"
+  [[ -f "$APT_LIST" ]] || die "APT list missing: $APT_LIST"
+
+  if is_nixos; then
+    die "refusing NixOS ($SYSROOT/etc/NIXOS present). Ryoku Debian bootstrap is for Debian 13 only."
+  fi
+
+  # OS gate:
+  # - NixOS always refused (any sysroot).
+  # - --apply on real "/" requires Debian 13 Trixie amd64.
+  # - --dry-run on a non-Debian developer host is allowed (plan only; no mutations).
+  # - Fixture --sysroot must look like Debian.
+  if [[ "$SYSROOT" == "/" ]]; then
+    if [[ "$MODE" == "apply" ]]; then
+      assert_debian_trixie
+    else
+      if [[ -f /etc/os-release ]]; then
+        local host_pretty host_id host_ver host_codename
+        host_pretty=$(. /etc/os-release; echo "${PRETTY_NAME:-unknown}")
+        host_id=$(. /etc/os-release; echo "${ID:-}")
+        host_ver=$(. /etc/os-release; echo "${VERSION_ID:-}")
+        host_codename=$(. /etc/os-release; echo "${VERSION_CODENAME:-}")
+        if [[ "$host_id" != "debian" || ( "$host_ver" != "13" && "$host_codename" != "trixie" ) ]]; then
+          warn "host is ${host_pretty}, not Debian 13; dry-run shows plan only (no mutations)"
+        fi
+      fi
+    fi
+  else
+    read_os_release
+    if [[ "${ID:-}" != "debian" ]]; then
+      die "fixture sysroot is not Debian (ID=${ID:-unknown})"
+    fi
+  fi
+
+  ensure_root_for_apply
+  init_logging
+  plan_summary
+  confirm_apply
+
+  if [[ "$MODE" == "apply" ]]; then
+    mkdir -p "$BACKUP_DIR"
+  fi
+
+  install_apt
+  configure_nix
+  install_session
+  enable_services
+  activate_home_manager
+  write_recovery
+
+  info "done ($MODE). Guest desktop verification: GUEST_NOT_RUN"
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "Re-run with --apply on a Debian 13 Trixie amd64 VM (never on NixOS)."
+  fi
+}
+
+main "$@"

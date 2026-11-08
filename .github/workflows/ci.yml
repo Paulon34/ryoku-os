@@ -103,6 +103,12 @@ jobs:
             docs/performance/targets.md
             docs/publishing/first-push.md
             docs/compatibility/overview.md
+            docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
+            distro/README.pt-BR.md
+            distro/README.md
+            distro/THIRD_PARTY_NOTICES.md
+            distro/docs/RYOKU_DEBIAN_ARCHITECTURE.md
+            distro/scripts/ryoku-bootstrap
             tests/qemu/README.md
             tests/qemu/configs/t1-emulator-smoke.rvl.conf
             tests/qemu/configs/t2-reference-alpine.rvl.conf
@@ -141,3 +147,19 @@ jobs:
           set -euo pipefail
           grep -q 'README.en.md' README.md
           grep -q 'README.md' README.en.md
+
+  distro:
+    name: distro-debian-foundation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Distro path checks
+        run: ./distro/tests/test-distro-paths.sh
+
+      - name: Bootstrap policy checks (no guest / no QEMU)
+        run: ./distro/tests/test-bootstrap-policy.sh
+
+      - name: Bootstrap dry-run on CI host (plan only)
+        run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

@@ -39,9 +39,10 @@ Layout decision: [docs/architecture/layout.md](docs/architecture/layout.md) · A
 
 ## Current status
 
-- Published at [github.com/Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os) (`main` @ `c2b637e`, CI green in Mission 004)
+- Published at [github.com/Paulon34/ryoku-os](https://github.com/Paulon34/ryoku-os)
 - Foundation + Zaquion (`ryoku-doctor`) + **Virtual Lab** T0/T1 + **First Boot Lab** (Alpine reference, Mission 005)
 - T1/first-boot **SKIPPED/NOT_RUN** without QEMU/ISO; **reference Linux ≠ Ryoku OS**; **no** Ryoku ISO
+- **Debian Modular track** under [`distro/`](distro/README.pt-BR.md) (Niri + Nix + standalone HM) — ENTREGA A; experimental Rust desktop PRs remain open and are not the active track
 
 ### Zaquion / Virtual Lab
 

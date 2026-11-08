@@ -1,0 +1,56 @@
+# Ryoku Debian foundation — APT packages (Debian 13 Trixie amd64)
+# One package per line. Comments and blank lines ignored.
+# Bootstrap never partitions disks or touches GRUB/bootloader config.
+
+# Core
+ca-certificates
+curl
+git
+sudo
+dbus
+dbus-user-session
+
+# Nix (Debian packages — prefer over upstream installer)
+nix-bin
+nix-setup-systemd
+
+# Display manager + session plumbing
+gdm3
+accountsservice
+
+# Wayland / graphics (host Mesa; Nix apps may still need nixGL)
+mesa-vulkan-drivers
+libegl1
+libgl1
+libglx-mesa0
+libgbm1
+libwayland-client0
+libwayland-server0
+xwayland
+seatd
+
+# Desktop essentials (APT)
+kitty
+thunar
+fuzzel
+xdg-utils
+xdg-user-dirs
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+xdg-desktop-portal-wlr
+
+# Network / audio / auth
+network-manager
+pipewire
+pipewire-pulse
+pipewire-audio
+wireplumber
+libspa-0.2-bluetooth
+policykit-1
+polkitd
+pkexec
+rtkit
+
+# Fonts / themes (minimal)
+fonts-dejavu-core
+adwaita-icon-theme
