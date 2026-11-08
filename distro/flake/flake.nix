@@ -82,7 +82,8 @@
       packages.${system} = {
         niri = pkgs.niri;
         nixGLIntel = nixGL.packages.${system}.nixGLIntel;
-        nixGLDefault = nixGL.packages.${system}.nixGLDefault;
+        # Deterministic default for pure flakes; NVIDIA auto-detection is impure.
+        nixGLDefault = nixGL.packages.${system}.nixGLIntel;
       };
 
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
