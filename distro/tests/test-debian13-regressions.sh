@@ -50,6 +50,17 @@ grep -q 'systemctl cat display-manager.service' "$BOOTSTRAP" ||
   fail "tries to start PipeWire without a login D-Bus session"
 pass "GDM and PipeWire startup policy"
 
+# Headless SSH Home Manager activation requires a functioning session bus.
+# Debian 13 puts session.conf in /usr/share, whereas Nix dbus-run-session's
+# bundled daemon may look for /etc/dbus-1/session.conf and fail on dconfSettings.
+grep -qx 'dbus-daemon' "$APT_LIST" || fail "dbus-daemon not explicitly installed"
+grep -qx 'dbus-session-bus-common' "$APT_LIST" || fail "D-Bus session config package missing"
+grep -Fq '/usr/bin/dbus-run-session --' "$BOOTSTRAP" ||
+  fail "HM switch not wrapped in Debian D-Bus session"
+grep -Fq '[[ -f /usr/share/dbus-1/session.conf ]]' "$BOOTSTRAP" ||
+  fail "missing Debian session.conf preflight before HM activation"
+pass "D-Bus session for Home Manager dconfSettings"
+
 bash -n "$BOOTSTRAP" || fail "bootstrap bash syntax"
 bash -n "$ROOT/distro/session/ryoku-niri-session" || fail "session shell syntax"
 pass "shell syntax"
