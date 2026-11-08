@@ -700,9 +700,19 @@ activate_home_manager() {
 
   id "$TARGET_USER" >/dev/null 2>&1 || die "user $TARGET_USER missing — cannot HM switch"
 
+  # Debian 13 ships its session-bus configuration under /usr/share/dbus-1.
+  # In a headless SSH bootstrap, Home Manager's dconfSettings activation
+  # otherwise launches the Nix-provided dbus-daemon, which expects
+  # /etc/dbus-1/session.conf and fails before completing the HM switch.
+  # Start a private *Debian* session bus as the target user, so HM sees
+  # DBUS_SESSION_BUS_ADDRESS and reuses that bus instead of launching its own.
+  [[ -x /usr/bin/dbus-run-session ]] || die "Debian dbus-run-session missing (install dbus-daemon)"
+  [[ -f /usr/share/dbus-1/session.conf ]] || die "Debian D-Bus session config missing (install dbus-session-bus-common)"
+
   # Critical: run as the desktop user so $HOME is correct and files are not root-owned.
   run_cmd sudo -u "$TARGET_USER" -H \
     env HOME="$(resolve_home_dir)" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+    /usr/bin/dbus-run-session -- \
     nix --extra-experimental-features "nix-command flakes" run "$hm_pin" -- \
     switch --flake "$FLAKE_DIR#$flake_attr" -b ryoku-hm-backup \
     || die "home-manager switch failed for #$flake_attr"
