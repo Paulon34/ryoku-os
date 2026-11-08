@@ -135,12 +135,19 @@ grep -q 'nixGLIntel' "$DMS_MODULE" ||
 # execute "qs" (Quickshell not available in GDM/Niri startup PATH).
 grep -Fq 'pkgs.quickshell' "$DMS_MODULE" ||
   fail "Quickshell package missing from Home Manager"
-grep -Fq 'lib.makeBinPath [ pkgs.quickshell dmsPackage ]' "$DMS_MODULE" ||
-  fail "DMS launcher must prepend both Quickshell (qs) and DMS CLI to PATH"
+grep -Fq 'dmsRuntimePath = lib.makeBinPath' "$DMS_MODULE" ||
+  fail "DMS runtime PATH must include Quickshell (qs) and DMS CLI"
+grep -Fq 'pkgs.quickshell' "$DMS_MODULE" ||
+  fail "Quickshell missing from DMS runtime PATH construction"
 # VM 201 second GUI test: QML loaded successfully but subprocesses such as
 # QList("dms", "blur", "check") failed because only qs was on PATH.
-grep -Fq 'dmsPackage ]}:$PATH' "$DMS_MODULE" ||
-  fail "QML child processes cannot resolve the DMS CLI"
+grep -Fq 'dmsRuntimePath' "$DMS_MODULE" ||
+  fail "QML/SSH child processes cannot resolve the DMS CLI / qs"
+# SSH `dms ipc` execs bare qs (DMS shell.go) — bare store dms alone is insufficient.
+grep -Fq 'writeShellScriptBin "dms"' "$DMS_MODULE" ||
+  fail "user-facing dms wrapper missing (SSH ipc needs qs on PATH)"
+grep -Fq 'export PATH="${dmsRuntimePath}' "$DMS_MODULE" ||
+  fail "apply/ipc helpers must export dmsRuntimePath before dms ipc"
 # Competing long-running ryoku-dms.service would double-start with Niri spawn.
 # Path oneshots (ryoku-dms-bar / ryoku-dms-session) are allowed.
 ! grep -Eq 'systemd\.user\.services\.ryoku-dms\s*=' "$DMS_MODULE" ||
@@ -160,6 +167,10 @@ grep -Fq 'workspaceSwitcher' "$DMS_MODULE" ||
   fail "Quattro bar missing workspaceSwitcher widget"
 grep -Fq 'id = "default"' "$DMS_MODULE" ||
   fail "default bar id missing"
+grep -Fq 'visible = true' "$DMS_MODULE" ||
+  fail "Quattro bar must declaratively set visible = true"
+grep -Fq 'autoHide = false' "$DMS_MODULE" ||
+  fail "Quattro bar must declaratively disable autoHide"
 # Immutable store symlink would block DMS first-run persistence + bar merges.
 ! grep -Fq 'xdg.configFile."DankMaterialShell/settings.json"' "$DMS_MODULE" ||
   fail "DMS settings.json must stay mutable (no xdg.configFile symlink)"
@@ -212,6 +223,10 @@ grep -Fq 'XDG_RUNTIME_DIR unset' "$SESSION" ||
   fail "session must require pam XDG_RUNTIME_DIR"
 grep -Fq 'already running' "$DMS_MODULE" ||
   fail "ryoku-start-dms must be idempotent against double spawn"
+grep -Fq "pgrep -u \"\$uid\" -f -- 'quickshell'" "$DMS_MODULE" ||
+  fail "idempotent start must detect Nix .quickshell-wrapped (not only -x qs)"
+! grep -Fq 'pgrep -x quickshell' "$DMS_MODULE" ||
+  fail "pgrep -x quickshell misses Nix wrapper process name"
 grep -qx 'network-manager-gnome' "$APT_LIST" ||
   fail "network-manager-gnome required for nm-applet tray"
 grep -qx 'mate-polkit' "$APT_LIST" ||

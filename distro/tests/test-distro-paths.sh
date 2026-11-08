@@ -41,6 +41,7 @@ require distro/tests/test-bootstrap-policy.sh
 require distro/tests/test-hm-hosts.sh
 require distro/tests/test-debian13-regressions.sh
 require distro/tests/test-dms-bar-merge.sh
+require distro/tests/test-dms-ipc-path.sh
 require distro/docs/COMPOSITOR.md
 require distro/docs/SERVICE_OWNERSHIP.md
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
@@ -77,6 +78,7 @@ bash -n "$ROOT/distro/tests/test-bootstrap-policy.sh"
 bash -n "$ROOT/distro/tests/test-distro-paths.sh"
 bash -n "$ROOT/distro/tests/test-debian13-regressions.sh"
 bash -n "$ROOT/distro/tests/test-dms-bar-merge.sh"
+bash -n "$ROOT/distro/tests/test-dms-ipc-path.sh"
 echo "ok: bash -n syntax"
 
 [[ "$fail" -eq 0 ]]

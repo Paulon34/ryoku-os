@@ -186,5 +186,8 @@ jobs:
       - name: DMS Quattro barConfigs merge regressions (no guest)
         run: bash ./distro/tests/test-dms-bar-merge.sh
 
+      - name: DMS ipc qs PATH regressions (no guest)
+        run: bash ./distro/tests/test-dms-ipc-path.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

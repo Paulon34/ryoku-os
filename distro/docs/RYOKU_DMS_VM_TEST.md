@@ -78,16 +78,35 @@ DMS through `nixGLIntel` with `qs` + `dms` on PATH. No competing long-running
 
 ```bash
 pgrep -a -u paulo niri
+# Nix Quickshell often shows as .quickshell-wrapped — never use: pgrep -x quickshell
 pgrep -af 'dms|quickshell|qs' || true
 test -x ~/.local/bin/ryoku-start-dms && head -n 20 ~/.local/bin/ryoku-start-dms
+command -v dms qs
+type dms qs
 test -f ~/.config/DankMaterialShell/settings.json \
   && jq '.barConfigs' ~/.config/DankMaterialShell/settings.json
+# Expect array + visible:true / autoHide:false on id=default
+jq '.barConfigs[] | select(.id=="default") | {id,visible,autoHide,leftWidgets}' \
+  ~/.config/DankMaterialShell/settings.json
 test -f ~/.config/niri/colors.kdl && head -n 20 ~/.config/niri/colors.kdl
 ls -l ~/.config/ryoku/current-wallpaper ~/.local/share/wallpapers/ | head
 NIRI_SOCKET=$(find /run/user/$(id -u) -maxdepth 1 -type s -name 'niri.*.sock' -print -quit)
 NIRI_SOCKET="$NIRI_SOCKET" ~/.local/state/nix/profiles/home-manager/home-path/bin/niri msg outputs
 NIRI_SOCKET="$NIRI_SOCKET" ~/.local/state/nix/profiles/home-manager/home-path/bin/niri msg windows
 journalctl --user -b --no-pager | grep -Ei 'dms|quickshell|niri|matugen' | tail -100
+
+# IPC (needs qs on PATH — use HM profile or ryoku-dms-ipc; DMS shell.go execs "qs")
+export PATH="$HOME/.local/bin:$HOME/.local/state/nix/profiles/home-manager/home-path/bin:$HOME/.nix-profile/bin:$PATH"
+which qs dms
+dms ipc list
+# Correct bar IPC (DMSShellIPC.qml): selector + value — NOT "bar reveal" alone
+dms ipc call bar status index 0
+dms ipc call bar reveal index 0
+# Prefer the wrapper (always prepends qs):
+~/.local/bin/ryoku-dms-ipc bar status index 0
+# Do NOT mix qs ipc --pid with -p (Instance Selection excludes Config Selection).
+# dgop missing ⇒ optional system-monitor metrics only; does not hide the bar.
+
 # Optional screenshot from the guest (save under Pictures):
 # grim ~/Pictures/Screenshots/entrega-b-quattro-$(date +%Y%m%d-%H%M%S).png
 ```

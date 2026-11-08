@@ -26,11 +26,31 @@ let
   dmsBin = "${dmsPackage}/bin/dms";
   jq = lib.getExe pkgs.jq;
 
+  # DMS Go always exec.Command("qs", …) for ipc/list/help (shell.go).
+  # Session children get this via ryoku-start-dms; SSH/systemd oneshots do not
+  # unless every dms entrypoint prepends Quickshell. Keep declarative — never
+  # patch /nix/store.
+  dmsRuntimePath = lib.makeBinPath [
+    pkgs.quickshell
+    dmsPackage
+    pkgs.matugen
+    pkgs.jq
+  ];
+
+  # User-facing `dms` so SSH `dms ipc …` and HM profile lookups find qs.
+  dmsCli = pkgs.writeShellScriptBin "dms" ''
+    export PATH="${dmsRuntimePath}:''${PATH:-}"
+    exec "${dmsBin}" "$@"
+  '';
+
   # Bar defaults from ryoku-desktop home/dms.nix (Quattro = Omarchy flat strip).
+  # Explicit visible/autoHide — defaults alone are not proof the bar is shown.
   styleBar =
     if quattro then
       {
         id = "default";
+        visible = true;
+        autoHide = false;
         noBackground = false;
         transparency = 0.96;
         widgetTransparency = 0;
@@ -60,6 +80,8 @@ let
     else
       {
         id = "default";
+        visible = true;
+        autoHide = false;
         noBackground = true;
         transparency = 1;
         widgetTransparency = 0.92;
@@ -163,9 +185,11 @@ let
   );
 
   # No dms.service on Debian GDM/Niri — wait for IPC directly.
+  # Absolute dms still LookPath("qs"); PATH must include Quickshell here too.
   dmsIpcHelper = ''
     dms_ipc() {
       [ -n "''${XDG_RUNTIME_DIR:-}" ] || return 1
+      export PATH="${dmsRuntimePath}:''${PATH:-}"
       for _ in $(${pkgs.coreutils}/bin/seq 120); do
         if ${dmsBin} ipc call "$@" >/dev/null 2>&1; then
           return 0
@@ -242,8 +266,8 @@ let
 in
 {
   home.packages = [
-    dmsPackage
-    pkgs.quickshell # DMS v1.5.3 launches `qs -p <dms-qml>` at runtime.
+    dmsCli # wraps store dms so `dms ipc` always finds qs (SSH + login)
+    pkgs.quickshell # `qs` on HM profile for diagnostics; also in dmsRuntimePath
     pkgs.matugen
     pkgs.jq
   ];
@@ -314,7 +338,7 @@ in
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
-      export PATH="${lib.makeBinPath [ pkgs.quickshell dmsPackage ]}:$PATH"
+      export PATH="${dmsRuntimePath}:$PATH"
       exec "${dmsBin}" ipc call "$@"
     '';
   };
@@ -331,7 +355,7 @@ in
       # GDM/Niri may not inherit the Home Manager profile PATH. The DMS Go
       # launcher spawns 'qs', while QML subprocesses also call 'dms' by name
       # (auth/blur/IPC). Export BOTH binaries to the entire child process tree.
-      export PATH="${lib.makeBinPath [ pkgs.quickshell dmsPackage pkgs.matugen pkgs.jq ]}:$PATH"
+      export PATH="${dmsRuntimePath}:$PATH"
 
       # Do not invent WAYLAND_DISPLAY — Niri sets it. Refuse empty runtime dir.
       if [[ -z "''${XDG_RUNTIME_DIR:-}" ]]; then
@@ -347,9 +371,10 @@ in
       fi
 
       # Idempotent reentry: Niri may re-fire spawn-at-startup; never double-shell.
-      # Use the login uid (never hardcode 1000). Do not probe with mutating IPC.
+      # Nix quickshell often appears as .quickshell-wrapped — never rely on -x quickshell.
       uid=$(${pkgs.coreutils}/bin/id -u)
       if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- '${dmsBin}' >/dev/null 2>&1 \
+        || ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
         || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
         echo "ryoku-start-dms: DMS/Quickshell already running for uid $uid; skipping" >&2
         exit 0
