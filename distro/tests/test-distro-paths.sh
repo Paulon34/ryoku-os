@@ -29,6 +29,8 @@ require distro/flake/home/theme.nix
 require distro/flake/home/nixgl.nix
 require distro/flake/home/dms.nix
 require distro/flake/home/matugen.nix
+require distro/flake/modules/profiles.nix
+require distro/flake/modules/features/visual.nix
 require distro/flake/pkgs/dms-shell-ryoku.nix
 require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
 require distro/assets/wallpapers/ryoku-night.jpg

@@ -1,6 +1,6 @@
 { lib, ... }:
 
-# Profile knobs consumed by hosts/<user>/default.nix (preflight / ENTREGA C).
+# Shared profile options — Lite/Balanced/Ultra × Minimal/Full (ENTREGA C).
 {
   options.ryoku.profile = {
     edition = lib.mkOption {
@@ -12,20 +12,19 @@
     visual = lib.mkOption {
       type = lib.types.enum [ "lite" "balanced" "ultra" ];
       default = "balanced";
-      description = "Visual/performance profile.";
+      description = "Visual/performance profile (blur/effects budget).";
     };
 
     shellStyle = lib.mkOption {
       type = lib.types.enum [ "quattro" "islands" ];
       default = "quattro";
-      description = "Shell style (Quattro flat bar vs Islands).";
+      description = "DMS shell style.";
     };
 
     jarvis = lib.mkOption {
       type = lib.types.bool;
-      # Off by default — Minimal must not enable Jarvis unless explicit.
       default = false;
-      description = "Enable Jarvis bridge (default off).";
+      description = "Enable Jarvis bridge (off by default; keep off on Minimal).";
     };
   };
 }
