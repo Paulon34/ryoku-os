@@ -91,6 +91,12 @@
         # Pure Mesa default: automatic NVIDIA detection requires impure currentTime.
         nixGLDefault = nixGL.packages.${system}.nixGLIntel;
         dms-shell = dankMaterialShell.packages.${system}.dms-shell;
+        # Buildable reference variant to verify all Ryoku 1.5.3 patches in CI.
+        dms-shell-ryoku = pkgs.callPackage ./pkgs/dms-shell-ryoku.nix {
+          dms-shell = dankMaterialShell.packages.${system}.dms-shell;
+          ryokuSettingsJson = "/home/ryoku/.config/ryoku/settings.json";
+          ryokuShellStyle = "quattro";
+        };
       };
 
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
