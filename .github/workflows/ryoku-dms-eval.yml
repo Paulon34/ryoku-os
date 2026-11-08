@@ -36,6 +36,17 @@ jobs:
           set -euo pipefail
           nix eval --raw --show-trace ./distro/flake#homeConfigurations.ryoku.activationPackage.drvPath
 
+      - name: Check generated desktop user appears in pure Git flake
+        run: |
+          set -euo pipefail
+          mkdir -p distro/flake/hosts/paulo
+          sed -e 's/username = "ryoku"/username = "paulo"/' \
+              -e 's|/home/ryoku|/home/paulo|' \
+              distro/flake/hosts/ryoku/default.nix > distro/flake/hosts/paulo/default.nix
+          git add -- distro/flake/hosts/paulo/default.nix
+          git ls-files --error-unmatch -- distro/flake/hosts/paulo/default.nix
+          nix eval --raw --show-trace ./distro/flake#homeConfigurations.paulo.activationPackage.drvPath
+
       - name: Build Ryoku-patched DMS Quattro package
         run: |
           set -euo pipefail
