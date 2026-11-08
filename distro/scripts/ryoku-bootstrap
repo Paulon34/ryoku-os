@@ -716,6 +716,16 @@ activate_home_manager() {
     nix --extra-experimental-features "nix-command flakes" run "$hm_pin" -- \
     switch --flake "$FLAKE_DIR#$flake_attr" -b ryoku-hm-backup \
     || die "home-manager switch failed for #$flake_attr"
+
+  # Don't report a successful graphical foundation if a generated Niri KDL
+  # fails to parse. This is safe to run over SSH without a Wayland display.
+  local niri_bin="$(resolve_home_dir)/.local/state/nix/profiles/home-manager/home-path/bin/niri"
+  [[ -x "$niri_bin" ]] || die "Niri executable missing after Home Manager switch: $niri_bin"
+  run_cmd sudo -u "$TARGET_USER" -H \
+    env HOME="$(resolve_home_dir)" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+    "$niri_bin" validate \
+    || die "Niri configuration validation failed; check ~/.config/niri/config.kdl before graphical login"
+  info "Niri config parsed successfully (graphical rendering still needs guest test)"
 }
 
 write_recovery() {
