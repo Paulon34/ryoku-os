@@ -47,6 +47,13 @@ jobs:
           git ls-files --error-unmatch -- distro/flake/hosts/paulo/default.nix
           nix eval --raw --show-trace ./distro/flake#homeConfigurations.paulo.activationPackage.drvPath
 
+      - name: Check Quickshell provides the qs runtime executable
+        run: |
+          set -euo pipefail
+          QS_DIR=$(nix build --no-link --print-out-paths ./distro/flake#quickshell)
+          test -x "$QS_DIR/bin/qs"
+          echo "Quickshell qs found at $QS_DIR/bin/qs"
+
       - name: Build Ryoku-patched DMS Quattro package
         run: |
           set -euo pipefail
