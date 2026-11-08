@@ -127,8 +127,12 @@ grep -q 'nixGLIntel' "$DMS_MODULE" ||
 # execute "qs" (Quickshell not available in GDM/Niri startup PATH).
 grep -Fq 'pkgs.quickshell' "$DMS_MODULE" ||
   fail "Quickshell package missing from Home Manager"
-grep -Fq 'lib.makeBinPath [ pkgs.quickshell ]' "$DMS_MODULE" ||
-  fail "DMS launcher must explicitly prepend Quickshell to PATH"
+grep -Fq 'lib.makeBinPath [ pkgs.quickshell dmsPackage ]' "$DMS_MODULE" ||
+  fail "DMS launcher must prepend both Quickshell (qs) and DMS CLI to PATH"
+# VM 201 second GUI test: QML loaded successfully but subprocesses such as
+# QList("dms", "blur", "check") failed because only qs was on PATH.
+grep -Fq 'dmsPackage ]}:$PATH' "$DMS_MODULE" ||
+  fail "QML child processes cannot resolve the DMS CLI"
 ! grep -Fq 'systemd.user.services.ryoku-dms' "$DMS_MODULE" ||
   fail "DMS may double-start via systemd user and Niri startup"
 pass "Ryoku DMS startup wired for direct GDM Niri"
