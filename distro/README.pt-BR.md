@@ -52,6 +52,19 @@ passou a tratá-los automaticamente:
   `/usr/bin/dbus-run-session -- nix ...` **como usuário de desktop**.
   Isso fornece `DBUS_SESSION_BUS_ADDRESS` ao Home Manager sem alterar
   a configuração global do D-Bus.
+- **Primeiro login GDM / Niri 26.04:** o GDM autenticou e iniciou Niri,
+  mas o compositor rejeitou o KDL em `config.kdl:35`:
+  `unexpected node prefers-no-csd`. Corrigido para `prefer-no-csd`;
+  o bootstrap passa a executar `niri validate` como usuário após o
+  Home Manager para barrar novos erros antes do login gráfico.
+- **GBM / Mesa no Debian:** o mesmo boot mostrou
+  `/run/opengl-driver/lib/gbm/dri_gbm.so` ausente. Esse caminho
+  pertence ao ambiente NixOS, não ao Debian; o lançador
+  `ryoku-niri-session` agora invoca o Niri do Nix via `nixGLIntel`
+  para configurar o caminho de drivers Mesa. Isso ainda precisa de
+  reteste real, pois o adaptador da VM era Bochs VGA (`1234:1111`).
+  O Niri recomenda aceleração 3D para VMs; configurar a GPU virtual
+  no hipervisor depois de preservar o acesso SSH e um snapshot.
 
 A VM de laboratório tem 25 GiB de disco virtual; acompanhar `df -h /`
 durante a ativação das gerações do Nix. Nenhum desses testes significa
