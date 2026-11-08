@@ -108,6 +108,10 @@ jobs:
             distro/README.md
             distro/THIRD_PARTY_NOTICES.md
             distro/docs/RYOKU_DEBIAN_ARCHITECTURE.md
+            distro/docs/PROFILES.md
+            distro/docs/LIVE_ISO.md
+            distro/core/Cargo.toml
+            distro/core/ryoku-cli/README.md
             distro/scripts/ryoku-bootstrap
             tests/qemu/README.md
             tests/qemu/configs/t1-emulator-smoke.rvl.conf
@@ -163,3 +167,36 @@ jobs:
 
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes
+
+  distro-rust:
+    name: distro-core-rust
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: distro/core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: distro/core -> target
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: ryoku system-info smoke
+        run: cargo run -p ryoku-cli -- system-info
