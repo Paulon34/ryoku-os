@@ -79,7 +79,7 @@ fn cmd_config(args: Vec<String>) -> ExitCode {
         cfg.join("ryoku").join("settings.json").display()
     );
     println!("jarvis_marker: {}", marker_path().display());
-    println!("overlay_hint: distro/flake/.ryoku-user.nix (bootstrap local)");
+    println!("host_hint: distro/flake/hosts/<user>/default.nix (bootstrap; git add)");
     ExitCode::SUCCESS
 }
 
