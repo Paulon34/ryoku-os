@@ -1,0 +1,4 @@
+result
+result-*
+# Host modules under hosts/<user>/ are tracked (git add) for pure flakes.
+# Do not use a gitignored overlay for username/home.

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Ryoku Niri session wrapper — sourced by the display manager (.desktop Exec).
+# Starts a Niri session from the Home Manager / Nix profile when available,
+# falling back to PATH. Does not touch bootloaders or partitions.
+set -euo pipefail
+
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-niri:Ryoku}"
+export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
+export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-niri}"
+
+# On Debian (non-NixOS), Nix-built Niri must load the matching Mesa GBM/DRI
+# libraries. The Home Manager nixGLIntel package sets GBM_BACKENDS_PATH and
+# LIBGL_DRIVERS_PATH; calling Niri directly can look for /run/opengl-driver,
+# a NixOS-only location, and leave a blank display on Proxmox.
+HM_BIN="${HOME}/.local/state/nix/profiles/home-manager/home-path/bin"
+NIX_BIN="${HOME}/.nix-profile/bin"
+
+HM_NIRI="${HM_BIN}/niri"
+NIX_NIRI="${NIX_BIN}/niri"
+HM_NIXGL="${HM_BIN}/nixGLIntel"
+NIX_NIXGL="${NIX_BIN}/nixGLIntel"
+
+if [[ -x "$HM_NIRI" ]]; then
+  if [[ -x "$HM_NIXGL" ]]; then
+    exec "$HM_NIXGL" "$HM_NIRI" --session
+  elif [[ -x "$NIX_NIXGL" ]]; then
+    exec "$NIX_NIXGL" "$HM_NIRI" --session
+  fi
+  echo "ryoku-niri-session: Mesa wrapper unavailable; starting unwrapped Niri" >&2
+  exec "$HM_NIRI" --session
+elif [[ -x "$NIX_NIRI" ]]; then
+  if [[ -x "$NIX_NIXGL" ]]; then
+    exec "$NIX_NIXGL" "$NIX_NIRI" --session
+  fi
+  echo "ryoku-niri-session: Mesa wrapper unavailable; starting unwrapped Niri" >&2
+  exec "$NIX_NIRI" --session
+elif command -v niri >/dev/null 2>&1; then
+  exec niri --session
+else
+  echo "ryoku-niri-session: niri not found (install via Home Manager flake first)" >&2
+  exit 1
+fi
