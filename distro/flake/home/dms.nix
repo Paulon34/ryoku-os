@@ -44,11 +44,20 @@ let
   '';
 
   # Bar defaults from ryoku-desktop home/dms.nix (Quattro = Omarchy flat strip).
-  # Explicit visible/autoHide — defaults alone are not proof the bar is shown.
+  # ShellCore.qml only activates DankBar when barConfig.enabled is true
+  # (`active: … && (barConfig?.enabled ?? false)`). Omitting enabled leaves the
+  # loader dead → no PanelWindow / WlrLayershell Top surface (Niri layers empty
+  # on Top/Bottom/Overlay while IPC still reports settings.visible).
+  # position must be SettingsData.Position int (0=Top); missing → getPosition "unknown".
   styleBar =
     if quattro then
       {
         id = "default";
+        name = "Main Bar";
+        enabled = true;
+        position = 0; # SettingsData.Position.Top
+        screenPreferences = [ "all" ];
+        showOnLastDisplay = true;
         visible = true;
         autoHide = false;
         noBackground = false;
@@ -80,6 +89,11 @@ let
     else
       {
         id = "default";
+        name = "Main Bar";
+        enabled = true;
+        position = 0; # SettingsData.Position.Top
+        screenPreferences = [ "all" ];
+        showOnLastDisplay = true;
         visible = true;
         autoHide = false;
         noBackground = true;

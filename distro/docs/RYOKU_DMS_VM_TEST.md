@@ -85,9 +85,13 @@ command -v dms qs
 type dms qs
 test -f ~/.config/DankMaterialShell/settings.json \
   && jq '.barConfigs' ~/.config/DankMaterialShell/settings.json
-# Expect array + visible:true / autoHide:false on id=default
-jq '.barConfigs[] | select(.id=="default") | {id,visible,autoHide,leftWidgets}' \
+# Expect enabled:true, position:0 (Top), screenPreferences:["all"], visible:true
+jq '.barConfigs[] | select(.id=="default") | {id,enabled,position,visible,autoHide,screenPreferences,leftWidgets}' \
   ~/.config/DankMaterialShell/settings.json
+# Wayland proof (not IPC alone):
+NIRI_SOCKET=$(find /run/user/$(id -u) -maxdepth 1 -type s -name 'niri.*.sock' -print -quit)
+NIRI_SOCKET="$NIRI_SOCKET" niri msg layers
+# Expect quickshell/dms:bar on Top — Background-only means DankBar never loaded (enabled?)
 test -f ~/.config/niri/colors.kdl && head -n 20 ~/.config/niri/colors.kdl
 ls -l ~/.config/ryoku/current-wallpaper ~/.local/share/wallpapers/ | head
 NIRI_SOCKET=$(find /run/user/$(id -u) -maxdepth 1 -type s -name 'niri.*.sock' -print -quit)
