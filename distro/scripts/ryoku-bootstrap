@@ -650,6 +650,13 @@ write_host_module() {
   fi
   info "wrote $path"
 
+  # Fixture tests deliberately use a copied flake outside a Git checkout and
+  # never run Home Manager. They must not alter the repository index.
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: host written without Git staging (no flake evaluation)"
+    return 0
+  fi
+
   # Flakes with a git+file source only see tracked or staged files.
   # In a linked worktree .git is a FILE, not a directory; never test -d .git.
   # Fail closed: without this host attr, Home Manager cannot evaluate #$TARGET_USER.
