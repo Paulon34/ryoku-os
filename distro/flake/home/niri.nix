@@ -37,7 +37,9 @@ let
     }
 
     spawn-at-startup "nm-applet" "--indicator"
-    // DMS is started via systemd user unit ryoku-dms; kitty on demand.
+    // Direct GDM Niri session does not guarantee graphical-session.target.
+    // Start the patched DMS/Quattro with Nix Mesa wrapper; kitty on demand.
+    spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-start-dms"
 
     prefer-no-csd
 
