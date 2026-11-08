@@ -103,8 +103,9 @@ in
       #!/usr/bin/env bash
       set -euo pipefail
       # GDM/Niri may not inherit the Home Manager profile PATH. The DMS Go
-      # launcher executes `qs` by name, so provide Quickshell explicitly.
-      export PATH="${lib.makeBinPath [ pkgs.quickshell ]}:$PATH"
+      # launcher spawns 'qs', while QML subprocesses also call 'dms' by name
+      # (auth/blur/IPC). Export BOTH binaries to the entire child process tree.
+      export PATH="${lib.makeBinPath [ pkgs.quickshell dmsPackage ]}:$PATH"
       exec "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsPackage}/bin/dms" run
     '';
   };
