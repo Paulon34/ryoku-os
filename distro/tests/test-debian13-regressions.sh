@@ -117,6 +117,7 @@ pass "linked worktree host index and pure flake visibility"
 # Ryoku DMS needs to autostart in the GDM direct-niri --session mode:
 # that mode does not necessarily start graphical-session.target.
 DMS_MODULE="$ROOT/distro/flake/home/dms.nix"
+MATUGEN_MODULE="$ROOT/distro/flake/home/matugen.nix"
 grep -Fq 'spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-start-dms"' "$NIRI_KDL" ||
   fail "Niri must start DMS directly for the tested Debian GDM session"
 grep -Fq 'home.file.".local/bin/ryoku-start-dms"' "$DMS_MODULE" ||
@@ -133,9 +134,62 @@ grep -Fq 'lib.makeBinPath [ pkgs.quickshell dmsPackage ]' "$DMS_MODULE" ||
 # QList("dms", "blur", "check") failed because only qs was on PATH.
 grep -Fq 'dmsPackage ]}:$PATH' "$DMS_MODULE" ||
   fail "QML child processes cannot resolve the DMS CLI"
-! grep -Fq 'systemd.user.services.ryoku-dms' "$DMS_MODULE" ||
-  fail "DMS may double-start via systemd user and Niri startup"
+# Competing long-running ryoku-dms.service would double-start with Niri spawn.
+# Path oneshots (ryoku-dms-bar / ryoku-dms-session) are allowed.
+! grep -Eq 'systemd\.user\.services\.ryoku-dms\s*=' "$DMS_MODULE" ||
+  fail "long-running ryoku-dms systemd service must not compete with Niri spawn"
+# ExecStart in this module must not launch the shell; only ryoku-start-dms does.
+! grep -E 'ExecStart\s*=' "$DMS_MODULE" | grep -Eq 'dms.*run|/bin/dms"' ||
+  fail "systemd must not ExecStart dms run alongside Niri spawn-at-startup"
 pass "Ryoku DMS startup wired for direct GDM Niri"
+
+# Quattro bar fidelity: DMS 1.5.3 reads barConfigs as an ARRAY of {id,...}.
+# An object map (barConfigs.default=…) is ignored — Quattro strip never applies.
+grep -Fq 'barConfigs = [ styleBar ]' "$DMS_MODULE" ||
+  fail "Quattro seed must use barConfigs array (DMS SettingsData.find by id)"
+grep -Fq 'leftWidgets' "$DMS_MODULE" ||
+  fail "Quattro bar missing leftWidgets from ryoku-desktop"
+grep -Fq 'workspaceSwitcher' "$DMS_MODULE" ||
+  fail "Quattro bar missing workspaceSwitcher widget"
+grep -Fq 'id = "default"' "$DMS_MODULE" ||
+  fail "default bar id missing"
+# Immutable store symlink would block DMS first-run persistence + bar merges.
+! grep -Fq 'xdg.configFile."DankMaterialShell/settings.json"' "$DMS_MODULE" ||
+  fail "DMS settings.json must stay mutable (no xdg.configFile symlink)"
+grep -Fq 'seedRyokuDmsSettings' "$DMS_MODULE" ||
+  fail "mutable settings seed activation missing"
+grep -Fq 'apply-ryoku-dms-bar' "$DMS_MODULE" ||
+  fail "Ryoku bar merge script missing"
+pass "Quattro barConfigs array and mutable settings"
+
+# GDM session PATH + absolute IPC helpers for DMS keybinds / launcher.
+grep -Fq 'export PATH="${LOCAL_BIN}:${HM_BIN}:${NIX_BIN}:${PATH}"' "$SESSION" ||
+  fail "ryoku-niri-session must prepend HM profile PATH for dms/qs"
+grep -Fq 'ryoku-dms-ipc' "$NIRI_KDL" ||
+  fail "Niri DMS IPC binds must use ryoku-dms-ipc absolute helper"
+grep -Fq 'home.file.".local/bin/ryoku-dms-ipc"' "$DMS_MODULE" ||
+  fail "ryoku-dms-ipc helper missing"
+pass "DMS IPC PATH and absolute helpers"
+
+# Matugen must eventually write ~/.config/niri/colors.kdl (VM observed missing).
+grep -Fq 'ensureRyokuNiriColors' "$MATUGEN_MODULE" ||
+  fail "colors.kdl seed activation missing"
+grep -Fq 'niri/colors.kdl' "$MATUGEN_MODULE" ||
+  fail "Matugen niri colors.kdl output path missing"
+grep -Fq 'include optional=true "colors.kdl"' "$NIRI_KDL" ||
+  fail "Niri must optionally include Matugen colors.kdl"
+pass "Matugen Niri colors.kdl wiring"
+
+# Fonts / theme parity with ryoku-desktop (not DejaVu-only placeholders).
+KITTY="$ROOT/distro/flake/home/kitty.nix"
+THEME="$ROOT/distro/flake/home/theme.nix"
+grep -Fq 'JetBrainsMono Nerd Font' "$KITTY" ||
+  fail "Kitty must use JetBrainsMono Nerd Font like ryoku-desktop"
+grep -Fq 'nerd-fonts.jetbrains-mono' "$KITTY" ||
+  fail "JetBrainsMono Nerd Font package missing"
+grep -Fq 'platformTheme.name = "adwaita"' "$THEME" ||
+  fail "Qt Adwaita platform theme missing"
+pass "theme and font parity seeds"
 
 bash -n "$BOOTSTRAP" || fail "bootstrap bash syntax"
 bash -n "$ROOT/distro/session/ryoku-niri-session" || fail "session shell syntax"
