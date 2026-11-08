@@ -137,6 +137,17 @@ Re-login through GDM and check Niri/Kitty again. Do not remove the new worktree
 until logs have been retained. Do not reset Nix store, delete user HOME, change
 GRUB or perform forced QEMU shutdown as part of this test.
 
+## Islands smoke (same honesty rules)
+
+```bash
+sudo ./distro/scripts/ryoku-bootstrap --apply --user paulo --skip-apt --skip-nix \
+  --profile minimal --visual balanced --shell-style islands
+home-manager switch --flake "$PWD/distro/flake#paulo"
+# Expect bar noBackground=true, enabled=true; niri msg layers Top; dms/colors.kdl after wallpaper
+```
+
+See `distro/docs/ISLANDS_V4_PORT.md`.
+
 ## Known Hyprland → Niri limits
 
 | Item | Hyprland (ryoku-desktop) | Niri (Debian) |
@@ -144,4 +155,5 @@ GRUB or perform forced QEMU shutdown as part of this test.
 | Quattro custom workspace strip | `Hyprland.*` QML | Stock DMS workspaceSwitcher (patch gates on `isHyprland`) |
 | Video wallpaper | hypr/mpv helpers | Static Matugen wallpaper only |
 | SDDM astronaut | Ported QML | GDM remains |
-| Hyprland border gradient | Matugen hypr conf | Niri focus-ring via `colors.kdl` |
+| Hyprland border gradient | Matugen hypr conf | Niri focus-ring via `colors.kdl` + `dms/colors.kdl` |
+| Window blur / shadow / inactive opacity | Hyprland decoration | **N/A** on Niri — DMS QML chrome only |

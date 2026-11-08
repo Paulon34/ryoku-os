@@ -35,6 +35,7 @@ require distro/assets/wallpapers/ryoku-night.jpg
 require distro/LICENSES/MIT-DankMaterialShell.txt
 require distro/flake/modules/profiles.nix
 require distro/flake/hosts/ryoku/default.nix
+require distro/flake/hosts/ryoku-islands/default.nix
 require distro/session/ryoku-niri.desktop
 require distro/session/ryoku-niri-session
 require distro/tests/test-bootstrap-policy.sh
@@ -46,6 +47,7 @@ require distro/tests/test-dms-bar-surface.sh
 require distro/docs/COMPOSITOR.md
 require distro/docs/SERVICE_OWNERSHIP.md
 require distro/docs/DMS_BAR_SURFACE.md
+require distro/docs/ISLANDS_V4_PORT.md
 require distro/docs/RYOKU_PROFILE_MVP.md
 require distro/docs/NIXOS_TO_DEBIAN_MIGRATION_MATRIX.md
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md

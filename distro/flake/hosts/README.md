@@ -24,3 +24,12 @@ Then:
 ```bash
 home-manager switch --flake ./distro/flake#alice
 ```
+
+Committed references:
+
+- `hosts/ryoku` — Quattro default (`shellStyle = "quattro"`)
+- `hosts/ryoku-islands` — Islands visual test (`shellStyle = "islands"`)
+
+```bash
+home-manager switch --flake ./distro/flake#ryoku-islands
+```

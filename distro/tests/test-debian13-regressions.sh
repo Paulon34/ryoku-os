@@ -204,7 +204,28 @@ grep -Fq 'niri/colors.kdl' "$MATUGEN_MODULE" ||
   fail "Matugen niri colors.kdl output path missing"
 grep -Fq 'include optional=true "colors.kdl"' "$NIRI_KDL" ||
   fail "Niri must optionally include Matugen colors.kdl"
-pass "Matugen Niri colors.kdl wiring"
+# DMS Material You writes CONFIG_DIR/niri/dms/colors.kdl — must be included.
+grep -Fq 'include optional=true "dms/colors.kdl"' "$NIRI_KDL" ||
+  fail "Niri must include DMS matugen dms/colors.kdl for Material You"
+grep -Fq 'niri/dms' "$MATUGEN_MODULE" ||
+  fail "matugen.nix must seed ~/.config/niri/dms/colors.kdl"
+# Desktop change-wallpaper is DMS-first so Theme + components update together.
+grep -Fq 'wallpaper set' "$MATUGEN_MODULE" ||
+  fail "change-wallpaper must call dms wallpaper set (Material You into DMS)"
+pass "Matugen Niri colors.kdl + DMS Material You wiring"
+
+# Islands styleBar (ryoku-desktop floating capsules) + surface guards from #26.
+grep -Fq 'noBackground = true' "$DMS_MODULE" ||
+  fail "Islands bar must set noBackground=true for floating capsules"
+grep -Fq 'widgetTransparency = 0.92' "$DMS_MODULE" ||
+  fail "Islands bar missing widgetTransparency from ryoku-desktop"
+grep -Fq 'shellStyle == "islands"' "$NIRI_KDL" ||
+  fail "Niri gaps must be shellStyle-aware (Islands vs Quattro)"
+[[ -f "$ROOT/distro/flake/hosts/ryoku-islands/default.nix" ]] ||
+  fail "hosts/ryoku-islands test host missing"
+grep -Fq 'shellStyle = "islands"' "$ROOT/distro/flake/hosts/ryoku-islands/default.nix" ||
+  fail "ryoku-islands host must set shellStyle islands"
+pass "Islands styleBar + Niri gaps + test host"
 
 # Fonts / theme parity with ryoku-desktop (not DejaVu-only placeholders).
 KITTY="$ROOT/distro/flake/home/kitty.nix"
