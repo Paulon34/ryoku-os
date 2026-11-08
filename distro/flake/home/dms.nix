@@ -70,6 +70,7 @@ in
 {
   home.packages = [
     dmsPackage
+    pkgs.quickshell # DMS v1.5.3 launches `qs -p <dms-qml>` at runtime.
     pkgs.matugen
   ];
 
@@ -101,6 +102,9 @@ in
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
+      # GDM/Niri may not inherit the Home Manager profile PATH. The DMS Go
+      # launcher executes `qs` by name, so provide Quickshell explicitly.
+      export PATH="${lib.makeBinPath [ pkgs.quickshell ]}:$PATH"
       exec "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsPackage}/bin/dms" run
     '';
   };
