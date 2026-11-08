@@ -38,7 +38,7 @@ let
     spawn-at-startup "nm-applet" "--indicator"
     spawn-at-startup "${pkgs.kitty}/bin/kitty"
 
-    prefers-no-csd
+    prefer-no-csd
 
     screenshot-path "~/Pictures/Screenshots/ryoku-%Y%m%d-%H%M%S.png"
 
