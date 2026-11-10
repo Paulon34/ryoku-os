@@ -2,7 +2,7 @@
 # ryoku-bootstrap — Debian 13 (Trixie) foundation for Ryoku (ENTREGA A + preflight)
 #
 # Installs/configures: APT base + Nix multi-user (nix-setup-systemd) +
-# standalone Home Manager flake + Niri session + Wayland DM plumbing.
+# standalone Home Manager flake + Hyprland (primary) + Niri (recovery) GDM sessions.
 #
 # HM hosts: writes distro/flake/hosts/<user>/default.nix (tracked via git add),
 # then `home-manager switch --flake …#<user>` as that user — never a fixed
@@ -21,8 +21,14 @@ DISTRO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(cd "$DISTRO_DIR/.." && pwd)
 FLAKE_DIR="$DISTRO_DIR/flake"
 APT_LIST="$DISTRO_DIR/apt/packages-base.txt"
-SESSION_DESKTOP="$DISTRO_DIR/session/ryoku-niri.desktop"
-SESSION_WRAPPER="$DISTRO_DIR/session/ryoku-niri-session"
+SESSION_DESKTOP_HYPR="$DISTRO_DIR/session/ryoku-hyprland.desktop"
+SESSION_WRAPPER_HYPR="$DISTRO_DIR/session/ryoku-hyprland-session"
+SESSION_DESKTOP_NIRI="$DISTRO_DIR/session/ryoku-niri.desktop"
+SESSION_WRAPPER_NIRI="$DISTRO_DIR/session/ryoku-niri-session"
+# Legacy aliases used by older preflight checks / recovery docs.
+SESSION_DESKTOP="$SESSION_DESKTOP_NIRI"
+SESSION_WRAPPER="$SESSION_WRAPPER_NIRI"
+APT_HYPR_LIST="$DISTRO_DIR/apt/packages-hyprland.txt"
 
 sysroot_path() {
   local rel=$1
@@ -45,7 +51,8 @@ SKIP_HM=0
 ASSUME_YES=0
 PROFILE="minimal"
 VISUAL="balanced"
-SHELL_STYLE="quattro"
+SHELL_STYLE="islands"
+COMPOSITOR="hyprland"
 JARVIS=0
 PREFLIGHT_FAILED=0
 
@@ -74,7 +81,8 @@ Options:
   --skip-hm           Do not run home-manager switch
   --profile NAME      minimal|full (default: minimal)
   --visual NAME       lite|balanced|ultra (default: balanced)
-  --shell-style NAME  quattro|islands (default: quattro)
+  --shell-style NAME  quattro|islands (default: islands)
+  --compositor NAME   hyprland|niri (default: hyprland; niri = recovery)
   --jarvis            Enable Jarvis (default: off)
   --yes               Do not prompt on --apply
   -h, --help          Show this help
@@ -84,6 +92,8 @@ Safety:
   - Preflight runs before any mutation on --apply
   - HM host module is hosts/<user>/default.nix (git-add; not gitignored)
   - home-manager switch runs as --user (not root writing \$HOME)
+  - Installs BOTH GDM sessions (Hyprland primary + Niri recovery); does not
+    uninstall Niri from the VM
 
 Guest verification after this script alone: GUEST_NOT_RUN
 (do not invent PASS_MANUAL).
@@ -147,6 +157,7 @@ parse_args() {
       --profile) PROFILE=$2; shift 2 ;;
       --visual) VISUAL=$2; shift 2 ;;
       --shell-style) SHELL_STYLE=$2; shift 2 ;;
+      --compositor) COMPOSITOR=$2; shift 2 ;;
       --jarvis) JARVIS=1; shift ;;
       --yes) ASSUME_YES=1; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -157,6 +168,7 @@ parse_args() {
   [[ "$PROFILE" == "minimal" || "$PROFILE" == "full" ]] || die "invalid --profile: $PROFILE"
   [[ "$VISUAL" == "lite" || "$VISUAL" == "balanced" || "$VISUAL" == "ultra" ]] || die "invalid --visual: $VISUAL"
   [[ "$SHELL_STYLE" == "quattro" || "$SHELL_STYLE" == "islands" ]] || die "invalid --shell-style: $SHELL_STYLE"
+  [[ "$COMPOSITOR" == "hyprland" || "$COMPOSITOR" == "niri" ]] || die "invalid --compositor: $COMPOSITOR"
   [[ "$TARGET_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "invalid --user: '$TARGET_USER'"
   [[ "$TARGET_USER" != "root" ]] || die "desktop user cannot be root"
   FLAKE_DIR=$(cd "$FLAKE_DIR" 2>/dev/null && pwd || echo "$FLAKE_DIR")
@@ -204,6 +216,7 @@ render_host_nix() {
     edition = "$PROFILE";
     visual = "$VISUAL";
     shellStyle = "$SHELL_STYLE";
+    compositor = "$COMPOSITOR";
     jarvis = $jarvis_nix;
   };
 }
@@ -222,6 +235,7 @@ Ryoku bootstrap plan ($MODE)
   profile:     $PROFILE
   visual:      $VISUAL
   shellStyle:  $SHELL_STYLE
+  compositor:  $COMPOSITOR
   jarvis:      $JARVIS
   flake dir:   $FLAKE_DIR
   host module: $(host_nix_path)
@@ -341,23 +355,35 @@ preflight() {
     ok "homeDirectory for $TARGET_USER → $home_dir"
   fi
 
-  # Tree / session
+  # Tree / sessions (Hyprland primary + Niri recovery)
   [[ -f "$FLAKE_DIR/flake.nix" ]] && ok "flake.nix" || fail "missing $FLAKE_DIR/flake.nix"
   [[ -f "$APT_LIST" ]] && ok "APT list" || fail "missing APT list"
-  [[ -f "$SESSION_DESKTOP" ]] && ok "GDM desktop file" || fail "missing session desktop"
-  [[ -f "$SESSION_WRAPPER" ]] && ok "session wrapper" || fail "missing session wrapper"
-  if [[ -f "$SESSION_DESKTOP" ]]; then
-    grep -q '^Exec=ryoku-niri-session' "$SESSION_DESKTOP" \
-      && ok "GDM Exec=ryoku-niri-session" \
-      || fail "GDM desktop Exec mismatch"
+  [[ -f "$APT_HYPR_LIST" ]] && ok "Hyprland APT list" || fail "missing Hyprland APT list"
+  [[ -f "$SESSION_DESKTOP_HYPR" ]] && ok "GDM Hyprland desktop" || fail "missing hyprland session desktop"
+  [[ -f "$SESSION_WRAPPER_HYPR" ]] && ok "Hyprland session wrapper" || fail "missing hyprland session wrapper"
+  [[ -f "$SESSION_DESKTOP_NIRI" ]] && ok "GDM Niri recovery desktop" || fail "missing niri session desktop"
+  [[ -f "$SESSION_WRAPPER_NIRI" ]] && ok "Niri session wrapper" || fail "missing niri session wrapper"
+  if [[ -f "$SESSION_DESKTOP_HYPR" ]]; then
+    grep -q '^Exec=ryoku-hyprland-session' "$SESSION_DESKTOP_HYPR" \
+      && ok "GDM Exec=ryoku-hyprland-session" \
+      || fail "Hyprland desktop Exec mismatch"
   fi
-  if [[ -f "$SESSION_WRAPPER" ]]; then
-    head -1 "$SESSION_WRAPPER" | grep -q 'bash\|sh' \
-      && ok "wrapper shebang" \
-      || fail "wrapper missing shebang"
-    grep -q 'niri' "$SESSION_WRAPPER" && ok "wrapper references niri" || fail "wrapper missing niri"
+  if [[ -f "$SESSION_DESKTOP_NIRI" ]]; then
+    grep -q '^Exec=ryoku-niri-session' "$SESSION_DESKTOP_NIRI" \
+      && ok "GDM Exec=ryoku-niri-session (recovery)" \
+      || fail "Niri desktop Exec mismatch"
+  fi
+  if [[ -f "$SESSION_WRAPPER_HYPR" ]]; then
+    head -1 "$SESSION_WRAPPER_HYPR" | grep -q 'bash\|sh' \
+      && ok "hyprland wrapper shebang" \
+      || fail "hyprland wrapper missing shebang"
+    grep -q 'Hyprland' "$SESSION_WRAPPER_HYPR" && ok "wrapper references Hyprland" || fail "wrapper missing Hyprland"
+  fi
+  if [[ -f "$SESSION_WRAPPER_NIRI" ]]; then
+    grep -q 'niri' "$SESSION_WRAPPER_NIRI" && ok "wrapper references niri" || fail "wrapper missing niri"
   fi
   [[ -f "$FLAKE_DIR/home/niri.nix" ]] && ok "niri.nix present" || fail "missing niri.nix"
+  [[ -f "$FLAKE_DIR/home/hyprland.nix" ]] && ok "hyprland.nix present" || fail "missing hyprland.nix"
   # Lightweight Niri KDL brace sanity from embedded conf (string in niri.nix)
   if [[ -f "$FLAKE_DIR/home/niri.nix" ]]; then
     local opens closes
@@ -505,22 +531,55 @@ confirm_apply() {
   [[ "$ans" == "APPLY" ]] || die "aborted by user"
 }
 
+ensure_trixie_backports() {
+  local list
+  list=$(sysroot_path /etc/apt/sources.list.d/ryoku-trixie-backports.list)
+  local line='deb http://deb.debian.org/debian trixie-backports main contrib non-free-firmware'
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] ensure trixie-backports for Hyprland ~0.55.x: $list"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    mkdir -p "$(dirname "$list")"
+    printf '%s\n' "$line" > "$list"
+    info "fixture: wrote $list"
+    return 0
+  fi
+  if [[ ! -f "$list" ]] || ! grep -Fq 'trixie-backports' "$list"; then
+    backup_file "$list"
+    printf '%s\n' "$line" > "$list"
+    info "enabled trixie-backports ($list)"
+  else
+    info "trixie-backports already configured"
+  fi
+}
+
 install_apt() {
   [[ "$SKIP_APT" -eq 0 ]] || { info "skip APT"; return 0; }
-  local pkgs
+  local pkgs hypr_pkgs
   mapfile -t pkgs < <(apt_packages)
+  mapfile -t hypr_pkgs < <(grep -vE '^\s*(#|$)' "$APT_HYPR_LIST" | sed 's/[[:space:]]*$//' || true)
   info "APT packages (${#pkgs[@]}): ${pkgs[*]}"
+  info "Hyprland backports packages (${#hypr_pkgs[@]}): ${hypr_pkgs[*]}"
   if [[ "$MODE" == "dry-run" ]]; then
     info "[dry-run] apt-get update && apt-get install -y ${pkgs[*]}"
+    info "[dry-run] apt-get install -t trixie-backports -y ${hypr_pkgs[*]}"
+    ensure_trixie_backports
     return 0
   fi
   if [[ "$SYSROOT" != "/" ]]; then
     warn "sysroot!=/: skipping real apt (policy/fixture mode)"
+    ensure_trixie_backports
     return 0
   fi
   export DEBIAN_FRONTEND=noninteractive
+  ensure_trixie_backports
   apt-get update -y
   apt-get install -y --no-install-recommends "${pkgs[@]}"
+  if [[ "${#hypr_pkgs[@]}" -gt 0 ]]; then
+    apt-get install -y -t trixie-backports --no-install-recommends "${hypr_pkgs[@]}" \
+      || warn "Hyprland backports install failed — check trixie-backports / network"
+  fi
 }
 
 configure_nix() {
@@ -577,13 +636,21 @@ configure_nix() {
 }
 
 install_session() {
-  local dest_desktop dest_wrapper
-  dest_desktop=$(sysroot_path /usr/share/wayland-sessions/ryoku-niri.desktop)
-  dest_wrapper=$(sysroot_path /usr/local/bin/ryoku-niri-session)
-  copy_file "$SESSION_WRAPPER" "$dest_wrapper" 0755
-  local desktop_content
-  desktop_content=$(cat "$SESSION_DESKTOP")
+  # Always install BOTH sessions: Hyprland (primary) + Niri (recovery).
+  # Never remove Niri from the VM in this mission.
+  local dest_desktop dest_wrapper desktop_content
+  dest_wrapper=$(sysroot_path /usr/local/bin/ryoku-hyprland-session)
+  copy_file "$SESSION_WRAPPER_HYPR" "$dest_wrapper" 0755
+  dest_desktop=$(sysroot_path /usr/share/wayland-sessions/ryoku-hyprland.desktop)
+  desktop_content=$(cat "$SESSION_DESKTOP_HYPR")
   write_file "$dest_desktop" "$desktop_content"$'\n'
+
+  dest_wrapper=$(sysroot_path /usr/local/bin/ryoku-niri-session)
+  copy_file "$SESSION_WRAPPER_NIRI" "$dest_wrapper" 0755
+  dest_desktop=$(sysroot_path /usr/share/wayland-sessions/ryoku-niri.desktop)
+  desktop_content=$(cat "$SESSION_DESKTOP_NIRI")
+  write_file "$dest_desktop" "$desktop_content"$'\n'
+
   if [[ "$MODE" == "apply" && "$SYSROOT" == "/" ]]; then
     # gdm.service is a static unit on Debian 13; it cannot be enabled directly.
     # The gdm3 package provides display-manager.service for graphical.target.
@@ -591,7 +658,7 @@ install_session() {
       if [[ "$(systemctl get-default)" == "multi-user.target" ]]; then
         run_cmd systemctl set-default graphical.target
       fi
-      info "GDM display-manager unit installed; graphical login starts on boot"
+      info "GDM sessions installed: Ryoku (Hyprland) + Ryoku (Niri recovery)"
     else
       warn "display-manager.service missing; inspect GDM before graphical boot"
     fi
@@ -728,15 +795,27 @@ activate_home_manager() {
     switch --flake "$FLAKE_DIR#$flake_attr" -b ryoku-hm-backup \
     || die "home-manager switch failed for #$flake_attr"
 
-  # Don't report a successful graphical foundation if a generated Niri KDL
-  # fails to parse. This is safe to run over SSH without a Wayland display.
-  local niri_bin="$(resolve_home_dir)/.local/state/nix/profiles/home-manager/home-path/bin/niri"
-  [[ -x "$niri_bin" ]] || die "Niri executable missing after Home Manager switch: $niri_bin"
-  run_cmd sudo -u "$TARGET_USER" -H \
-    env HOME="$(resolve_home_dir)" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
-    "$niri_bin" validate \
-    || die "Niri configuration validation failed; check ~/.config/niri/config.kdl before graphical login"
-  info "Niri config parsed successfully (graphical rendering still needs guest test)"
+  # Compositor-specific config smoke (SSH-safe; no Wayland display needed).
+  local home_dir
+  home_dir=$(resolve_home_dir)
+  if [[ "$COMPOSITOR" == "niri" ]]; then
+    local niri_bin="$home_dir/.local/state/nix/profiles/home-manager/home-path/bin/niri"
+    [[ -x "$niri_bin" ]] || die "Niri executable missing after Home Manager switch: $niri_bin"
+    run_cmd sudo -u "$TARGET_USER" -H \
+      env HOME="$home_dir" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      "$niri_bin" validate \
+      || die "Niri configuration validation failed; check ~/.config/niri/config.kdl before graphical login"
+    info "Niri config parsed successfully (graphical rendering still needs guest test)"
+  else
+    local hypr_conf="$home_dir/.config/hypr/hyprland.conf"
+    [[ -f "$hypr_conf" ]] || die "Hyprland config missing after HM switch: $hypr_conf"
+    # Prefer APT hyprctl if present; otherwise syntax-check that conf is non-empty.
+    if command -v hyprctl >/dev/null 2>&1; then
+      info "hyprctl available on PATH (live reload possible after GUI login)"
+    fi
+    [[ -s "$hypr_conf" ]] || die "Hyprland config empty: $hypr_conf"
+    info "Hyprland config present (graphical rendering still needs guest test / hyprctl layers)"
+  fi
 }
 
 write_recovery() {
@@ -770,9 +849,10 @@ Host module: $(host_nix_path)
   sudo -u $TARGET_USER -H home-manager generations
   sudo -u $TARGET_USER -H home-manager switch --flake $FLAKE_DIR#$TARGET_USER --rollback
 
-## Disable Ryoku session
-  sudo rm -f /usr/share/wayland-sessions/ryoku-niri.desktop
-  sudo rm -f /usr/local/bin/ryoku-niri-session
+## GDM sessions (keep Niri recovery until Hyprland is guest-proven)
+  # Primary:  ryoku-hyprland.desktop / ryoku-hyprland-session
+  # Recovery: ryoku-niri.desktop / ryoku-niri-session
+  # To leave recovery only: remove the Hyprland .desktop (do not uninstall Niri).
 
 ## Remove generated host (optional)
   rm -f $FLAKE_DIR/hosts/$TARGET_USER/default.nix

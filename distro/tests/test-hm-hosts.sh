@@ -35,7 +35,9 @@ check_fail() {
   fi
 }
 
-chmod +x "$BOOTSTRAP" "$ROOT/distro/session/ryoku-niri-session" 2>/dev/null || true
+chmod +x "$BOOTSTRAP" \
+  "$ROOT/distro/session/ryoku-niri-session" \
+  "$ROOT/distro/session/ryoku-hyprland-session" 2>/dev/null || true
 
 # --- Flake discovers committed ryoku host ------------------------------------
 check "hosts/ryoku/default.nix exists" test -f "$ROOT/distro/flake/hosts/ryoku/default.nix"
@@ -74,6 +76,7 @@ check "ryoku home still /home/ryoku" grep -q 'homeDirectory = "/home/ryoku"' "$R
 check "ryoku profile full" grep -q 'edition = "full"' "$RYOKU_HOST"
 check "ryoku visual ultra" grep -q 'visual = "ultra"' "$RYOKU_HOST"
 check "ryoku shell islands" grep -q 'shellStyle = "islands"' "$RYOKU_HOST"
+check "ryoku compositor default hyprland" grep -q 'compositor = "hyprland"' "$RYOKU_HOST"
 
 # Distinct homes
 if [[ -f "$ALICE_HOST" && -f "$RYOKU_HOST" ]]; then
@@ -125,12 +128,19 @@ fi
 check "flake genAttrs hosts" grep -q 'genAttrs hostNames' "$ROOT/distro/flake/flake.nix"
 check_fail "no gitignored overlay reference in flake" grep -q 'ryoku-user.nix' "$ROOT/distro/flake/flake.nix"
 
-# --- GDM / Niri --------------------------------------------------------------
-check "GDM desktop Exec" grep -q '^Exec=ryoku-niri-session' "$ROOT/distro/session/ryoku-niri.desktop"
+# --- GDM / Hyprland primary + Niri recovery ---------------------------------
+check "GDM Hyprland Exec" grep -q '^Exec=ryoku-hyprland-session' "$ROOT/distro/session/ryoku-hyprland.desktop"
+check "wrapper mentions Hyprland" grep -q 'Hyprland' "$ROOT/distro/session/ryoku-hyprland-session"
+check "GDM Niri recovery Exec" grep -q '^Exec=ryoku-niri-session' "$ROOT/distro/session/ryoku-niri.desktop"
 check "wrapper mentions niri" grep -q 'niri' "$ROOT/distro/session/ryoku-niri-session"
 opens=$(grep -o '{' "$ROOT/distro/flake/home/niri.nix" | wc -l)
 closes=$(grep -o '}' "$ROOT/distro/flake/home/niri.nix" | wc -l)
 check "niri.nix brace balance" test "$opens" -eq "$closes"
+hopens=$(grep -o '{' "$ROOT/distro/flake/home/hyprland.nix" | wc -l)
+hcloses=$(grep -o '}' "$ROOT/distro/flake/home/hyprland.nix" | wc -l)
+check "hyprland.nix brace balance" test "$hopens" -eq "$hcloses"
+check "bootstrap --compositor flag" grep -q -- '--compositor' "$BOOTSTRAP"
+check "alice host includes compositor" grep -q 'compositor =' "$ALICE_HOST"
 
 # --- Refuse NixOS ------------------------------------------------------------
 check_fail "refuse NixOS dry-run" \

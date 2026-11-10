@@ -1,32 +1,46 @@
 # Compositor selection (Debian Modular)
 
-**Status:** recommendation + option stub only. **No Hyprland migration in this track.**
+**Default after this port:** **Hyprland** (APT `trixie-backports` ~0.55.x).  
+**Recovery:** **Niri** GDM session remains installed; do not uninstall from the VM until Hyprland is guest-proven.
 
-## Default
+## Matrix
 
-| Choice | Default | Why now |
-|--------|---------|---------|
-| **Niri** | yes | Already proven on VM 201 (GDM session, keybinds, Kitty/Thunar, HM, validate, DMS shell.qml load). Matches Entrega A/B stack. |
-| Hyprland | future | Native home of Ryoku Desktop Quattro patches (custom workspace QML uses `Hyprland.*`). Better visual parity for Quattro workspace strip, but would reopen session/GBM/portal validation on Debian. |
+| Choice | Default | Install | Session | Notes |
+|--------|---------|---------|---------|-------|
+| **Hyprland** | yes | APT backports `hyprland` + `xdg-desktop-portal-hyprland` | `Ryoku (Hyprland)` | Matches ryoku-desktop; Quattro workspace QML works |
+| Niri | recovery | Nix HM package + nixGL | `Ryoku (Niri)` | Keep selectable via `--compositor niri` |
 
-## Recommendation
-
-1. **Stabilize Quattro on Niri first** (current priority). Treat stock DMS workspaceSwitcher on Niri as an accepted Hyprland→Niri limit.
-2. When Quattro bar/wallpaper/menus are guest-proven, add a selectable `ryoku.profile.compositor` implementation:
-   - shared DMS/Matugen/theme modules
-   - compositor-specific session wrapper + binds + Matugen template
-   - fail-closed HM assertion until the Hyprland path is wired (already in `profiles.nix`)
-3. Keep rollback: foundation worktree + previous HM generation; never dual-default both compositors in one GDM session without an explicit host knob.
-
-## Evidence (current stack)
-
-- Niri: guest-proven foundation (session up, binds, apps).
-- Quattro custom workspaces: patch gated on `CompositorService.isHyprland` → N/A on Niri.
-- Hyprland on Debian Modular: **not implemented** (no session desktop, no HM module).
-
-## Option
+## Profile knob
 
 ```nix
-# hosts/<user>/default.nix — only "niri" evaluates today
-profile.compositor = "niri";
+# hosts/<user>/default.nix
+profile.compositor = "hyprland"; # or "niri"
+profile.shellStyle = "islands";  # test visual; "quattro" selectable
 ```
+
+Bootstrap:
+
+```bash
+sudo ./distro/scripts/ryoku-bootstrap --apply --user "$USER" \
+  --profile minimal --visual balanced --shell-style islands --compositor hyprland
+```
+
+## Proof of bar surface
+
+Prefer compositor layers over IPC-only `visible`:
+
+```bash
+# Hyprland
+hyprctl layers
+# Expect a Quickshell / dms:bar Top (or Overlay) surface when enabled=true
+
+# Niri recovery
+NIRI_SOCKET=$(find /run/user/$(id -u) -maxdepth 1 -type s -name 'niri.*.sock' -print -quit)
+NIRI_SOCKET="$NIRI_SOCKET" niri msg layers
+```
+
+## Safety
+
+- No dual-default: HM activates **one** compositor module (`mkIf`).
+- Bootstrap still installs **both** GDM `.desktop` files for recovery.
+- Agent must not restart GDM/session/VM or delete Niri from the guest.

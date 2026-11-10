@@ -23,6 +23,8 @@ require distro/apt/packages-base.txt
 require distro/flake/flake.nix
 require distro/flake/home/home.nix
 require distro/flake/home/niri.nix
+require distro/flake/home/hyprland.nix
+require distro/flake/home/session-helpers.nix
 require distro/flake/home/kitty.nix
 require distro/flake/home/fuzzel.nix
 require distro/flake/home/theme.nix
@@ -38,6 +40,11 @@ require distro/flake/hosts/ryoku/default.nix
 require distro/flake/hosts/ryoku-islands/default.nix
 require distro/session/ryoku-niri.desktop
 require distro/session/ryoku-niri-session
+require distro/session/ryoku-hyprland.desktop
+require distro/session/ryoku-hyprland-session
+require distro/apt/packages-hyprland.txt
+require distro/flake/home/matugen/templates/ryoku-hyprland.conf
+require distro/flake/home/matugen/templates/ryoku-hyprland-quattro.conf
 require distro/tests/test-bootstrap-policy.sh
 require distro/tests/test-hm-hosts.sh
 require distro/tests/test-debian13-regressions.sh
@@ -80,6 +87,7 @@ fi
 # Shell syntax.
 bash -n "$ROOT/distro/scripts/ryoku-bootstrap"
 bash -n "$ROOT/distro/session/ryoku-niri-session"
+bash -n "$ROOT/distro/session/ryoku-hyprland-session"
 bash -n "$ROOT/distro/tests/test-bootstrap-policy.sh"
 bash -n "$ROOT/distro/tests/test-distro-paths.sh"
 bash -n "$ROOT/distro/tests/test-debian13-regressions.sh"

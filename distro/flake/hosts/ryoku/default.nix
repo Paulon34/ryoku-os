@@ -1,4 +1,4 @@
-# Example / default host — committed so the flake always has a pure attr.
+# Example / default host — Hyprland + Islands (test visual profile).
 # Bootstrap writes hosts/<user>/default.nix for real users (git-add for flake purity).
 {
   username = "ryoku";
@@ -6,7 +6,8 @@
   profile = {
     edition = "minimal";
     visual = "balanced";
-    shellStyle = "quattro";
+    shellStyle = "islands";
+    compositor = "hyprland";
     jarvis = false;
   };
 }

@@ -7,7 +7,7 @@ Install legend: **APT** | **Nix/HM** | **Flatpak** | **N/A**
 
 | App / concern | ryoku-desktop (NixOS/Hyprland) | Debian Modular method | Config port | Deps / notes | Compat | Gaps |
 |---------------|--------------------------------|------------------------|-------------|--------------|--------|------|
-| Compositor | Hyprland (HM) | **Nix/HM** Niri | binds matrix | nixGL Mesa | Working foundation | Quattro Hypr workspaces N/A |
+| Compositor | Hyprland (HM) | **APT backports Hyprland** (default) + Nix Niri recovery | binds + GDM sessions | host Mesa / nixGL for Niri | Code ready | Guest Hyprland TBD |
 | Shell | DMS 1.5.3 + patches | **Nix/HM** `dms-shell-ryoku` | settings merge | quickshell, jq | Patches reused | Visual Quattro guest TBD |
 | Quickshell | via DMS | **Nix/HM** `pkgs.quickshell` | — | PATH wrapper | Required for ipc | SSH PATH was gap (fixed) |
 | Matugen | HM templates → hypr colors | **Nix/HM** → `niri/colors.kdl` + DMS `niri/dms/colors.kdl` | templates | wallpaper dir | Seeded | Guest live palette TBD |

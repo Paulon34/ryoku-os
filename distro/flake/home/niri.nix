@@ -1,19 +1,16 @@
 { config, pkgs, lib, ... }:
 
-# Niri foundation + DMS-oriented binds (ENTREGA B).
+# Niri recovery compositor (Debian Modular). Active only when
+# ryoku.profile.compositor = "niri". Helpers live in session-helpers.nix.
 # Matrix: docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
-# Islands vs Quattro: reuse ryoku-desktop hyprland.nix gaps_out (10) for
-# floating capsules; Quattro keeps a tighter strip feel (8). Window blur /
-# shadow / inactive opacity stay Hyprland-only — Niri has no equivalent.
 let
+  enabled = config.ryoku.profile.compositor == "niri";
   islands = config.ryoku.profile.shellStyle == "islands";
   gaps = if islands then 10 else 8;
 
   conf = ''
-    // Ryoku Niri — desktop port (Islands/Quattro shellStyle-aware)
+    // Ryoku Niri — recovery session (shellStyle-aware)
     // colors.kdl = HM/user-matugen fallback; dms/colors.kdl = DMS Material You
-    // (stock DMS matugen writes CONFIG_DIR/niri/dms/colors.kdl on wallpaper set).
-    // Later include wins overlapping keys when both exist.
     include optional=true "colors.kdl"
     include optional=true "dms/colors.kdl"
 
@@ -45,12 +42,6 @@ let
         }
     }
 
-    // Service ownership (Niri spawn, not competing systemd user long-runners):
-    // - NM tray: APT network-manager-gnome (wrapper noops if missing)
-    // - Polkit GUI agent: APT mate-polkit (wrapper noops if missing)
-    // - Clipboard store: wl-paste|cliphist (fallback; DMS clipboard is primary)
-    // - Notifications: DMS only (do NOT spawn mako/dunst)
-    // - Shell: ryoku-start-dms (idempotent)
     spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-nm-applet"
     spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-polkit-agent"
     spawn-at-startup "${config.home.homeDirectory}/.local/bin/ryoku-cliphist-text"
@@ -67,7 +58,6 @@ let
 
     binds {
         Mod+Return { spawn "${pkgs.kitty}/bin/kitty"; }
-        // DMS spotlight when available; fuzzel fallback via script
         Mod+Space { spawn "${config.home.homeDirectory}/.local/bin/ryoku-launcher"; }
         Mod+E { spawn "thunar"; }
 
@@ -118,7 +108,6 @@ let
         Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "region"; }
         Mod+Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "full"; }
 
-        // Absolute HM helpers — GDM→niri --session often lacks nix profile PATH.
         Mod+N { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "notifications" "toggle"; }
         Mod+Comma { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "settings" "toggle"; }
         Mod+X { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "powermenu" "toggle"; }
@@ -133,126 +122,17 @@ let
   '';
 in
 {
-  xdg.configFile."niri/config.kdl".text = conf;
+  config = lib.mkIf enabled {
+    xdg.configFile."niri/config.kdl".text = conf;
 
-  # Optional host agents — never fail the session if the APT package is absent.
-  home.file.".local/bin/ryoku-nm-applet" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      if command -v nm-applet >/dev/null 2>&1; then
-        exec nm-applet --indicator
-      fi
-      echo "ryoku-nm-applet: nm-applet missing (install network-manager-gnome)" >&2
-      exit 0
-    '';
+    home.packages = with pkgs; [
+      niri
+      xwayland-satellite
+    ];
+
+    home.file.".local/bin/ryoku-niri-session" = {
+      source = ../../session/ryoku-niri-session;
+      executable = true;
+    };
   };
-
-  home.file.".local/bin/ryoku-polkit-agent" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      # Prefer mate-polkit (APT on Debian Modular); fall back to common libexec paths.
-      for cand in \
-        /usr/libexec/polkit-mate-authentication-agent-1 \
-        /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 \
-        /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 \
-        /usr/libexec/polkit-gnome-authentication-agent-1
-      do
-        if [[ -x "$cand" ]]; then
-          exec "$cand"
-        fi
-      done
-      echo "ryoku-polkit-agent: no GUI polkit agent found (install mate-polkit)" >&2
-      exit 0
-    '';
-  };
-
-  home.file.".local/bin/ryoku-cliphist-text" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      command -v wl-paste >/dev/null 2>&1 || exit 0
-      command -v cliphist >/dev/null 2>&1 || exit 0
-      exec wl-paste --type text --watch cliphist store
-    '';
-  };
-
-  home.file.".local/bin/ryoku-cliphist-image" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      command -v wl-paste >/dev/null 2>&1 || exit 0
-      command -v cliphist >/dev/null 2>&1 || exit 0
-      exec wl-paste --type image --watch cliphist store
-    '';
-  };
-
-  home.file.".local/bin/ryoku-launcher" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
-      if [[ -x "$ipc" ]]; then
-        exec "$ipc" spotlight toggle
-      fi
-      if command -v dms >/dev/null 2>&1; then
-        exec dms ipc call spotlight toggle
-      fi
-      exec fuzzel
-    '';
-  };
-
-  home.file.".local/bin/ryoku-clipboard" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
-      if [[ -x "$ipc" ]]; then
-        exec "$ipc" clipboard toggle 2>/dev/null || true
-        exit 0
-      fi
-      if command -v dms >/dev/null 2>&1; then
-        exec dms ipc call clipboard toggle 2>/dev/null || true
-      fi
-      if command -v cliphist >/dev/null 2>&1; then
-        cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
-      fi
-    '';
-  };
-
-  home.file.".local/bin/ryoku-screenshot" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      mode=''${1:-region}
-      dir="$HOME/Pictures/Screenshots"
-      mkdir -p "$dir"
-      out="$dir/ryoku-$(date +%Y%m%d-%H%M%S).png"
-      case "$mode" in
-        region) grim -g "$(slurp)" "$out" ;;
-        full) grim "$out" ;;
-        *) echo "usage: ryoku-screenshot region|full" >&2; exit 2 ;;
-      esac
-      echo "$out"
-    '';
-  };
-
-  home.packages = with pkgs; [
-    grim
-    slurp
-    brightnessctl
-    cliphist
-  ];
-
-  home.activation.ryokuScreenshotsDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    mkdir -p "${config.home.homeDirectory}/Pictures/Screenshots"
-  '';
 }

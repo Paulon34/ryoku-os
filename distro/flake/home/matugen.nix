@@ -1,18 +1,15 @@
 { config, pkgs, lib, ... }:
 
-# Material You via Matugen — wallpaper-driven palette for Niri/kitty/fuzzel.
-# Ported from ryoku-desktop home/theme.nix + matugen templates; Hyprland
-# templates replaced by ryoku-niri-colors.kdl.
-#
-# Theme engine (parity with desktop scripts/change-wallpaper.sh):
-#   1) `dms ipc call wallpaper set` → DMS regenerates Theme + runs matugen
-#      (including stock niri → ~/.config/niri/dms/colors.kdl + user templates).
-#   2) Optional user `matugen image` keeps palette.json/css + colors.kdl fallback
-#      when DMS IPC is down; never invents a second wallpaper owner.
+# Material You via Matugen — wallpaper → DMS Theme + compositor colors.
+# Desktop parity: change-wallpaper is DMS-first (single wallpaper owner).
+# Hyprland: ~/.config/ryoku/hyprland-colors.conf (Islands vs Quattro template).
+# Niri recovery: colors.kdl + dms/colors.kdl (unchanged from #27).
 let
+  quattro = config.ryoku.profile.shellStyle == "quattro";
+  compositor = config.ryoku.profile.compositor;
+
   niriColorsFallback = pkgs.writeText "ryoku-niri-colors-fallback.kdl" ''
     // Ryoku Appearance Engine — Niri focus-ring fallback (pre-Matugen).
-    // Replaced when change-wallpaper / matugen runs against a wallpaper.
     layout {
         focus-ring {
             width 2
@@ -22,7 +19,6 @@ let
     }
   '';
 
-  # Stock DMS matugen/templates/niri-colors.kdl shape (neutral seed).
   dmsNiriColorsFallback = pkgs.writeText "ryoku-dms-niri-colors-fallback.kdl" ''
     // Ryoku seed — overwritten by DMS matugen on wallpaper set.
     layout {
@@ -39,6 +35,19 @@ let
         }
     }
   '';
+
+  hyprlandColorsFallback = pkgs.writeText "ryoku-hyprland-colors-fallback.conf" ''
+    general {
+        col.active_border = rgba(8a9099cc)
+        col.inactive_border = rgba(3a3a3a80)
+    }
+  '';
+
+  hyprlandTemplate =
+    if quattro then
+      ./matugen/templates/ryoku-hyprland-quattro.conf
+    else
+      ./matugen/templates/ryoku-hyprland.conf;
 in
 {
   home.packages = [ pkgs.matugen ];
@@ -64,21 +73,33 @@ in
     input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-niri-colors.kdl"
     output_path = "${config.home.homeDirectory}/.config/niri/colors.kdl"
     post_hook = "niri msg action load-config-file || true"
+
+    [templates.ryoku_hyprland]
+    input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-hyprland.conf"
+    output_path = "${config.home.homeDirectory}/.config/ryoku/hyprland-colors.conf"
+    post_hook = "hyprctl reload || true"
   '';
 
   home.file.".config/matugen/templates/ryoku-palette.json".source = ./matugen/templates/ryoku-palette.json;
   home.file.".config/matugen/templates/ryoku-palette.css".source = ./matugen/templates/ryoku-palette.css;
   home.file.".config/matugen/templates/ryoku-niri-colors.kdl".source = ./matugen/templates/ryoku-niri-colors.kdl;
+  # Style-selected Hyprland border template (Islands solid / Quattro gradient).
+  home.file.".config/matugen/templates/ryoku-hyprland.conf".source = hyprlandTemplate;
+  home.file.".config/matugen/templates/ryoku-hyprland-islands.conf".source =
+    ./matugen/templates/ryoku-hyprland.conf;
+  home.file.".config/matugen/templates/ryoku-hyprland-quattro.conf".source =
+    ./matugen/templates/ryoku-hyprland-quattro.conf;
 
-  # Niri `include optional=true` tolerates missing files, but guests still need
-  # real seeds before the first wallpaper apply. Never overwrite Matugen/DMS writes.
   home.activation.ensureRyokuNiriColors = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p "$HOME/.config/niri/dms" "$HOME/.config/ryoku"
+    run mkdir -p "$HOME/.config/niri/dms" "$HOME/.config/ryoku" "$HOME/.config/hypr"
     if [ ! -e "$HOME/.config/niri/colors.kdl" ]; then
       run install -m 644 ${niriColorsFallback} "$HOME/.config/niri/colors.kdl"
     fi
     if [ ! -e "$HOME/.config/niri/dms/colors.kdl" ]; then
       run install -m 644 ${dmsNiriColorsFallback} "$HOME/.config/niri/dms/colors.kdl"
+    fi
+    if [ ! -e "$HOME/.config/ryoku/hyprland-colors.conf" ]; then
+      run install -m 644 ${hyprlandColorsFallback} "$HOME/.config/ryoku/hyprland-colors.conf"
     fi
     wallpaper="$HOME/.local/share/wallpapers/ryoku-night.jpg"
     if [ -f "$wallpaper" ] && [ ! -e "$HOME/.config/ryoku/current-wallpaper" ]; then
@@ -86,9 +107,6 @@ in
     fi
   '';
 
-  # Match ryoku-desktop/scripts/change-wallpaper.sh: DMS owns live wallpaper +
-  # Material You into shell components; user matugen templates follow for Niri
-  # fallback / palette files when the CLI is available.
   home.file.".local/bin/change-wallpaper" = {
     executable = true;
     text = ''
@@ -102,6 +120,7 @@ in
         "${config.home.homeDirectory}/.config/niri/dms"
       ln -sfn "$pick" "${config.home.homeDirectory}/.config/ryoku/current-wallpaper"
 
+      # Single wallpaper owner: DMS (Material You into Theme / QML / stock templates).
       ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
       if [[ -x "$ipc" ]]; then
         "$ipc" wallpaper set "$pick" 2>/dev/null || true
@@ -109,13 +128,14 @@ in
         dms ipc call wallpaper set "$pick" 2>/dev/null || true
       fi
 
-      # User templates (palette + colors.kdl). DMS already ran matugen for Theme
-      # + dms/colors.kdl when IPC succeeded; this keeps Niri fallback fresh if not.
       if command -v matugen >/dev/null 2>&1; then
         matugen image "$pick" || true
       fi
 
-      if command -v niri >/dev/null 2>&1; then
+      # Compositor refresh (best-effort; no dual wallpaper managers).
+      if [[ "${compositor}" == "hyprland" ]] && command -v hyprctl >/dev/null 2>&1; then
+        hyprctl reload >/dev/null 2>&1 || true
+      elif command -v niri >/dev/null 2>&1; then
         niri msg action load-config-file >/dev/null 2>&1 || true
       fi
 

@@ -21,8 +21,8 @@ id: paulo-desktop-quattro
 name: Paulo desktop Quattro
 edition: minimal          # maps to ryoku.profile.edition
 visual: balanced          # ryoku.profile.visual
-shellStyle: quattro        # ryoku.profile.shellStyle
-compositor: niri          # only niri wired today
+shellStyle: islands       # ryoku.profile.shellStyle (quattro selectable)
+compositor: hyprland      # default; niri = GDM recovery session
 jarvis: false
 
 modules:

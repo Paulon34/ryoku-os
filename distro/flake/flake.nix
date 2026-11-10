@@ -62,8 +62,9 @@
               ryoku.profile = {
                 edition = profile.edition or "minimal";
                 visual = profile.visual or "balanced";
-                shellStyle = profile.shellStyle or "quattro";
+                shellStyle = profile.shellStyle or "islands";
                 jarvis = profile.jarvis or false;
+                compositor = profile.compositor or "hyprland";
               };
             }
           ];
@@ -103,6 +104,8 @@
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
         test -f ${./home/home.nix}
         test -f ${./home/niri.nix}
+        test -f ${./home/hyprland.nix}
+        test -f ${./home/session-helpers.nix}
         test -f ${./home/dms.nix}
         test -f ${./patches/dms/1.5.3/ryoku-quattro-foundation.patch}
         test -f ${./hosts/ryoku/default.nix}

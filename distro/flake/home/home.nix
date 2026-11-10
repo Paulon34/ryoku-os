@@ -7,10 +7,12 @@
 
 # Standalone Home Manager for Debian — intentionally NO osConfig / NixOS options.
 # nixGL / dankMaterialShell arrive via extraSpecialArgs into their modules.
+# Compositor modules self-gate on ryoku.profile.compositor (hyprland | niri).
 {
   imports = [
-    # profiles.nix is pulled via flake modules = [ ./modules ... ]; keep home lean.
+    ./session-helpers.nix
     ./niri.nix
+    ./hyprland.nix
     ./kitty.nix
     ./fuzzel.nix
     ./theme.nix
@@ -24,18 +26,23 @@
   programs.home-manager.enable = true;
 
   home.packages = with pkgs; [
-    niri
-    xwayland-satellite
     wl-clipboard
   ];
 
   xdg.enable = true;
   xdg.mimeApps.enable = true;
 
-  xdg.configFile."xdg-desktop-portal/portals.conf".text = ''
-    [preferred]
-    default=gtk;wlr;
-  '';
+  xdg.configFile."xdg-desktop-portal/portals.conf".text =
+    if config.ryoku.profile.compositor == "hyprland" then
+      ''
+        [preferred]
+        default=hyprland;gtk;wlr;
+      ''
+    else
+      ''
+        [preferred]
+        default=gtk;wlr;
+      '';
 
   home.sessionVariables = {
     NIXOS_OZONE_WL = "1";
@@ -46,10 +53,6 @@
     RYOKU_EDITION = config.ryoku.profile.edition;
     RYOKU_VISUAL_PROFILE = config.ryoku.profile.visual;
     RYOKU_SHELL_STYLE = config.ryoku.profile.shellStyle;
-  };
-
-  home.file.".local/bin/ryoku-niri-session" = {
-    source = ../../session/ryoku-niri-session;
-    executable = true;
+    RYOKU_COMPOSITOR = config.ryoku.profile.compositor;
   };
 }
