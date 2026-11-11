@@ -1,16 +1,17 @@
 { config, pkgs, lib, ... }:
 
-# Niri recovery compositor (Debian Modular). Active only when
-# ryoku.profile.compositor = "niri". Helpers live in session-helpers.nix.
-# Matrix: docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
+# Niri — always keep binary + config + session wrapper so GDM "Ryoku (Niri)"
+# recovery works even when ryoku.profile.compositor = "hyprland".
+# Session-scoped: only the Niri GDM session starts Niri (Hyprland exec-once
+# never launches niri). Helpers live in session-helpers.nix.
 let
-  enabled = config.ryoku.profile.compositor == "niri";
+  primary = config.ryoku.profile.compositor == "niri";
   islands = config.ryoku.profile.shellStyle == "islands";
   gaps = if islands then 10 else 8;
 
   conf = ''
-    // Ryoku Niri — recovery session (shellStyle-aware)
-    // colors.kdl = HM/user-matugen fallback; dms/colors.kdl = DMS Material You
+    // Ryoku Niri — recovery-capable (shellStyle-aware)
+    // Always written so GDM Ryoku (Niri) can start under compositor=hyprland.
     include optional=true "colors.kdl"
     include optional=true "dms/colors.kdl"
 
@@ -122,17 +123,22 @@ let
   '';
 in
 {
-  config = lib.mkIf enabled {
-    xdg.configFile."niri/config.kdl".text = conf;
+  # Recovery always available (compositor=hyprland or niri).
+  xdg.configFile."niri/config.kdl".text = conf;
 
-    home.packages = with pkgs; [
-      niri
-      xwayland-satellite
-    ];
+  home.packages = with pkgs; [
+    niri
+    xwayland-satellite
+  ];
 
-    home.file.".local/bin/ryoku-niri-session" = {
-      source = ../../session/ryoku-niri-session;
-      executable = true;
-    };
+  home.file.".local/bin/ryoku-niri-session" = {
+    source = ../../session/ryoku-niri-session;
+    executable = true;
+  };
+
+  # Document primary vs recovery (no extra units — GDM picks the session).
+  home.sessionVariables = lib.mkIf primary {
+    XDG_CURRENT_DESKTOP = lib.mkDefault "niri:Ryoku";
+    XDG_SESSION_DESKTOP = lib.mkDefault "niri";
   };
 }

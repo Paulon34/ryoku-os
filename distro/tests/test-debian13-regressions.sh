@@ -265,6 +265,18 @@ grep -Fq 'compositor = "hyprland"' "$ROOT/distro/flake/hosts/ryoku/default.nix" 
   fail "default host must set compositor hyprland"
 grep -Fq 'enabled = true' "$DMS_MODULE" ||
   fail "bar surface enabled=true must remain (hyprctl layers proof path)"
+# Fail-closed APT: never warn-and-continue without Hyprland.
+grep -Fq 'aborting apply (no false success)' "$BOOTSTRAP" ||
+  fail "Hyprland APT failure must abort apply (fail-closed)"
+! grep -Fq 'Hyprland backports install failed — check' "$BOOTSTRAP" ||
+  fail "soft-warn on Hyprland APT failure must be removed"
+# Niri recovery under compositor=hyprland: binary+config always.
+! grep -Fq 'config = lib.mkIf enabled' "$NIRI_KDL" ||
+  fail "niri.nix must not wrap entire module in mkIf enabled (recovery)"
+grep -Fq 'xdg.configFile."niri/config.kdl"' "$NIRI_KDL" ||
+  fail "niri config.kdl must always be emitted"
+grep -Fq 'preserving existing flake.lock' "$BOOTSTRAP" ||
+  fail "bootstrap must preserve VM-tested flake.lock (no unnecessary update)"
 pass "Hyprland primary + Niri recovery + Matugen hypr colors"
 
 # Fonts / theme parity with ryoku-desktop (not DejaVu-only placeholders).

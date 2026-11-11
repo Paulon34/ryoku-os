@@ -51,6 +51,7 @@ require distro/tests/test-debian13-regressions.sh
 require distro/tests/test-dms-bar-merge.sh
 require distro/tests/test-dms-ipc-path.sh
 require distro/tests/test-dms-bar-surface.sh
+require distro/tests/test-hyprland-conf-055.sh
 require distro/docs/COMPOSITOR.md
 require distro/docs/SERVICE_OWNERSHIP.md
 require distro/docs/DMS_BAR_SURFACE.md
@@ -94,6 +95,9 @@ bash -n "$ROOT/distro/tests/test-debian13-regressions.sh"
 bash -n "$ROOT/distro/tests/test-dms-bar-merge.sh"
 bash -n "$ROOT/distro/tests/test-dms-ipc-path.sh"
 bash -n "$ROOT/distro/tests/test-dms-bar-surface.sh"
+bash -n "$ROOT/distro/tests/test-hyprland-conf-055.sh"
 echo "ok: bash -n syntax"
+
+bash "$ROOT/distro/tests/test-hyprland-conf-055.sh" || fail=$((fail + 1))
 
 [[ "$fail" -eq 0 ]]

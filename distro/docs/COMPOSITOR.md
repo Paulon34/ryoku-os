@@ -41,6 +41,11 @@ NIRI_SOCKET="$NIRI_SOCKET" niri msg layers
 
 ## Safety
 
-- No dual-default: HM activates **one** compositor module (`mkIf`).
-- Bootstrap still installs **both** GDM `.desktop` files for recovery.
+- **Session-scoped:** only the GDM-chosen session starts a compositor. Hyprland
+  `exec-once` never launches Niri; Niri never starts under a Hyprland login.
+- **Recovery under `compositor=hyprland`:** HM always installs Niri binary,
+  `nixGLIntel`, `~/.config/niri/config.kdl`, and `ryoku-niri-session`.
+- Bootstrap installs **both** GDM `.desktop` files; APT Hyprland failure **aborts**.
+- Hyprland conf targets Debian **~0.55.x** (classic `windowrulev2`), not NixOS 0.56.2.
+- Preserve guest `flake.lock` — no `nix flake update` on apply.
 - Agent must not restart GDM/session/VM or delete Niri from the guest.

@@ -1,10 +1,12 @@
 { config, pkgs, lib, ... }:
 
 # Hyprland primary compositor (Debian Modular).
-# Reuses ryoku-desktop/home/hyprland.nix look (Islands/Quattro) without osConfig:
-# monitors = auto, kb_layout = us (override later via Profile/Settings).
-# Binary: APT trixie-backports hyprland (~0.55.x). Config only via HM — no Nix
-# Hyprland package, no nixGL (host Mesa). Niri must NOT start in this session.
+# Target binary: APT trixie-backports hyprland ~0.55.x (NOT NixOS 0.56.2).
+# Config uses hyprlang still supported on 0.55 + classic windowrulev2 /
+# layerrule forms that 0.55.x accepts. Avoid 0.56-only windowrule rewrite
+# (`float on, match:class`) and omit removed blur optimization keys.
+# Session-scoped: only GDM "Ryoku (Hyprland)" starts Hyprland; Niri recovery
+# stays installed via niri.nix (never exec-once niri here).
 let
   cfg = config.ryoku.profile;
   enabled = cfg.compositor == "hyprland";
@@ -48,12 +50,14 @@ let
     animation = workspaces,1,5,easeOutQuint
   '';
 
+  # 0.55.x layerrule form (not 0.56 no_anim on, match:namespace …).
   quattroLayerRules = ''
-    layerrule = no_anim on, match:namespace ^(dms:.*)$
+    layerrule = noanim, ^(dms:.*)$
   '';
 
   conf = ''
     # Ryoku Hyprland — Debian Modular (shellStyle=${cfg.shellStyle})
+    # Target: Debian trixie-backports hyprland ~0.55.x (hyprlang).
     # Borders from Matugen: ~/.config/ryoku/hyprland-colors.conf
     source = ~/.config/ryoku/hyprland-colors.conf
 
@@ -62,7 +66,7 @@ let
     $menu = ${ipc} spotlight toggle
     $fileManager = thunar
 
-    monitor = ,preferred,auto,1
+    monitor=,preferred,auto,1
 
     exec-once = ${home}/.local/bin/ryoku-nm-applet
     exec-once = ${home}/.local/bin/ryoku-polkit-agent
@@ -97,7 +101,6 @@ let
             enabled = true
             size = 6
             passes = 2
-            new_optimizations = true
         }
         shadow {
             enabled = ${shadowEnabled}
@@ -124,19 +127,27 @@ let
         disable_splash_rendering = true
     }
 
-    windowrule = float on, center on, size 900 620, match:class ^(xdg-desktop-portal-gtk)$
-    windowrule = float on, center on, size 920 640, match:class ^(org\\.pulseaudio\\.pavucontrol)$
-    windowrule = float on, center on, match:class ^(blueman-manager)$
-    windowrule = float on, center on, match:class ^(nm-connection-editor)$
-    windowrule = float on, center on, match:title ^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
+    # Classic windowrulev2 (0.55.x). Avoid 0.56 rewrite: "float on, match:class …".
+    windowrulev2 = float, class:^(xdg-desktop-portal-gtk)$
+    windowrulev2 = center, class:^(xdg-desktop-portal-gtk)$
+    windowrulev2 = size 900 620, class:^(xdg-desktop-portal-gtk)$
+    windowrulev2 = float, class:^(org\.pulseaudio\.pavucontrol)$
+    windowrulev2 = center, class:^(org\.pulseaudio\.pavucontrol)$
+    windowrulev2 = size 920 640, class:^(org\.pulseaudio\.pavucontrol)$
+    windowrulev2 = float, class:^(blueman-manager)$
+    windowrulev2 = center, class:^(blueman-manager)$
+    windowrulev2 = float, class:^(nm-connection-editor)$
+    windowrulev2 = center, class:^(nm-connection-editor)$
+    windowrulev2 = float, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
+    windowrulev2 = center, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
 
     bind = $mod, RETURN, exec, $terminal
     bind = $mod, SPACE, exec, $menu
     bind = $mod, E, exec, $fileManager
-    bind = $mod, Q, killactive
-    bind = $mod, F, fullscreen
-    bind = $mod, V, togglefloating
-    bind = $mod SHIFT, E, exit
+    bind = $mod, Q, killactive,
+    bind = $mod, F, fullscreen,
+    bind = $mod, V, togglefloating,
+    bind = $mod SHIFT, E, exit,
 
     bind = $mod, left, movefocus, l
     bind = $mod, right, movefocus, r
@@ -194,6 +205,13 @@ let
   '';
 in
 {
+  # Session wrapper always installed so GDM can launch Hyprland even if the
+  # HM profile compositor knob is temporarily niri (recovery swap).
+  home.file.".local/bin/ryoku-hyprland-session" = {
+    source = ../../session/ryoku-hyprland-session;
+    executable = true;
+  };
+
   config = lib.mkIf enabled {
     # APT provides Hyprland; HM only manages the conf Hyprland reads by default.
     xdg.configFile."hypr/hyprland.conf".text = conf;
@@ -203,15 +221,9 @@ in
       XDG_SESSION_DESKTOP = "Hyprland";
     };
 
-    # Prefer Hyprland portal when installed; gtk/wlr remain fallbacks.
     xdg.configFile."xdg-desktop-portal/hyprland-portals.conf".text = ''
       [preferred]
       default=hyprland;gtk;wlr;
     '';
-
-    home.file.".local/bin/ryoku-hyprland-session" = {
-      source = ../../session/ryoku-hyprland-session;
-      executable = true;
-    };
   };
 }
