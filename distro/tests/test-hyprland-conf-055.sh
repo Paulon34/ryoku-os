@@ -12,17 +12,20 @@ pass() { echo "PASS: $*"; }
 
 # Ban 0.56-style keys in emitted conf lines (ignore # comments).
 code_lines() { grep -vE '^\s*#' "$HYPR" || true; }
-code_lines | grep -Eq 'windowrule = float on,' &&
-  fail "0.56 windowrule rewrite (float on, …) not allowed for Debian 0.55.x"
+code_lines | grep -Eq 'windowrule[[:space:]]*=[[:space:]]*(float|center|size[[:space:]][0-9]+[[:space:]][0-9]+),[[:space:]]*(class|title):' &&
+  fail "obsolete windowrule = float, class:… is invalid in Hyprland 0.55.x"
 code_lines | grep -Fq 'new_optimizations' &&
   fail "blur:new_optimizations removed/unsafe for 0.55 target — omit it"
 code_lines | grep -Fq 'no_anim on, match:namespace' &&
   fail "0.56 layerrule form banned; use classic layerrule = noanim, …"
-# 0.55.2 deprecates windowrulev2 (startup overlay) — use windowrule + v2 args.
+# Hyprland 0.55.2 still reads legacy Hyprlang configs but requires
+# 0.53+ window rules: match:class/title matchers and effects such as float on.
 code_lines | grep -Fq 'windowrulev2' &&
-  fail "windowrulev2 is deprecated on Hyprland 0.55.2 — use windowrule ="
-code_lines | grep -Eq 'windowrule = float, class:' ||
-  fail "expected windowrule = float, class:^(…) for 0.55.x"
+  fail "windowrulev2 is deprecated on Hyprland 0.55.2"
+code_lines | grep -Eq 'windowrule[[:space:]]*=[[:space:]]*match:class .*float on' ||
+  fail "expected modern windowrule = match:class ..., float on for 0.55.x"
+code_lines | grep -Eq 'windowrule[[:space:]]*=[[:space:]]*match:title .*float on' ||
+  fail "expected modern windowrule = match:title ..., float on for 0.55.x"
 grep -Fq '0.55' "$HYPR" ||
   fail "hyprland.nix must document Debian ~0.55.x target"
 grep -Fq 'ryoku-start-dms' "$HYPR" ||
