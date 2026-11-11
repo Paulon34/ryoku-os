@@ -205,25 +205,30 @@ let
   '';
 in
 {
-  # Session wrapper always installed so GDM can launch Hyprland even if the
-  # HM profile compositor knob is temporarily niri (recovery swap).
-  home.file.".local/bin/ryoku-hyprland-session" = {
-    source = ../../session/ryoku-hyprland-session;
-    executable = true;
-  };
+  # Home Manager modules with an explicit "config" key must put every
+  # configuration option inside it. Keep the GDM wrapper unconditional,
+  # while activating Hyprland-specific settings only for the selected profile.
+  config = lib.mkMerge [
+    {
+      # Session wrapper remains available even if Niri is selected for recovery.
+      home.file.".local/bin/ryoku-hyprland-session" = {
+        source = ../../session/ryoku-hyprland-session;
+        executable = true;
+      };
+    }
+    (lib.mkIf enabled {
+      # APT provides Hyprland; HM only manages the compositor configuration.
+      xdg.configFile."hypr/hyprland.conf".text = conf;
 
-  config = lib.mkIf enabled {
-    # APT provides Hyprland; HM only manages the conf Hyprland reads by default.
-    xdg.configFile."hypr/hyprland.conf".text = conf;
+      home.sessionVariables = {
+        XDG_CURRENT_DESKTOP = "Hyprland:Ryoku";
+        XDG_SESSION_DESKTOP = "Hyprland";
+      };
 
-    home.sessionVariables = {
-      XDG_CURRENT_DESKTOP = "Hyprland:Ryoku";
-      XDG_SESSION_DESKTOP = "Hyprland";
-    };
-
-    xdg.configFile."xdg-desktop-portal/hyprland-portals.conf".text = ''
-      [preferred]
-      default=hyprland;gtk;wlr;
-    '';
-  };
+      xdg.configFile."xdg-desktop-portal/hyprland-portals.conf".text = ''
+        [preferred]
+        default=hyprland;gtk;wlr;
+      '';
+    })
+  ];
 }
