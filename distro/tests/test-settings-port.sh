@@ -46,6 +46,22 @@ grep -Eq 'home-manager' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
 if grep -E '"(nixos-rebuild)"|execv\(.*nixos-rebuild' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" >/dev/null; then
   fail_msg "Debian settings-apply must not exec nixos-rebuild"
 fi
+# switch-generation must activate the chosen generation — not rebuild via do_apply.
+grep -Fq '/activate' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  || fail_msg "switch-generation must exec generation activate script"
+# Ensure no executable return do_apply inside do_switch_generation body (comments OK).
+if awk '/^static int do_switch_generation/,/^static int |^int main/' \
+     "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+     | grep -E '^[[:space:]]*return do_apply\(' >/dev/null; then
+  fail_msg "switch-generation must not call do_apply (would rebuild from source)"
+fi
+# repoPath must not default-guess ~/ryoku-os
+! grep -Fq 'defaultRepo' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must not invent defaultRepo ~/ryoku-os"
+grep -Fq 'repoPath = "";' "$ROOT/distro/flake/hosts/ryoku/default.nix" \
+  || fail_msg "example host must leave settingsApply.repoPath empty"
+grep -Fq 'repoPath = "$repo_path"' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must bake REPO_ROOT into settingsApply.repoPath"
 grep -Fq '/usr/local/libexec/ryoku-settings-apply' "$ROOT/distro/polkit/org.ryoku.settings.apply.policy" \
   || fail_msg "polkit policy must use stable libexec path"
 grep -Fq 'matugen' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \

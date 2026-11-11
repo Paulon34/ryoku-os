@@ -280,8 +280,46 @@ static int do_switch_generation(unsigned gen)
         return 4;
     }
 
-    /* Activate by re-running home-manager switch --flake (activates current profile). */
-    return do_apply();
+    /*
+     * Activate the chosen generation's own activate script.
+     * Do NOT call do_apply() / home-manager switch --flake here — that rebuilds
+     * from current source and would discard the selected older generation.
+     */
+    char activate[PATH_MAX];
+    if (snprintf(activate, sizeof(activate), "%s/activate", canon) >= (int)sizeof(activate)) {
+        fprintf(stderr, "ryoku-settings-apply: activate path overflow\n");
+        return 2;
+    }
+    if (access(activate, X_OK) != 0) {
+        fprintf(stderr,
+                "ryoku-settings-apply: generation %u has no executable activate at %s\n",
+                gen, activate);
+        return 3;
+    }
+
+    fprintf(stderr, "ryoku-settings-apply: activating via %s\n", activate);
+    char *const act_args[] = {
+        activate,
+        NULL,
+    };
+    const uid_t uid = getuid();
+    struct passwd *pw = getpwnam(desktop_user());
+    if (pw && pw->pw_uid == uid) {
+        execv(activate, act_args);
+        fprintf(stderr, "ryoku-settings-apply: execv(%s) failed: %s\n", activate, strerror(errno));
+        return 2;
+    }
+
+    /* pkexec path: run activate as the desktop user. */
+    char *const run_args[] = {
+        (char *)"runuser",
+        (char *)"-u",
+        (char *)desktop_user(),
+        (char *)"--",
+        activate,
+        NULL,
+    };
+    return run_execv_wait(RYOKU_RUNUSER, run_args);
 }
 
 int main(int argc, char **argv)

@@ -15,7 +15,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DISTRO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(cd "$DISTRO_DIR/.." && pwd)
 FLAKE_DIR="${RYOKU_FLAKE_DIR:-$DISTRO_DIR/flake}"
+# Prefer XDG state (mutable activation stamp). Never require HM-managed
+# ~/.config/ryoku/build-info.json — that path conflicts with linkGeneration.
 BUILD_INFO_CANDIDATES=(
+  "${XDG_STATE_HOME:-$HOME/.local/state}/ryoku/build-info.json"
+  "$HOME/.local/state/ryoku/build-info.json"
   "${XDG_CONFIG_HOME:-$HOME/.config}/ryoku/build-info.json"
   "$HOME/.config/ryoku/build-info.json"
   "/etc/ryoku/build-info.json"

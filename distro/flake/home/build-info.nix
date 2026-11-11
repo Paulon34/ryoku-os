@@ -5,52 +5,31 @@
   ...
 }:
 
-# Emit ~/.config/ryoku/build-info.json so ryoku-doctor can detect stale HM
-# generations vs the git tip. Keep flake eval pure — git commit is filled at
-# activation time from the checkout when available.
+# Mutable build stamp for ryoku-doctor. MUST NOT use xdg.configFile / home.file
+# for build-info.json — those become immutable /nix/store symlinks and conflict
+# with activation writes (linkGeneration). State path only:
+#   ~/.local/state/ryoku/build-info.json
 let
   cfg = config.ryoku.profile;
-
-  payload = {
-    schemaVersion = 1;
-    ryokuVersion = "0.1.0-debian-desktop";
-    gitCommit = "unknown";
-    profile = cfg.edition;
-    visual = cfg.visual;
-    shellStyle = cfg.shellStyle;
-    compositor = cfg.compositor;
-    jarvis = cfg.jarvis;
-    hmGeneration = "active";
-    buildDate = "activation";
-    flake = "distro/flake";
-  };
+  stateDir = "${config.home.homeDirectory}/.local/state/ryoku";
+  # Approved checkout baked by host settingsApply.repoPath (never guessed here).
+  approvedRepo = config.ryoku.settingsApply.repoPath;
 in
 {
-  xdg.configFile."ryoku/build-info.json".text = builtins.toJSON payload + "\n";
-
   home.activation.ryokuBuildInfoStamp = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    info="${config.home.homeDirectory}/.config/ryoku/build-info.json"
-    mkdir -p "$(dirname "$info")"
-    # Stamp date
+    state="${stateDir}"
+    info="$state/build-info.json"
+    mkdir -p "$state"
+
     date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo activation)
 
-    # Prefer RYOKU_REPO_PATH, then common checkout names.
-    repo=""
-    for cand in \
-      "''${RYOKU_REPO_PATH:-}" \
-      "${config.home.homeDirectory}/ryoku-os" \
-      "${config.home.homeDirectory}/ryoku-os-visual" \
-      "${config.home.homeDirectory}/ryoku"
-    do
-      if [ -n "$cand" ] && [ -d "$cand/distro/flake" ] && [ -d "$cand/.git" -o -f "$cand/.git" ]; then
-        repo="$cand"
-        break
-      fi
-    done
-
+    # Only the host-approved checkout (settingsApply.repoPath). No ~/ryoku-os guessing.
+    repo=${lib.escapeShellArg approvedRepo}
     commit=unknown
-    if [ -n "$repo" ] && command -v git >/dev/null 2>&1; then
-      commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
+    if [ -n "$repo" ] && [ -d "$repo/distro/flake" ] && { [ -d "$repo/.git" ] || [ -f "$repo/.git" ]; }; then
+      if command -v git >/dev/null 2>&1; then
+        commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
+      fi
     fi
 
     gen=active
@@ -65,6 +44,10 @@ in
       esac
     fi
 
+    # Escape repo for JSON string (no jq required).
+    repo_json=$(printf '%s' "$repo" | ${pkgs.python3}/bin/python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+
+    # Write a regular file under XDG state (never a HM-managed symlink).
     cat >"$info" <<EOF
 {
   "schemaVersion": 1,
@@ -77,7 +60,8 @@ in
   "jarvis": ${if cfg.jarvis then "true" else "false"},
   "hmGeneration": "$gen",
   "buildDate": "$date_utc",
-  "flake": "distro/flake"
+  "flake": "distro/flake",
+  "repoPath": $repo_json
 }
 EOF
   '';

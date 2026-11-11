@@ -13,16 +13,20 @@ fail_msg() { echo "FAIL: $*" >&2; fail=$((fail + 1)); }
 bash -n "$DOC" || fail_msg "ryoku-doctor bash -n"
 
 grep -Fq 'build-info.json' "$DOC" || fail_msg "doctor must read build-info.json"
+grep -Fq '.local/state/ryoku/build-info.json' "$DOC" || fail_msg "doctor must prefer XDG state path"
 grep -Fq 'gitCommit' "$DOC" || fail_msg "doctor must compare gitCommit"
 grep -Fq 'windowrulev2' "$DOC" || fail_msg "doctor must flag windowrulev2"
 grep -Fq 'STALE HM' "$DOC" || fail_msg "doctor must report STALE HM"
 
-# build-info module
+# build-info module — mutable state only (no xdg.configFile conflict)
 BI="$ROOT/distro/flake/home/build-info.nix"
 [[ -f "$BI" ]] || fail_msg "missing build-info.nix"
 grep -Fq 'gitCommit' "$BI" || fail_msg "build-info must stamp gitCommit"
 grep -Fq 'hmGeneration' "$BI" || fail_msg "build-info must stamp hmGeneration"
 grep -Fq 'ryoku-doctor' "$BI" || fail_msg "build-info must package ryoku-doctor"
+grep -Fq '.local/state/ryoku' "$BI" || fail_msg "build-info must write under XDG state"
+! grep -Eq 'xdg\.configFile\."ryoku/build-info' "$BI" \
+  || fail_msg "build-info must NOT use xdg.configFile for mutable stamp"
 
 # Run doctor (expected WARN/OK on CI host — must not crash)
 set +e

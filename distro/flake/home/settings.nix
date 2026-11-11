@@ -7,16 +7,16 @@
 }:
 
 # Port of ryoku-desktop Settings into Debian Modular Home Manager.
-# Installs the Qt GUI + privileged apply helper + Polkit action + seed settings.
+# repoPath MUST be the absolute checkout that bootstrap/HM applied — never
+# guess ~/ryoku-os (VM worktrees are often ryoku-os-visual / *-fixed-* names).
 let
   cfg = config.ryoku.settingsApply;
   username = config.home.username;
   homeDir = config.home.homeDirectory;
 
-  # Default checkout path used by bootstrap / VM docs.
-  defaultRepo = "${homeDir}/ryoku-os";
-  repoPath = if cfg.repoPath != "" then cfg.repoPath else defaultRepo;
-  flakeDir = "${repoPath}/distro/flake";
+  repoPath = cfg.repoPath;
+  flakeDir = if repoPath != "" then "${repoPath}/distro/flake" else "";
+  haveRepo = repoPath != "" && builtins.substring 0 1 repoPath == "/";
 
   hmCli =
     if home-manager != null && home-manager ? packages then
@@ -73,7 +73,11 @@ in
     repoPath = lib.mkOption {
       type = lib.types.str;
       default = "";
-      description = "Absolute path to the ryoku-os checkout (empty → ~/ryoku-os).";
+      description = ''
+        Absolute path to the ryoku-os checkout that this HM generation applies.
+        Written by ryoku-bootstrap from REPO_ROOT. Empty disables privileged
+        apply packaging (no ~/ryoku-os guess).
+      '';
     };
 
     flakeHost = lib.mkOption {
@@ -83,44 +87,56 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    home.packages = [
-      settingsGui
-      applyHelper
-      polkitPolicy
-    ];
-
-    # Seed user settings when missing (never overwrite user edits).
-    home.activation.ryokuSettingsSeed = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      dest="${homeDir}/.config/ryoku/settings.json"
-      mkdir -p "$(dirname "$dest")"
-      if [ ! -e "$dest" ]; then
-        printf '%s\n' ${lib.escapeShellArg seedSettings} >"$dest"
-      fi
-    '';
-
-    # Helper path for ApplyController::helperPathFile (Debian: user-writable mirror + system).
-    # System /etc/ryoku/* requires bootstrap root; also write under XDG for detection fallback.
-    home.file.".config/ryoku/settings-apply-helper".text = "${lib.getExe applyHelper}\n";
-
-    home.sessionVariables.RYOKU_REPO_PATH = repoPath;
-
-    # Desktop launcher is installed by the package; also expose a bin wrapper name.
-    xdg.desktopEntries.ryoku-settings = {
-      name = "Ryoku Settings";
-      genericName = "Settings";
-      comment = "Configure Ryoku desktop appearance and system";
-      exec = "ryoku-settings";
-      icon = "org.ryoku.Settings";
-      terminal = false;
-      categories = [
-        "Settings"
-        "DesktopSettings"
+  config = lib.mkMerge [
+    {
+      assertions = [
+        {
+          assertion = cfg.repoPath == "" || builtins.substring 0 1 cfg.repoPath == "/";
+          message = "ryoku.settingsApply.repoPath must be absolute or empty";
+        }
       ];
-      startupNotify = true;
-      settings = {
-        StartupWMClass = "org.ryoku.Settings";
+    }
+
+    (lib.mkIf cfg.enable {
+      # GUI always available; privileged helper only when repoPath is approved.
+      home.packages = [ settingsGui ] ++ lib.optionals haveRepo [
+        applyHelper
+        polkitPolicy
+      ];
+
+      # Seed user settings when missing (regular file; not HM-managed symlink).
+      home.activation.ryokuSettingsSeed = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        dest="${homeDir}/.config/ryoku/settings.json"
+        mkdir -p "$(dirname "$dest")"
+        if [ ! -e "$dest" ]; then
+          printf '%s\n' ${lib.escapeShellArg seedSettings} >"$dest"
+        fi
+      '';
+
+      home.sessionVariables = lib.mkIf haveRepo {
+        RYOKU_REPO_PATH = repoPath;
       };
-    };
-  };
+
+      home.file.".config/ryoku/settings-apply-helper" = lib.mkIf haveRepo {
+        text = "${lib.getExe applyHelper}\n";
+      };
+
+      xdg.desktopEntries.ryoku-settings = {
+        name = "Ryoku Settings";
+        genericName = "Settings";
+        comment = "Configure Ryoku desktop appearance and system";
+        exec = "ryoku-settings";
+        icon = "org.ryoku.Settings";
+        terminal = false;
+        categories = [
+          "Settings"
+          "DesktopSettings"
+        ];
+        startupNotify = true;
+        settings = {
+          StartupWMClass = "org.ryoku.Settings";
+        };
+      };
+    })
+  ];
 }

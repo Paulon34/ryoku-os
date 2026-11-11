@@ -44,6 +44,7 @@
           username,
           homeDirectory,
           profile ? { },
+          settingsApply ? { },
         }:
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
@@ -66,6 +67,9 @@
                 jarvis = profile.jarvis or false;
                 compositor = profile.compositor or "hyprland";
               };
+              # Absolute checkout path only — never invent ~/ryoku-os.
+              ryoku.settingsApply.repoPath = settingsApply.repoPath or "";
+              ryoku.settingsApply.flakeHost = settingsApply.flakeHost or username;
             }
           ];
         };
@@ -77,9 +81,10 @@
           username = host.username or name;
           homeDirectory = host.homeDirectory or "/home/${name}";
           profile = host.profile or { };
+          settingsApply = host.settingsApply or { };
         in
         mkHome {
-          inherit username homeDirectory profile;
+          inherit username homeDirectory profile settingsApply;
         };
     in
     {
