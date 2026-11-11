@@ -4,7 +4,7 @@
 # start Niri. Does not touch bootloaders or partitions.
 set -euo pipefail
 
-export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Hyprland:Ryoku}"
+export XDG_CURRENT_DESKTOP="Hyprland"
 export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
 export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-Hyprland}"
 
@@ -25,8 +25,14 @@ LOCAL_BIN="${HOME}/.local/bin"
 # exec-once and binds resolve dms/qs/matugen/helpers.
 export PATH="${LOCAL_BIN}:${HM_BIN}:${NIX_BIN}:${PATH}"
 
-# Prefer system Hyprland (APT backports). Fall back to Nix only if present.
-if command -v Hyprland >/dev/null 2>&1; then
+# Hyprland >=0.53 recommends start-hyprland (safe mode/crash recovery).
+# Prefer the Debian system wrapper; keep fallbacks for older installations.
+if [[ -x /usr/bin/start-hyprland ]]; then
+  exec /usr/bin/start-hyprland
+elif command -v start-hyprland >/dev/null 2>&1; then
+  exec start-hyprland
+elif command -v Hyprland >/dev/null 2>&1; then
+  echo "ryoku-hyprland-session: start-hyprland unavailable, using legacy Hyprland" >&2
   exec Hyprland
 elif [[ -x "${HM_BIN}/Hyprland" ]]; then
   exec "${HM_BIN}/Hyprland"
