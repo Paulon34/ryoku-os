@@ -18,8 +18,11 @@ code_lines | grep -Fq 'new_optimizations' &&
   fail "blur:new_optimizations removed/unsafe for 0.55 target — omit it"
 code_lines | grep -Fq 'no_anim on, match:namespace' &&
   fail "0.56 layerrule form banned; use classic layerrule = noanim, …"
-grep -Fq 'windowrulev2' "$HYPR" ||
-  fail "expected classic windowrulev2 for 0.55.x"
+# 0.55.2 deprecates windowrulev2 (startup overlay) — use windowrule + v2 args.
+code_lines | grep -Fq 'windowrulev2' &&
+  fail "windowrulev2 is deprecated on Hyprland 0.55.2 — use windowrule ="
+code_lines | grep -Eq 'windowrule = float, class:' ||
+  fail "expected windowrule = float, class:^(…) for 0.55.x"
 grep -Fq '0.55' "$HYPR" ||
   fail "hyprland.nix must document Debian ~0.55.x target"
 grep -Fq 'ryoku-start-dms' "$HYPR" ||

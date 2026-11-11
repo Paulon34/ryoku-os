@@ -46,6 +46,6 @@ NIRI_SOCKET="$NIRI_SOCKET" niri msg layers
 - **Recovery under `compositor=hyprland`:** HM always installs Niri binary,
   `nixGLIntel`, `~/.config/niri/config.kdl`, and `ryoku-niri-session`.
 - Bootstrap installs **both** GDM `.desktop` files; APT Hyprland failure **aborts**.
-- Hyprland conf targets Debian **~0.55.x** (classic `windowrulev2`), not NixOS 0.56.2.
+- Hyprland conf targets Debian **~0.55.x** (`windowrule = …` v2 semantics; no deprecated `windowrulev2`).
 - Preserve guest `flake.lock` — no `nix flake update` on apply.
 - Agent must not restart GDM/session/VM or delete Niri from the guest.

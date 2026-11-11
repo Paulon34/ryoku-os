@@ -835,6 +835,9 @@ activate_home_manager() {
       || grep -Fq 'no_anim on, match:namespace' "$hypr_conf"; then
       die "Hyprland conf contains 0.56-only syntax; Debian backports is ~0.55.x"
     fi
+    if grep -Eq '^[[:space:]]*windowrulev2[[:space:]]*=' "$hypr_conf"; then
+      die "Hyprland conf still uses deprecated windowrulev2 (0.55.2 overlay); use windowrule ="
+    fi
     command -v Hyprland >/dev/null 2>&1 \
       || die "Hyprland binary missing after apply (APT backports install required)"
     info "Hyprland config present + 0.55.x syntax guard OK (guest: hyprctl layers)"

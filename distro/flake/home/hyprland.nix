@@ -2,9 +2,9 @@
 
 # Hyprland primary compositor (Debian Modular).
 # Target binary: APT trixie-backports hyprland ~0.55.x (NOT NixOS 0.56.2).
-# Config uses hyprlang still supported on 0.55 + classic windowrulev2 /
-# layerrule forms that 0.55.x accepts. Avoid 0.56-only windowrule rewrite
-# (`float on, match:class`) and omit removed blur optimization keys.
+# Config uses hyprlang on 0.55.x. Prefer `windowrule = …` (v2 semantics);
+# `windowrulev2` is deprecated on 0.55.2 and triggers a startup overlay.
+# Avoid 0.56-only rewrite (`float on, match:class`) and omit removed blur keys.
 # Session-scoped: only GDM "Ryoku (Hyprland)" starts Hyprland; Niri recovery
 # stays installed via niri.nix (never exec-once niri here).
 let
@@ -127,19 +127,20 @@ let
         disable_splash_rendering = true
     }
 
-    # Classic windowrulev2 (0.55.x). Avoid 0.56 rewrite: "float on, match:class …".
-    windowrulev2 = float, class:^(xdg-desktop-portal-gtk)$
-    windowrulev2 = center, class:^(xdg-desktop-portal-gtk)$
-    windowrulev2 = size 900 620, class:^(xdg-desktop-portal-gtk)$
-    windowrulev2 = float, class:^(org\.pulseaudio\.pavucontrol)$
-    windowrulev2 = center, class:^(org\.pulseaudio\.pavucontrol)$
-    windowrulev2 = size 920 640, class:^(org\.pulseaudio\.pavucontrol)$
-    windowrulev2 = float, class:^(blueman-manager)$
-    windowrulev2 = center, class:^(blueman-manager)$
-    windowrulev2 = float, class:^(nm-connection-editor)$
-    windowrulev2 = center, class:^(nm-connection-editor)$
-    windowrulev2 = float, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
-    windowrulev2 = center, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
+    # 0.55.x: windowrule carries v2 semantics; windowrulev2 is deprecated (overlay).
+    # Keep "effect, class:^(…)$" form — not 0.56 "float on, match:class …".
+    windowrule = float, class:^(xdg-desktop-portal-gtk)$
+    windowrule = center, class:^(xdg-desktop-portal-gtk)$
+    windowrule = size 900 620, class:^(xdg-desktop-portal-gtk)$
+    windowrule = float, class:^(org\.pulseaudio\.pavucontrol)$
+    windowrule = center, class:^(org\.pulseaudio\.pavucontrol)$
+    windowrule = size 920 640, class:^(org\.pulseaudio\.pavucontrol)$
+    windowrule = float, class:^(blueman-manager)$
+    windowrule = center, class:^(blueman-manager)$
+    windowrule = float, class:^(nm-connection-editor)$
+    windowrule = center, class:^(nm-connection-editor)$
+    windowrule = float, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
+    windowrule = center, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
 
     bind = $mod, RETURN, exec, $terminal
     bind = $mod, SPACE, exec, $menu
