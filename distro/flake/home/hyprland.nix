@@ -127,20 +127,14 @@ let
         disable_splash_rendering = true
     }
 
-    # 0.55.x: windowrule carries v2 semantics; windowrulev2 is deprecated (overlay).
-    # Keep "effect, class:^(…)$" form — not 0.56 "float on, match:class …".
-    windowrule = float, class:^(xdg-desktop-portal-gtk)$
-    windowrule = center, class:^(xdg-desktop-portal-gtk)$
-    windowrule = size 900 620, class:^(xdg-desktop-portal-gtk)$
-    windowrule = float, class:^(org\.pulseaudio\.pavucontrol)$
-    windowrule = center, class:^(org\.pulseaudio\.pavucontrol)$
-    windowrule = size 920 640, class:^(org\.pulseaudio\.pavucontrol)$
-    windowrule = float, class:^(blueman-manager)$
-    windowrule = center, class:^(blueman-manager)$
-    windowrule = float, class:^(nm-connection-editor)$
-    windowrule = center, class:^(nm-connection-editor)$
-    windowrule = float, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
-    windowrule = center, title:^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$
+    # Debian Hyprland 0.55.x: modern Hyprlang window rules (0.53+ syntax).
+    # `windowrulev2` is deprecated; the legacy "float, class:" format
+    # is also invalid. Use match:class/title plus explicit "on" effects.
+    windowrule = match:class ^(xdg-desktop-portal-gtk)$, float on, center on, size 900 620
+    windowrule = match:class ^(org[.]pulseaudio[.]pavucontrol)$, float on, center on, size 920 640
+    windowrule = match:class ^(blueman-manager)$, float on, center on
+    windowrule = match:class ^(nm-connection-editor)$, float on, center on
+    windowrule = match:title ^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$, float on, center on
 
     bind = $mod, RETURN, exec, $terminal
     bind = $mod, SPACE, exec, $menu
