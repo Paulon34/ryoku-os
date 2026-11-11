@@ -3,6 +3,33 @@
 **Default after this port:** **Hyprland** (APT `trixie-backports` ~0.55.x).  
 **Recovery:** **Niri** GDM session remains installed; do not uninstall from the VM until Hyprland is guest-proven.
 
+## First Ryoku Hyprland guest login (Debian 0.55.x)
+
+- `Ryoku (Hyprland)` uses `/usr/bin/start-hyprland` when available, for
+  Hyprland crash recovery and safe mode. A legacy direct binary fallback
+  exists for older guests.
+- GDM `DesktopNames=Hyprland` and `XDG_CURRENT_DESKTOP=Hyprland` avoid the
+  externally managed `Hyprland:Ryoku` warning while keeping the Ryoku session
+  name.
+- Install `hyprland-guiutils` from `trixie-backports` for graphical recovery
+  dialogs (successor to the deprecated `hyprland-qtutils`).
+- Hyprland 0.55.x requires window rules such as
+  `windowrule = match:class ^(example)$, float on, center on`, not
+  `windowrulev2 = float, class:^(example)# Compositor selection (Debian Modular)
+
+**Default after this port:** **Hyprland** (APT `trixie-backports` ~0.55.x).  
+ or
+  `windowrule = float, class:^(example)# Compositor selection (Debian Modular)
+
+**Default after this port:** **Hyprland** (APT `trixie-backports` ~0.55.x).  
+.
+- A red overlay after rebuilding may indicate the GDM session is still
+  running the previous Home Manager generation. Log out normally and back in.
+- `hyprctl configerrors` and `hyprctl layers` require a Hyprland session
+  context: run them from Kitty **inside** that session, not from plain SSH.
+
+
+
 ## Matrix
 
 | Choice | Default | Install | Session | Notes |
