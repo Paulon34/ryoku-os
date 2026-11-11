@@ -216,7 +216,7 @@ in
       xdg.configFile."hypr/hyprland.conf".text = conf;
 
       home.sessionVariables = {
-        XDG_CURRENT_DESKTOP = "Hyprland:Ryoku";
+        XDG_CURRENT_DESKTOP = "Hyprland";
         XDG_SESSION_DESKTOP = "Hyprland";
       };
 
