@@ -27,9 +27,10 @@ home-manager switch --flake ./distro/flake#alice
 
 Committed references:
 
-- `hosts/ryoku` — Quattro default (`shellStyle = "quattro"`)
-- `hosts/ryoku-islands` — Islands visual test (`shellStyle = "islands"`)
+- `hosts/ryoku` — Hyprland + Islands default (`compositor = "hyprland"`, `shellStyle = "islands"`)
+- `hosts/ryoku-islands` — same Islands/Hyprland reference
 
 ```bash
 home-manager switch --flake ./distro/flake#ryoku-islands
+# Niri recovery: profile.compositor = "niri" (GDM session still installed)
 ```

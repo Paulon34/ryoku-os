@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Ryoku Hyprland session wrapper — Exec= target for the GDM .desktop file.
+# Prefers APT Hyprland (trixie-backports ~0.55.x) with host Mesa. Does not
+# start Niri. Does not touch bootloaders or partitions.
+set -euo pipefail
+
+export XDG_CURRENT_DESKTOP="Hyprland"
+export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
+export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-Hyprland}"
+
+export NIXOS_OZONE_WL="${NIXOS_OZONE_WL:-1}"
+export MOZ_ENABLE_WAYLAND="${MOZ_ENABLE_WAYLAND:-1}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}"
+
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+  echo "ryoku-hyprland-session: XDG_RUNTIME_DIR unset (pam_systemd / logind required)" >&2
+  exit 1
+fi
+
+HM_BIN="${HOME}/.local/state/nix/profiles/home-manager/home-path/bin"
+NIX_BIN="${HOME}/.nix-profile/bin"
+LOCAL_BIN="${HOME}/.local/bin"
+
+# GDM does not source Home Manager's session PATH. Prepend HM/Nix bins so
+# exec-once and binds resolve dms/qs/matugen/helpers.
+export PATH="${LOCAL_BIN}:${HM_BIN}:${NIX_BIN}:${PATH}"
+
+# Hyprland >=0.53 recommends start-hyprland (safe mode/crash recovery).
+# Prefer the Debian system wrapper; keep fallbacks for older installations.
+if [[ -x /usr/bin/start-hyprland ]]; then
+  exec /usr/bin/start-hyprland
+elif command -v start-hyprland >/dev/null 2>&1; then
+  exec start-hyprland
+elif command -v Hyprland >/dev/null 2>&1; then
+  echo "ryoku-hyprland-session: start-hyprland unavailable, using legacy Hyprland" >&2
+  exec Hyprland
+elif [[ -x "${HM_BIN}/Hyprland" ]]; then
+  exec "${HM_BIN}/Hyprland"
+elif [[ -x "${NIX_BIN}/Hyprland" ]]; then
+  exec "${NIX_BIN}/Hyprland"
+else
+  echo "ryoku-hyprland-session: Hyprland not found (install APT hyprland from trixie-backports)" >&2
+  exit 1
+fi

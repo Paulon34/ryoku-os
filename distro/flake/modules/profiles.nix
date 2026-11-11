@@ -1,8 +1,9 @@
 { config, lib, ... }:
 
-# Profile knobs consumed by hosts/<user>/default.nix (preflight / ENTREGA C).
-# Combinable axes already: edition × visual × shellStyle × jarvis.
-# compositor is reserved for a future selectable stack — only niri is wired.
+# Profile knobs consumed by hosts/<user>/default.nix.
+# Axes: edition × visual × shellStyle × jarvis × compositor.
+# After this Hyprland port: compositor default = hyprland; niri remains a
+# selectable recovery session (GDM still installs both .desktop files).
 {
   options.ryoku.profile = {
     edition = lib.mkOption {
@@ -19,23 +20,22 @@
 
     shellStyle = lib.mkOption {
       type = lib.types.enum [ "quattro" "islands" ];
-      default = "quattro";
-      description = "Shell style (Quattro flat bar vs Islands).";
+      default = "islands";
+      description = "Shell style (Islands floating capsules vs Quattro flat bar).";
     };
 
     jarvis = lib.mkOption {
       type = lib.types.bool;
-      # Off by default — Minimal must not enable Jarvis unless explicit.
       default = false;
       description = "Enable Jarvis bridge (default off).";
     };
 
     compositor = lib.mkOption {
-      type = lib.types.enum [ "niri" "hyprland" ];
-      default = "niri";
+      type = lib.types.enum [ "hyprland" "niri" ];
+      default = "hyprland";
       description = ''
-        Wayland compositor profile. Only "niri" is implemented on Debian Modular.
-        "hyprland" is reserved (see distro/docs/COMPOSITOR.md); selecting it fails eval.
+        Wayland compositor. Default hyprland (APT trixie-backports ~0.55.x).
+        niri remains available as a GDM recovery session — see distro/docs/COMPOSITOR.md.
       '';
     };
   };
@@ -43,11 +43,8 @@
   config = {
     assertions = [
       {
-        assertion = config.ryoku.profile.compositor == "niri";
-        message = ''
-          ryoku.profile.compositor = "${config.ryoku.profile.compositor}" is not wired on
-          Debian Modular yet. Keep compositor = "niri" (default). See distro/docs/COMPOSITOR.md.
-        '';
+        assertion = builtins.elem config.ryoku.profile.compositor [ "hyprland" "niri" ];
+        message = "ryoku.profile.compositor must be hyprland or niri";
       }
     ];
   };

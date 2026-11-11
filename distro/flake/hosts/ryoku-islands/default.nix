@@ -1,6 +1,5 @@
-# Islands visual test host — same as ryoku/ but shellStyle = islands.
-# Use for Debian Niri Islands validation without changing the quattro default.
-# Bootstrap: --shell-style islands (writes hosts/<user>/default.nix likewise).
+# Islands + Hyprland reference host (same defaults as ryoku/).
+# Select Quattro with --shell-style quattro; Niri recovery with --compositor niri.
 {
   username = "ryoku";
   homeDirectory = "/home/ryoku";
@@ -8,6 +7,7 @@
     edition = "minimal";
     visual = "balanced";
     shellStyle = "islands";
+    compositor = "hyprland";
     jarvis = false;
   };
 }

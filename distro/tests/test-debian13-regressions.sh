@@ -65,9 +65,17 @@ pass "D-Bus session for Home Manager dconfSettings"
 NIRI_KDL="$ROOT/distro/flake/home/niri.nix"
 grep -Fq '    prefer-no-csd' "$NIRI_KDL" || fail "correct Niri KDL node missing"
 ! grep -Fq 'prefers-no-csd' "$NIRI_KDL" || fail "invalid prefers-no-csd still present"
-grep -Fq '"$niri_bin" validate' "$BOOTSTRAP" ||
-  fail "bootstrap does not validate Niri KDL after HM activation"
-pass "Niri KDL syntax regression guarded"
+grep -Fq 'niri_bin' "$BOOTSTRAP" ||
+  fail "bootstrap must still validate Niri KDL when compositor=niri"
+grep -Fq 'hyprland.conf' "$BOOTSTRAP" ||
+  fail "bootstrap must check Hyprland conf when compositor=hyprland"
+grep -Fq '0.55.2 syntax guard' "$BOOTSTRAP" ||
+  fail "bootstrap must keep Hyprland 0.55.2 syntax guard after HM switch"
+grep -Fq 'windowrulev2' "$BOOTSTRAP" ||
+  fail "bootstrap must reject deprecated windowrulev2"
+! grep -Fq "grep -Eq 'windowrule = float on,'" "$BOOTSTRAP" ||
+  fail "bootstrap must not reject verified 0.55.2 'float on' as 0.56-only"
+pass "Niri KDL + Hyprland conf post-HM checks"
 
 # Verify Nix-installed compositor gets a Mesa wrapper rather than running
 # directly (previously tried the NixOS-only /run/opengl-driver GBM location).
@@ -226,6 +234,56 @@ grep -Fq 'shellStyle == "islands"' "$NIRI_KDL" ||
 grep -Fq 'shellStyle = "islands"' "$ROOT/distro/flake/hosts/ryoku-islands/default.nix" ||
   fail "ryoku-islands host must set shellStyle islands"
 pass "Islands styleBar + Niri gaps + test host"
+
+# Hyprland primary compositor port (reuse desktop look; APT backports binary).
+HYPR_MODULE="$ROOT/distro/flake/home/hyprland.nix"
+HYPR_SESSION="$ROOT/distro/session/ryoku-hyprland-session"
+HYPR_DESKTOP="$ROOT/distro/session/ryoku-hyprland.desktop"
+PROFILES="$ROOT/distro/flake/modules/profiles.nix"
+[[ -f "$HYPR_MODULE" ]] || fail "hyprland.nix missing"
+[[ -f "$HYPR_SESSION" ]] || fail "ryoku-hyprland-session missing"
+[[ -f "$HYPR_DESKTOP" ]] || fail "ryoku-hyprland.desktop missing"
+grep -Fq 'compositor == "hyprland"' "$HYPR_MODULE" ||
+  fail "hyprland.nix must gate on ryoku.profile.compositor"
+grep -Fq 'exec-once = ${home}/.local/bin/ryoku-start-dms' "$HYPR_MODULE" ||
+  fail "Hyprland must exec-once ryoku-start-dms (no Niri spawn under Hyprland)"
+! grep -Fq 'spawn-at-startup' "$HYPR_MODULE" ||
+  fail "Hyprland module must not use Niri spawn-at-startup"
+grep -Fq 'default = "hyprland"' "$PROFILES" ||
+  fail "profiles.nix default compositor must be hyprland"
+grep -Fq 'default = "islands"' "$PROFILES" ||
+  fail "profiles.nix default shellStyle must be islands (test visual)"
+! grep -Fq 'assertion = config.ryoku.profile.compositor == "niri"' "$PROFILES" ||
+  fail "profiles must no longer assert compositor==niri only"
+grep -Fq 'hyprland-colors.conf' "$MATUGEN_MODULE" ||
+  fail "matugen must write hyprland-colors.conf for Material You borders"
+grep -Fq 'hyprctl reload' "$MATUGEN_MODULE" ||
+  fail "change-wallpaper must reload Hyprland after matugen"
+grep -Fq 'trixie-backports' "$BOOTSTRAP" ||
+  fail "bootstrap must enable trixie-backports for Hyprland APT"
+grep -Fq 'packages-hyprland.txt' "$BOOTSTRAP" ||
+  fail "bootstrap must install packages-hyprland.txt from backports"
+grep -Fq 'ryoku-hyprland.desktop' "$BOOTSTRAP" ||
+  fail "bootstrap must install Hyprland GDM session"
+grep -Fq 'ryoku-niri.desktop' "$BOOTSTRAP" ||
+  fail "bootstrap must keep Niri GDM recovery session"
+grep -Fq 'compositor = "hyprland"' "$ROOT/distro/flake/hosts/ryoku/default.nix" ||
+  fail "default host must set compositor hyprland"
+grep -Fq 'enabled = true' "$DMS_MODULE" ||
+  fail "bar surface enabled=true must remain (hyprctl layers proof path)"
+# Fail-closed APT: never warn-and-continue without Hyprland.
+grep -Fq 'aborting apply (no false success)' "$BOOTSTRAP" ||
+  fail "Hyprland APT failure must abort apply (fail-closed)"
+! grep -Fq 'Hyprland backports install failed — check' "$BOOTSTRAP" ||
+  fail "soft-warn on Hyprland APT failure must be removed"
+# Niri recovery under compositor=hyprland: binary+config always.
+! grep -Fq 'config = lib.mkIf enabled' "$NIRI_KDL" ||
+  fail "niri.nix must not wrap entire module in mkIf enabled (recovery)"
+grep -Fq 'xdg.configFile."niri/config.kdl"' "$NIRI_KDL" ||
+  fail "niri config.kdl must always be emitted"
+grep -Fq 'preserving existing flake.lock' "$BOOTSTRAP" ||
+  fail "bootstrap must preserve VM-tested flake.lock (no unnecessary update)"
+pass "Hyprland primary + Niri recovery + Matugen hypr colors"
 
 # Fonts / theme parity with ryoku-desktop (not DejaVu-only placeholders).
 KITTY="$ROOT/distro/flake/home/kitty.nix"
