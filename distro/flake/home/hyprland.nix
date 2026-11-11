@@ -1,10 +1,12 @@
 { config, pkgs, lib, ... }:
 
 # Hyprland primary compositor (Debian Modular).
-# Target binary: APT trixie-backports hyprland ~0.55.x (NOT NixOS 0.56.2).
-# Config uses hyprlang on 0.55.x. Prefer `windowrule = …` (v2 semantics);
-# `windowrulev2` is deprecated on 0.55.2 and triggers a startup overlay.
-# Avoid 0.56-only rewrite (`float on, match:class`) and omit removed blur keys.
+# Target binary: APT trixie-backports hyprland ~0.55.2 (NOT NixOS 0.56.2).
+# Verified against Hyprland v0.55.2 ConfigManager::handleWindowrule /
+# handleLayerrule: each comma field is "key value" (space required). Effects
+# such as float/center/blur/no_anim need a truthy value (`on`). Matchers use
+# `match:class` / `match:title` / `match:namespace`. `windowrulev2` only emits
+# a deprecation overlay. Omit removed blur keys (e.g. new_optimizations).
 # Session-scoped: only GDM "Ryoku (Hyprland)" starts Hyprland; Niri recovery
 # stays installed via niri.nix (never exec-once niri here).
 let
@@ -50,9 +52,10 @@ let
     animation = workspaces,1,5,easeOutQuint
   '';
 
-  # 0.55.x layerrule form (not 0.56 no_anim on, match:namespace …).
+  # 0.55.2 layerrule keyword form (LayerRuleEffectContainer + handleLayerrule):
+  # effect names are no_anim / ignore_alpha; every field needs a value.
   quattroLayerRules = ''
-    layerrule = noanim, ^(dms:.*)$
+    layerrule = match:namespace ^(dms:.*)$, no_anim on
   '';
 
   conf = ''
@@ -127,9 +130,9 @@ let
         disable_splash_rendering = true
     }
 
-    # Debian Hyprland 0.55.x: modern Hyprlang window rules (0.53+ syntax).
-    # `windowrulev2` is deprecated; the legacy "float, class:" format
-    # is also invalid. Use match:class/title plus explicit "on" effects.
+    # Debian Hyprland 0.55.2 (src/config/legacy/ConfigManager.cpp handleWindowrule):
+    # bare `float`/`center`/`class:…` → "invalid field …: missing a value".
+    # `windowrulev2` → deprecation overlay. Use match:* + valued effects.
     windowrule = match:class ^(xdg-desktop-portal-gtk)$, float on, center on, size 900 620
     windowrule = match:class ^(org[.]pulseaudio[.]pavucontrol)$, float on, center on, size 920 640
     windowrule = match:class ^(blueman-manager)$, float on, center on

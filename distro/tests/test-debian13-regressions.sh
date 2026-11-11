@@ -69,6 +69,12 @@ grep -Fq 'niri_bin' "$BOOTSTRAP" ||
   fail "bootstrap must still validate Niri KDL when compositor=niri"
 grep -Fq 'hyprland.conf' "$BOOTSTRAP" ||
   fail "bootstrap must check Hyprland conf when compositor=hyprland"
+grep -Fq '0.55.2 syntax guard' "$BOOTSTRAP" ||
+  fail "bootstrap must keep Hyprland 0.55.2 syntax guard after HM switch"
+grep -Fq 'windowrulev2' "$BOOTSTRAP" ||
+  fail "bootstrap must reject deprecated windowrulev2"
+! grep -Fq "grep -Eq 'windowrule = float on,'" "$BOOTSTRAP" ||
+  fail "bootstrap must not reject verified 0.55.2 'float on' as 0.56-only"
 pass "Niri KDL + Hyprland conf post-HM checks"
 
 # Verify Nix-installed compositor gets a Mesa wrapper rather than running
