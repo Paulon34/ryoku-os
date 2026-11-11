@@ -5,3 +5,5 @@
 
 hyprland
 xdg-desktop-portal-hyprland
+# Replaces the deprecated hyprland-qtutils and supplies GUI recovery dialogs.
+hyprland-guiutils
