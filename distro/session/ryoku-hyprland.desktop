@@ -4,5 +4,5 @@ Comment=Ryoku Wayland session on Hyprland (primary)
 Exec=ryoku-hyprland-session
 TryExec=ryoku-hyprland-session
 Type=Application
-DesktopNames=Hyprland;Ryoku
+DesktopNames=Hyprland
 X-GDM-SessionRegisters=true
