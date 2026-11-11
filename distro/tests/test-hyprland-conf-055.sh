@@ -43,4 +43,19 @@ grep -Fq 'niri' "$NIRI" || fail "niri.nix missing niri package"
 grep -Fq 'xdg.configFile."niri/config.kdl"' "$NIRI" ||
   fail "niri config.kdl must always be written for GDM recovery"
 
+# Keep GDM/Hyprland environment compliant with 0.53+ startup advice.
+SESSION="$ROOT/distro/session/ryoku-hyprland-session"
+DESKTOP="$ROOT/distro/session/ryoku-hyprland.desktop"
+APT="$ROOT/distro/apt/packages-hyprland.txt"
+grep -Fq 'exec /usr/bin/start-hyprland' "$SESSION" ||
+  fail "Ryoku GDM wrapper should prefer start-hyprland"
+grep -Fq 'export XDG_CURRENT_DESKTOP="Hyprland"' "$SESSION" ||
+  fail "GDM wrapper must not set XDG_CURRENT_DESKTOP=Hyprland:Ryoku"
+grep -Fxq 'DesktopNames=Hyprland' "$DESKTOP" ||
+  fail "GDM session should advertise canonical Hyprland desktop identifier"
+grep -Fxq 'hyprland-guiutils' "$APT" ||
+  fail "Debian backports GUI recovery helpers missing"
+grep -Fq 'XDG_CURRENT_DESKTOP = "Hyprland";' "$HYPR" ||
+  fail "Home Manager should export the canonical Hyprland desktop identifier"
+
 pass "Hyprland conf targets Debian 0.55.x; Niri recovery always available"
