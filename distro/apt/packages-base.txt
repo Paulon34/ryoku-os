@@ -35,11 +35,26 @@ seatd
 kitty
 thunar
 fuzzel
+firefox-esr
 xdg-utils
 xdg-user-dirs
 xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-desktop-portal-wlr
+
+# Screenshots / clipboard (host tools; HM may also provide grim/slurp)
+grim
+slurp
+wl-clipboard
+
+# Flatpak plumbing (minimal keeps runtime; declared apps are Full/Settings)
+flatpak
+
+# Fonts / icons (minimal usable set)
+fonts-noto-core
+fonts-noto-color-emoji
+fonts-jetbrains-mono
+papirus-icon-theme
 
 # Network / audio / auth
 network-manager

@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ryoku.local/schema/settings.schema.json",
+  "title": "Ryoku Settings",
+  "description": "Canonical declarative settings for Ryoku Desktop (schemaVersion 1). Null means: keep existing Nix/HM/DMS config.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema major version. Bump only with a documented migration."
+    },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "dynamicColors": {
+          "type": "boolean",
+          "description": "Prefer Matugen/Material You dynamic theming when supported."
+        },
+        "wallpaper": {
+          "type": ["string", "null"],
+          "description": "Basename of a Ryoku-managed wallpaper under assets/wallpapers (installed to ~/.local/share/wallpapers), e.g. \"1.jpg\". Null = leave wallpaper pipeline unchanged. Absolute /home paths are not used. Live desktop apply — independent of loginWallpaper. Always a static image; kept while wallpaperType is \"video\" so switching back restores it."
+        },
+        "wallpaperType": {
+          "type": ["string", "null"],
+          "enum": ["image", "video", null],
+          "description": "Which desktop wallpaper is active. Null / missing / \"image\" = appearance.wallpaper (static, DMS). \"video\" = appearance.videoWallpaper.file rendered by mpvpaper; DMS shows a poster frame used for Material You and the lock screen. Live apply — not projected by Nix."
+        },
+        "videoWallpaper": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "description": "Video wallpaper selection and playback options. Null = none configured. Option nulls = defaults.",
+          "properties": {
+            "file": {
+              "type": ["string", "null"],
+              "description": "Basename of a Ryoku-managed video under assets/wallpapers, e.g. \"rain.mp4\".",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.([Mm][Pp]4|[Ww][Ee][Bb][Mm]|[Mm][Kk][Vv]|[Mm][Oo][Vv])$"
+            },
+            "loop": {
+              "type": ["boolean", "null"],
+              "description": "Loop playback. Null = true."
+            },
+            "audio": {
+              "type": ["boolean", "null"],
+              "description": "Play the audio track. Null = false."
+            },
+            "profile": {
+              "type": ["string", "null"],
+              "enum": ["economy", "balanced", "quality", null],
+              "description": "economy ≈ 15 fps, balanced ≈ 30 fps, quality = source frame rate. All use VA-API decoding. Null = balanced."
+            },
+            "pauseWhenCovered": {
+              "type": ["boolean", "null"],
+              "description": "Pause while the wallpaper is hidden (fullscreen window, locked session). Null = true."
+            }
+          }
+        },
+        "visualProfile": {
+          "type": ["string", "null"],
+          "enum": ["economy", "balanced", "cinematic", null],
+          "description": "Shell visual profile. economy = fade-only motion, no blur/shadows; balanced = default motion and blur; cinematic = depth (subtle tilt), stronger elevation and blur (capped over a video wallpaper). Null = balanced. Live: DMS watches this file; not projected by Nix."
+        },
+        "shellStyle": {
+          "type": ["string", "null"],
+          "enum": ["quattro", "islands", null],
+          "description": "Desktop shell style. quattro = flat edge-to-edge bar, workspace numbers, opaque cards framed by the Hyprland active-border gradient and grow-from-the-icon motion (after Omarchy Quattro); islands = the floating pill bar of earlier Ryoku. Null = quattro. Projected by Nix on Apply (DMS build, bar layout, Hyprland look)."
+        },
+        "visualProfileAuto": {
+          "type": ["boolean", "null"],
+          "description": "Follow power state: power-saver or battery ≤ 20% → economy; on battery, cinematic → balanced. Event-driven in DMS (UPower / power-profiles-daemon). Null = off."
+        },
+        "loginWallpaper": {
+          "type": ["string", "null"],
+          "description": "Basename of a Ryoku-managed wallpaper for the SDDM login screen. Null = theme embedded default. Projected by Nix on Apply (store path). Independent of appearance.wallpaper. Images only — SDDM never plays video.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.(jpg|jpeg|png|webp)$"
+        },
+        "iconTheme": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "cursorTheme": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "fontUi": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "fontMono": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "transparency": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "0 opaque … 1 fully transparent where applicable; null = existing config."
+        },
+        "animations": {
+          "type": "boolean"
+        }
+      }
+    },
+    "apps": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Application management. Flatpaks declared here are projected to nix-flatpak.",
+      "properties": {
+        "flatpakDeclared": {
+          "type": "array",
+          "description": "Flatpak application IDs managed by Ryoku (alphabetical, unique). Projected to services.flatpak.packages. Empty array = declare none.",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(\\.[A-Za-z0-9][A-Za-z0-9._-]*)+$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "desktop": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "hyprland": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "gapsIn": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 64
+            },
+            "gapsOut": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 128
+            },
+            "rounding": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 48
+            }
+          }
+        }
+      }
+    },
+    "weather": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Weather widget location. Projected by Home Manager into DMS (session weatherLocation, settings weatherEnabled).",
+      "properties": {
+        "location": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+          "description": "Place name resolved by the DMS built-in Open-Meteo geocoding, e.g. \"City\" or \"City, Country\". Personal value — never a default. Null = weather hidden and never fetched (no fallback city)."
+        }
+      }
+    }
+  }
+}

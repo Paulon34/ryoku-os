@@ -48,7 +48,7 @@
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
-            inherit nixGL dankMaterialShell;
+            inherit nixGL dankMaterialShell home-manager;
             ryokuUser = {
               inherit username homeDirectory;
             };
@@ -99,7 +99,24 @@
           ryokuSettingsJson = "/home/ryoku/.config/ryoku/settings.json";
           ryokuShellStyle = "quattro";
         };
+        ryoku-settings = pkgs.callPackage ./pkgs/ryoku-settings.nix {
+          ryokuRepoPathDefault = "/home/ryoku/ryoku-os";
+          ryokuFlakeHostDefault = "ryoku";
+        };
+        ryoku-settings-apply = pkgs.callPackage ./pkgs/ryoku-settings-apply.nix {
+          repoPath = "/home/ryoku/ryoku-os";
+          flakeHost = "ryoku";
+          flakeDir = "/home/ryoku/ryoku-os/distro/flake";
+          home-manager = home-manager.packages.${system}.default;
+        };
       };
+
+      # SHA-256 of the declarative apply subset (ryoku/settings.json via lib.nix).
+      ryokuSettingsHash =
+        let
+          ryokuLib = import ../ryoku/lib.nix { inherit lib; };
+        in
+        ryokuLib.settingsHash;
 
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
         test -f ${./home/home.nix}
@@ -107,9 +124,17 @@
         test -f ${./home/hyprland.nix}
         test -f ${./home/session-helpers.nix}
         test -f ${./home/dms.nix}
+        test -f ${./home/settings.nix}
+        test -f ${./home/build-info.nix}
+        test -f ${./pkgs/ryoku-settings.nix}
+        test -f ${./pkgs/ryoku-settings-apply.nix}
         test -f ${./patches/dms/1.5.3/ryoku-quattro-foundation.patch}
         test -f ${./hosts/ryoku/default.nix}
         test -f ${./modules/profiles.nix}
+        test -f ${../apps/ryoku-settings/CMakeLists.txt}
+        test -f ${../ryoku/settings.json}
+        test -f ${../polkit/org.ryoku.settings.apply.policy}
+        test -x ${../scripts/ryoku-doctor}
         mkdir -p $out
         echo ok > $out/result
       '';

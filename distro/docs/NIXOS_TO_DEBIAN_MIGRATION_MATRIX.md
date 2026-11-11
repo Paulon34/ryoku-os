@@ -23,10 +23,14 @@ Install legend: **APT** | **Nix/HM** | **Flatpak** | **N/A**
 | PipeWire | NixOS services | **APT** + user systemd at login | — | — | OK | Dummy sink on VM expected |
 | Portals | xdg-desktop-portal* | **APT** gtk+wlr | portals.conf | — | OK | — |
 | GDM session | SDDM astronaut (GPL QML) | **GDM** + ryoku-niri.desktop | session wrapper | — | OK | Astronaut not ported |
-| Ryoku Settings Qt | Nix app | **N/A** (later) | — | — | — | Not vendored |
-| Video wallpaper | ryoku-video-wallpaper | **N/A** | — | — | — | Static only |
+| Ryoku Settings Qt | Nix app + polkit apply | **Nix/HM** `ryoku-settings` + Debian `ryoku-settings-apply` (HM switch) + Polkit `/usr/local/libexec/…` | GUI + apply helpers | Qt6, pkexec | Code ready | Guest Apply/polkit TBD |
+| Wallpaper persist | Settings + DMS + matugen | **Settings WallpaperApplier** + `change-wallpaper` → DMS + matugen + `~/.config/ryoku/current-wallpaper` | same | — | Code ready | Guest palette TBD |
+| ryoku-doctor / build-info | (NixOS generations UI) | **`distro/scripts/ryoku-doctor`** + HM `build-info.json` | — | read-only | Code ready | Guest stale-HM check TBD |
+| Video wallpaper | ryoku-video-wallpaper | **N/A** (static only on Debian) | — | — | — | Helper optional no-op |
 | dgop | optional monitor | **optional Nix** later | — | — | — | Does not hide bar |
-| Flatpaks | settings.json list | Profile MVP later | — | flatpak | — | Design only |
+| Flatpaks | settings.json list | **APT** `flatpak` (minimal) + Full extras; Settings Apps page | seed settings.json | flatpak | Partial | Declared installs TBD |
+| Firefox / FM / terminal | mixed | **APT** firefox-esr, thunar, kitty | — | — | Wired | Guest launch TBD |
+| Module groups Full | NixOS modules | **APT** `packages-full.txt` via `--profile full` + HM profile edition | bootstrap | — | Wired | Guest Full TBD |
 | External .deb | rare | Profile metadata later | — | sha256 | — | No blobs in git |
 
 ## Preserve Nix/HM where it still makes sense

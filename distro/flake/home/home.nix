@@ -19,6 +19,8 @@
     ./nixgl.nix
     ./dms.nix
     ./matugen.nix
+    ./build-info.nix
+    ./settings.nix
   ];
 
   home.stateVersion = "25.11";

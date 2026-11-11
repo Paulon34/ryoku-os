@@ -163,6 +163,9 @@ jobs:
           apt-get update
           grep -vE '^[[:space:]]*(#|$)' distro/apt/packages-base.txt |
             xargs -r apt-get --simulate install --no-install-recommends
+          # Full edition additive set (simulate separately; union is bootstrap's job)
+          grep -vE '^[[:space:]]*(#|$)' distro/apt/packages-full.txt |
+            xargs -r apt-get --simulate install --no-install-recommends
 
   distro:
     name: distro-debian-foundation
@@ -191,6 +194,18 @@ jobs:
 
       - name: DMS bar Wayland surface (enabled/position) regressions
         run: bash ./distro/tests/test-dms-bar-surface.sh
+
+      - name: Hyprland 0.55.2 windowrule parser guards
+        run: bash ./distro/tests/test-hyprland-conf-055.sh
+
+      - name: ryoku-doctor + build-info static checks
+        run: bash ./distro/tests/test-ryoku-doctor.sh
+
+      - name: Ryoku Settings Debian port static checks
+        run: bash ./distro/tests/test-settings-port.sh
+
+      - name: APT module groups + bootstrap full dry-run
+        run: bash ./distro/tests/test-apt-groups.sh
 
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

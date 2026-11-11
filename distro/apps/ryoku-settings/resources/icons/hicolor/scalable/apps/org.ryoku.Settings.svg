@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Ryoku Settings">
+  <defs>
+    <linearGradient id="tile" x1="18" y1="14" x2="110" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1c2430"/>
+      <stop offset="1" stop-color="#121820"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="30" fill="url(#tile)"/>
+  <rect x="10" y="10" width="108" height="108" rx="30" fill="none" stroke="#8eb6ff" stroke-opacity="0.28" stroke-width="3"/>
+  <!-- Abstract geometric R (stem + bowl + leg), readable at small sizes -->
+  <path fill="#b6d0ff" fill-rule="evenodd" d="
+    M40 34
+    h16 v24 h10
+    c14 0 24 8 24 20
+    c0 8-4 14-11 18
+    l18 18
+    c2 2 2 6-1 8
+    c-2 2-6 2-8 0
+    L68 102
+    H40
+    c-4 0-6-2-6-6
+    V40
+    c0-4 2-6 6-6z
+    M56 48
+    v16 h8
+    c6 0 10-3 10-8
+    s-4-8-10-8
+    H56z"/>
+</svg>

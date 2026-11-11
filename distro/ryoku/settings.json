@@ -1,0 +1,32 @@
+{
+    "appearance": {
+        "animations": true,
+        "cursorTheme": null,
+        "dynamicColors": true,
+        "fontMono": null,
+        "fontUi": null,
+        "iconTheme": null,
+        "loginWallpaper": "ryoku-night.jpg",
+        "shellStyle": null,
+        "transparency": null,
+        "videoWallpaper": null,
+        "visualProfile": "balanced",
+        "visualProfileAuto": true,
+        "wallpaper": "ryoku-dusk.jpg",
+        "wallpaperType": null
+    },
+    "apps": {
+        "flatpakDeclared": []
+    },
+    "desktop": {
+        "hyprland": {
+            "gapsIn": null,
+            "gapsOut": null,
+            "rounding": null
+        }
+    },
+    "schemaVersion": 1,
+    "weather": {
+        "location": null
+    }
+}
