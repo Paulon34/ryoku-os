@@ -62,6 +62,13 @@ grep -Fq 'settings"), QStringLiteral("set")' "$ROOT/distro/apps/ryoku-settings/s
 grep -Fq 'mg.exitCode() != 0' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
   && pass "Matugen failures are checked" || fail_msg "Matugen failure silently ignored"
 
+grep -Fq 'settings set currentThemeName dynamic' "$ROOT/distro/flake/home/matugen.nix" \
+  && pass "Wallpaper hotkey selects dynamic DMS mode" || fail_msg "hotkey wallpaper never enables dynamic DMS"
+grep -Fq 'if [[ "$dynamic" == true ]]; then' "$ROOT/distro/flake/home/matugen.nix" \
+  && pass "Wallpaper hotkey respects disabled Dynamic Colors" || fail_msg "hotkey ignores color preference"
+grep -Fq 'WARN: matugen image failed' "$ROOT/distro/flake/home/matugen.nix" \
+  && pass "Wallpaper hotkey reports Matugen failure" || fail_msg "hotkey hides Matugen errors"
+
 # DMS single-instance flock (Hyprland exec-once reuse)
 grep -Fq 'flock' "$ROOT/distro/flake/home/dms.nix" \
   && pass "dms start flock" || fail_msg "ryoku-start-dms missing flock"
