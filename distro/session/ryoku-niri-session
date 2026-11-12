@@ -36,6 +36,14 @@ LOCAL_BIN="${HOME}/.local/bin"
 # Niri spawn-at-startup and keybind helpers resolve dms/qs/matugen/fuzzel.
 export PATH="${LOCAL_BIN}:${HM_BIN}:${NIX_BIN}:${PATH}"
 
+# GDM does not source Home Manager's XDG_DATA_DIRS either. Without these
+# profile share dirs, DMS cannot discover org.ryoku.Settings.desktop (or
+# other Nix-installed applications) even when their executables are on PATH.
+# Preserve system and Flatpak directories inherited from GDM when present.
+HM_SHARE="${HM_BIN%/bin}/share"
+NIX_SHARE="${NIX_BIN%/bin}/share"
+export XDG_DATA_DIRS="${HM_SHARE}:${NIX_SHARE}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
 HM_NIRI="${HM_BIN}/niri"
 NIX_NIRI="${NIX_BIN}/niri"
 HM_NIXGL="${HM_BIN}/nixGLIntel"
