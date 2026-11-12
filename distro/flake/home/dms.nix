@@ -403,7 +403,11 @@ in
         exit 1
       fi
 
-      # Lock before checking processes: Hyprland / Niri only ever run one DMS.
+      # This is the ONLY managed DMS entry point for Hyprland/Niri. The
+      # per-user flock (held throughout DMS execution) prevents duplicates.
+      # Do not use broad "pgrep -f quickshell" as a startup veto: real guest
+      # login saw a transient false positive here and stayed black, with no
+      # DMS/Quickshell process or layers surviving after login.
       uid=$(${pkgs.coreutils}/bin/id -u)
       lock="''${XDG_RUNTIME_DIR}/ryoku-dms.start.lock"
       exec 9>"$lock" || {
@@ -411,15 +415,28 @@ in
         exit 1
       }
       if ! ${pkgs.util-linux}/bin/flock -n 9; then
-        echo "ryoku-start-dms: another start in progress for uid $uid; skipping"
+        echo "ryoku-start-dms: another managed DMS instance holds flock for uid $uid; skipping"
         exit 0
       fi
-      if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- '${dmsBin}' >/dev/null 2>&1 \
-        || ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
-        || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
-        echo "ryoku-start-dms: DMS/Quickshell already running for uid $uid; skipping"
-        exit 0
-      fi
+      echo "ryoku-start-dms: acquired session flock (uid=$uid)"
+
+      # When the DMS launcher exits very early, Quickshell might still be
+      # alive on its own. Only an actual Quickshell executable can veto a
+      # retry; command-line substring matches wrongly catch shell/helpers.
+      quickshell_alive() {
+        local pid exe
+        while IFS= read -r pid; do
+          [[ -n "$pid" && "$pid" != "$$" ]] || continue
+          exe=$(${pkgs.coreutils}/bin/readlink -f "/proc/$pid/exe" 2>/dev/null || true)
+          case "$exe" in
+            */bin/quickshell|*/bin/.quickshell-wrapped|*/bin/qs)
+              echo "ryoku-start-dms: active Quickshell exe=$exe pid=$pid"
+              return 0
+              ;;
+          esac
+        done < <(${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell|/bin/qs' || true)
+        return 1
+      }
 
       # Async bar IPC retries must not inherit fd9. Otherwise a failed DMS
       # start leaves its flock held by the helper for up to ~60 seconds.
@@ -444,8 +461,7 @@ in
         if [[ "$elapsed" -ge 15 || "$attempt" -eq 2 ]]; then
           exit "$rc"
         fi
-        if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
-          || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
+        if quickshell_alive; then
           echo "ryoku-start-dms: Quickshell still active; not launching duplicate"
           exit "$rc"
         fi
