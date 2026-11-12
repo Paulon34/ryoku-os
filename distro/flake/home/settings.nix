@@ -3,12 +3,17 @@
   lib,
   pkgs,
   home-manager ? null,
+  nixGL,
   ...
 }:
 
 # Port of ryoku-desktop Settings into Debian Modular Home Manager.
 # repoPath MUST be the absolute checkout that bootstrap/HM applied — never
 # guess ~/ryoku-os (VM worktrees are often ryoku-os-visual / *-fixed-* names).
+#
+# Qt Quick on Debian needs nixGL for host Mesa (same class of failure as DMS
+# without nixGLIntel: EGL unavailable → RHI abort). Wrapper calls the store
+# binary by absolute path to avoid PATH recursion.
 let
   cfg = config.ryoku.settingsApply;
   username = config.home.username;
@@ -34,6 +39,23 @@ let
     ryokuRepoPathDefault = repoPath;
     ryokuFlakeHostDefault = cfg.flakeHost;
   };
+
+  nixGLIntel = nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel;
+  settingsBin = "${settingsGui}/bin/ryoku-settings";
+
+  # Public command name stays ryoku-settings; real binary is only referenced by
+  # absolute store path inside the wrapper (no re-exec of PATH ryoku-settings).
+  settingsLauncher = pkgs.writeShellScriptBin "ryoku-settings" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export QT_QPA_PLATFORM="''${QT_QPA_PLATFORM:-wayland}"
+    # Optional VM-only diagnostic (never set globally by modules):
+    #   QT_QUICK_BACKEND=software ryoku-settings
+    if [[ -n "''${RYOKU_SETTINGS_NO_NIXGL:-}" ]]; then
+      exec ${settingsBin} "$@"
+    fi
+    exec ${nixGLIntel}/bin/nixGLIntel ${settingsBin} "$@"
+  '';
 
   polkitPolicy = pkgs.writeTextFile {
     name = "org.ryoku.settings.apply.policy";
@@ -98,8 +120,9 @@ in
     }
 
     (lib.mkIf cfg.enable {
-      # GUI always available; privileged helper only when repoPath is approved.
-      home.packages = [ settingsGui ] ++ lib.optionals haveRepo [
+      # Launcher only (nixGL → absolute store binary). Do not also put
+      # settingsGui on PATH under the same name — that would invite loops.
+      home.packages = [ settingsLauncher ] ++ lib.optionals haveRepo [
         applyHelper
         polkitPolicy
       ];
@@ -121,10 +144,21 @@ in
         text = "${lib.getExe applyHelper}\n";
       };
 
+      # Also expose a debug unwrapped name (absolute store path only).
+      home.file.".local/bin/ryoku-settings-unwrapped" = {
+        executable = true;
+        text = ''
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec ${settingsBin} "$@"
+        '';
+      };
+
       xdg.desktopEntries.ryoku-settings = {
         name = "Ryoku Settings";
         genericName = "Settings";
         comment = "Configure Ryoku desktop appearance and system";
+        # PATH resolves to nixGL-wrapped home.packages ryoku-settings.
         exec = "ryoku-settings";
         icon = "org.ryoku.Settings";
         terminal = false;

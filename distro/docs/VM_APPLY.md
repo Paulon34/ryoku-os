@@ -70,7 +70,11 @@ command -v ryoku-settings || echo "settings GUI not on PATH yet"
 ```bash
 hyprctl configerrors
 hyprctl layers
+# Settings is nixGL-wrapped (Nix Qt6 + Debian Mesa). Prefer PATH launcher:
 ryoku-settings &
+# Debug without nixGL (expect EGL fail on Debian): ryoku-settings-unwrapped
+# VM-only software RHI diagnostic (not a module default):
+#   QT_QUICK_BACKEND=software ryoku-settings-unwrapped
 ./distro/scripts/ryoku-doctor
 ```
 

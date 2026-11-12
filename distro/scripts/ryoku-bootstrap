@@ -935,8 +935,16 @@ install_settings_helper() {
   if [[ -n "$helper_src" ]]; then
     printf '%s\n' "$SETTINGS_APPLY_LIBEXEC" > "$etc_ryoku/settings-apply-helper"
   fi
-  # Applied hash marker is written by Settings apply / future activation; seed empty ok.
-  [[ -f "$etc_ryoku/applied-settings-hash" ]] || printf '%s\n' "unapplied" > "$etc_ryoku/applied-settings-hash"
+  # Do NOT seed applied-settings-hash with a non-SHA256 placeholder ("unapplied"
+  # made ApplyController warn invalid hash len=9). Absent marker = not applied.
+  if [[ -f "$etc_ryoku/applied-settings-hash" ]]; then
+    local marker
+    marker=$(tr -d '[:space:]' < "$etc_ryoku/applied-settings-hash" || true)
+    if [[ ! "$marker" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      info "removing invalid applied-settings-hash marker (len=''${#marker}')"
+      rm -f "$etc_ryoku/applied-settings-hash"
+    fi
+  fi
 }
 
 write_recovery() {

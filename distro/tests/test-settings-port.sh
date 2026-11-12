@@ -80,6 +80,17 @@ grep -q '^Icon=org.ryoku.Settings$' "$desk" || fail_msg "desktop Icon"
 grep -Fq './settings.nix' "$ROOT/distro/flake/home/home.nix" || fail_msg "home.nix must import settings.nix"
 grep -Fq './build-info.nix' "$ROOT/distro/flake/home/home.nix" || fail_msg "home.nix must import build-info.nix"
 
+# Debian Qt needs nixGL wrap (guest: EGL/RHI abort without it)
+grep -Fq 'nixGLIntel' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must wrap ryoku-settings with nixGLIntel"
+grep -Fq 'settingsBin' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings launcher must exec absolute store binary (no PATH loop)"
+grep -Fq 'ryoku-settings-unwrapped' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must expose unwrapped debug binary"
+# Bootstrap must not seed invalid applied hash as file contents
+! grep -E "printf .*unapplied" "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must not write invalid applied-settings-hash placeholder"
+
 # Bootstrap wires polkit + libexec
 grep -Fq 'install_settings_helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
   || fail_msg "bootstrap must install settings helper"
