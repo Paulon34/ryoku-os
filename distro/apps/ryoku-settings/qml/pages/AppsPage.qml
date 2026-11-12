@@ -125,6 +125,7 @@ Flickable {
     Component.onCompleted: {
         seedFromStore()
         flatpakApps.refresh()
+        desktopApps.refresh()
     }
 
     Connections {
@@ -176,9 +177,95 @@ Flickable {
             Text {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: qsTr("Manage declarative applications")
+                text: qsTr("APT, Flatpak e Nix — origem, status e versão. Instalação segura via helper allowlisted.")
                 color: RyokuTheme.on_surface_muted
                 font.pixelSize: RyokuTheme.font_body
+            }
+        }
+
+        // ── Catalog (APT | Flatpak | Nix) ──────────────────────────────────
+        RyokuCard {
+            Layout.fillWidth: true
+            title: qsTr("Catalog")
+
+            Column {
+                width: parent.width
+                spacing: RyokuTheme.spacing_sm
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: desktopApps.helperAvailable
+                          ? qsTr("Install / update / remove use pkexec + ryoku-pkg-helper (allowlisted). Nix apps are read-only here.")
+                          : qsTr("Package helper not installed yet — catalog is read-only until bootstrap installs ryoku-pkg-helper.")
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Row {
+                    spacing: RyokuTheme.spacing_sm
+                    RyokuButton {
+                        text: qsTr("Refresh catalog")
+                        variant: "ghost"
+                        onClicked: {
+                            desktopApps.refresh()
+                            flatpakApps.refresh()
+                        }
+                    }
+                }
+                Text {
+                    visible: desktopApps.error.length > 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: desktopApps.error
+                    color: RyokuTheme.error
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Repeater {
+                    model: desktopApps
+                    delegate: RyokuDeviceRow {
+                        required property string appId
+                        required property string name
+                        required property string originLabel
+                        required property string statusLabel
+                        required property string version
+                        required property bool canInstall
+                        required property bool canUpdate
+                        required property bool canRemove
+                        required property int origin
+                        width: parent.width
+                        leading: originLabel === "APT" ? "A" : (originLabel === "Flatpak" ? "F" : "N")
+                        title: name.length ? name : appId
+                        subtitle: {
+                            const bits = [originLabel, statusLabel]
+                            if (version && version.length)
+                                bits.push(version)
+                            bits.push(appId)
+                            return bits.join(" · ")
+                        }
+                        badgeText: originLabel
+                        badgeKind: originLabel === "APT" ? "applied"
+                                   : (originLabel === "Flatpak" ? "needs_apply" : "neutral")
+                        actionLabel: canInstall ? qsTr("Install")
+                                     : (canUpdate ? qsTr("Update")
+                                        : (canRemove ? qsTr("Remove") : ""))
+                        actionVariant: canInstall ? "tonal" : "secondary"
+                        onActionClicked: {
+                            if (canInstall)
+                                desktopApps.installApp(appId, origin)
+                            else if (canUpdate)
+                                desktopApps.updateApp(appId, origin)
+                            else if (canRemove)
+                                desktopApps.removeApp(appId, origin)
+                        }
+                    }
+                }
+                Text {
+                    visible: desktopApps.count === 0
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("No catalog entries yet.")
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
             }
         }
 

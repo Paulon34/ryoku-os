@@ -37,6 +37,8 @@ qt_add_executable(ryoku-settings
   src/WallpaperApplier.h
   src/FlatpakAppsModel.cpp
   src/FlatpakAppsModel.h
+  src/DesktopAppsModel.cpp
+  src/DesktopAppsModel.h
   src/NetworkManagerModel.cpp
   src/NetworkManagerModel.h
   src/BluetoothModel.cpp

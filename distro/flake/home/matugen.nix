@@ -101,11 +101,21 @@ in
     if [ ! -e "$HOME/.config/ryoku/hyprland-colors.conf" ]; then
       run install -m 644 ${hyprlandColorsFallback} "$HOME/.config/ryoku/hyprland-colors.conf"
     fi
-    wallpaper="$HOME/.local/share/wallpapers/ryoku-night.jpg"
+    # First-login default matches settings.json appearance.wallpaper (ryoku-dusk.jpg).
+    # Persist basename id only — never a machine-specific absolute path in settings.
+    wallpaper="$HOME/.local/share/wallpapers/ryoku-dusk.jpg"
     if [ -f "$wallpaper" ] && [ ! -e "$HOME/.config/ryoku/current-wallpaper" ]; then
       run ln -sfn "$wallpaper" "$HOME/.config/ryoku/current-wallpaper"
+      run printf '%s\n' "ryoku-dusk.jpg" > "$HOME/.config/ryoku/current-wallpaper-id"
     fi
+    # Private import dir (ryoku-import-wallpaper); gallery merges this path.
+    run mkdir -p "$HOME/.local/share/ryoku/wallpapers-private"
   '';
+
+  home.file.".local/bin/ryoku-import-wallpaper" = {
+    executable = true;
+    source = ../../scripts/ryoku-import-wallpaper;
+  };
 
   home.file.".local/bin/change-wallpaper" = {
     executable = true;
@@ -113,8 +123,13 @@ in
       #!/usr/bin/env bash
       set -euo pipefail
       WALL_DIR="${config.home.homeDirectory}/.local/share/wallpapers"
-      mapfile -t walls < <(find -L "$WALL_DIR" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | sort)
-      [[ ''${#walls[@]} -gt 0 ]] || { echo "no wallpapers in $WALL_DIR" >&2; exit 1; }
+      PRIV_DIR="${config.home.homeDirectory}/.local/share/ryoku/wallpapers-private"
+      mapfile -t walls < <(
+        { find -L "$WALL_DIR" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null
+          find -L "$PRIV_DIR" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null
+        } | sort -u
+      )
+      [[ ''${#walls[@]} -gt 0 ]] || { echo "no wallpapers in $WALL_DIR or $PRIV_DIR" >&2; exit 1; }
       pick=''${walls[RANDOM % ''${#walls[@]}]}
       mkdir -p "${config.home.homeDirectory}/.config/ryoku" \
         "${config.home.homeDirectory}/.config/niri/dms"

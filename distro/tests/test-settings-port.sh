@@ -115,6 +115,12 @@ grep -Fq 'install_settings_helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
   || fail_msg "bootstrap must install settings helper"
 grep -Fq 'packages-full.txt' "$ROOT/distro/scripts/ryoku-bootstrap" \
   || fail_msg "bootstrap must know packages-full"
+grep -Fq 'DesktopAppsModel' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "CMakeLists must build DesktopAppsModel"
+grep -Fq 'org.ryoku.pkg.policy' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must install pkg polkit policy"
+grep -Fq 'ryoku-pkg-helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must install pkg helper"
 
 # Compile apply helper ops (C only — no Qt needed)
 tmpdir=$(mktemp -d)

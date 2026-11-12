@@ -148,7 +148,8 @@ let
   # these keys. Adding a projection requires extending this attrset.
   #
   # Today:
-  #   apps.flatpakDeclared → modules/flatpak.nix (SYSTEM)
+  #   apps.flatpakDeclared → Debian: ryoku-flatpak-sync / pkg-helper (SYSTEM)
+  #     (NixOS historically: modules/flatpak.nix → nix-flatpak)
   #   appearance.loginWallpaper → modules/desktop.nix SDDM (SYSTEM)
   #     (omitted from hash when null so default theme stays Applied)
   #   weather.location → home/dms.nix DMS session/settings (USER)

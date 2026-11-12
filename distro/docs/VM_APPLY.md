@@ -5,25 +5,25 @@ session unless Paulo authorizes it. Preserve `flake.lock` and `hosts/paulo`.
 
 ## 0. Preconditions (before sudo apply)
 
-1. Isolated worktree on the **exact tip** you intend to apply (PR #29 tip).
+1. Isolated worktree on the **exact tip** you intend to apply (PR #30 tip stacked on #29).
 2. Preserve guest `flake.lock` and `hosts/paulo` (copy aside if the worktree is fresh).
 3. Prefer: `nix build` / `home-manager build` for `.#paulo` when Nix is available.
-4. `ryoku-bootstrap --dry-run` must pass.
+4. `ryoku-bootstrap --dry-run` must pass (APT + Flatpak plan).
 5. Proxmox snapshot **before** `--apply`.
 
-CI `PASS_STATIC` does **not** prove Qt/Nix build, graphical session, or Apply helper.
+CI `PASS_STATIC` does **not** prove Qt/Nix build, graphical session, Flathub install, or Apply helper.
 
 ## 1. Correct worktree
 
 ```bash
 # Example: dedicated worktree for this tip (adjust path to your layout)
 cd ~
-git fetch https://github.com/Paulon34/ryoku-os.git cursor/debian-desktop-complete-4fe6
+git fetch https://github.com/Paulon34/ryoku-os.git cursor/debian-apps-wallpapers
 # Or inside an existing clone:
 cd /path/to/approved-checkout
 git fetch origin
-git checkout --detach origin/cursor/debian-desktop-complete-4fe6
-git rev-parse HEAD   # expect the published tip SHA from the PR
+git checkout --detach origin/cursor/debian-apps-wallpapers
+git rev-parse HEAD   # expect the published tip SHA from PR #30
 
 # Preserve lock + host from the live guest tree if this worktree is new:
 test -f distro/flake/flake.lock && echo "KEEP flake.lock" || echo "NEED lock from guest"
@@ -31,7 +31,8 @@ test -f distro/flake/hosts/paulo/default.nix && echo "KEEP hosts/paulo" || echo 
 ```
 
 Bootstrap records **`settingsApply.repoPath = <this REPO_ROOT>`** into `hosts/paulo`
-so Settings Apply never targets a guessed `~/ryoku-os`.
+so Settings Apply never targets a guessed `~/ryoku-os`. Also writes
+`/etc/ryoku/repo-path` + `distro-dir` for `ryoku-pkg-helper`.
 
 ## 2. Detect stale HM (red overlay root cause)
 
@@ -45,14 +46,22 @@ readlink -f ~/.config/hypr/hyprland.conf
 ## 3. Dry-run then apply
 
 ```bash
+# Minimal (default) — APT essentials + Flathub ready, no declared Flatpaks
 sudo ./distro/scripts/ryoku-bootstrap --dry-run --user paulo \
   --profile minimal --visual balanced --shell-style islands --compositor hyprland
+
+# Full — APT media/office + Flatseal/LocalSend/Telegram from Flathub
+sudo ./distro/scripts/ryoku-bootstrap --dry-run --user paulo \
+  --profile full --visual balanced --shell-style islands --compositor hyprland
 
 # After Proxmox snapshot + dry-run OK:
 sudo ./distro/scripts/ryoku-bootstrap --apply --user paulo \
   --profile minimal --visual balanced --shell-style islands --compositor hyprland
+# or --profile full
 
 # Never: nix flake update, discard hosts/paulo, uninstall Niri, force-push, merge main.
+# Local .deb (safe): sudo /usr/local/libexec/ryoku-pkg-helper apt-install-deb /abs/path.deb
+# Private wallpaper (no GitHub): ryoku-import-wallpaper ~/Pictures/foo.jpg
 ```
 
 ## 4. Verify

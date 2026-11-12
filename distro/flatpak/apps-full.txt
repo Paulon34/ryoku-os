@@ -1,0 +1,13 @@
+# Flatpak application IDs for --profile full (Debian amd64 / x86_64).
+# One reverse-DNS ID per line. Validated against Flathub appstream (HTTP 200).
+# Prefer Flatpak here when ryoku-desktop used non-APT originals or apps are
+# Flathub-first (LocalSend, Telegram, Flatseal). GIMP/VLC/LibreOffice stay APT
+# in packages-full.txt to match the ryoku-desktop multimedia module spirit
+# without pulling duplicate runtimes by default.
+#
+# Bootstrap + ryoku-flatpak-sync install these idempotently from Flathub.
+# Settings apps.flatpakDeclared must stay compatible (sorted unique IDs).
+
+com.github.tchx84.Flatseal
+org.localsend.localsend_app
+org.telegram.desktop

@@ -384,9 +384,20 @@ in
         echo "ryoku-start-dms: warning: DBUS_SESSION_BUS_ADDRESS unset" >&2
       fi
 
-      # Idempotent reentry: Niri may re-fire spawn-at-startup; never double-shell.
+      # Idempotent reentry: Hyprland exec-once + Niri spawn-at-startup must never
+      # double-shell. Combine pgrep with an exclusive flock so two near-simultaneous
+      # starts cannot both pass the process check (race observed on guest logins).
       # Nix quickshell often appears as .quickshell-wrapped — never rely on -x quickshell.
       uid=$(${pkgs.coreutils}/bin/id -u)
+      lock="''${XDG_RUNTIME_DIR}/ryoku-dms.start.lock"
+      exec 9>"$lock" || {
+        echo "ryoku-start-dms: cannot open lock $lock" >&2
+        exit 1
+      }
+      if ! ${pkgs.util-linux}/bin/flock -n 9; then
+        echo "ryoku-start-dms: another start in progress for uid $uid; skipping" >&2
+        exit 0
+      fi
       if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- '${dmsBin}' >/dev/null 2>&1 \
         || ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
         || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
@@ -400,6 +411,7 @@ in
         ${applyRyokuBar} || true
         ${applyRyokuSession} || true
       ) &
+      # Hold flock (fd 9) until DMS exits so a late re-fire still sees the lock.
       exec "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsBin}" run
     '';
   };

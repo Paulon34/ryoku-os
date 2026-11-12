@@ -30,8 +30,15 @@ SESSION_WRAPPER_NIRI="$DISTRO_DIR/session/ryoku-niri-session"
 SESSION_DESKTOP="$SESSION_DESKTOP_NIRI"
 SESSION_WRAPPER="$SESSION_WRAPPER_NIRI"
 APT_HYPR_LIST="$DISTRO_DIR/apt/packages-hyprland.txt"
+FLATPAK_MIN_LIST="$DISTRO_DIR/flatpak/apps-minimal.txt"
+FLATPAK_FULL_LIST="$DISTRO_DIR/flatpak/apps-full.txt"
+FLATPAK_SYNC="$DISTRO_DIR/scripts/ryoku-flatpak-sync"
+PKG_HELPER="$DISTRO_DIR/scripts/ryoku-pkg-helper"
 POLKIT_POLICY="$DISTRO_DIR/polkit/org.ryoku.settings.apply.policy"
+POLKIT_PKG_POLICY="$DISTRO_DIR/polkit/org.ryoku.pkg.policy"
 SETTINGS_APPLY_LIBEXEC="/usr/local/libexec/ryoku-settings-apply"
+PKG_HELPER_LIBEXEC="/usr/local/libexec/ryoku-pkg-helper"
+SKIP_FLATPAK=0
 
 sysroot_path() {
   local rel=$1
@@ -80,6 +87,7 @@ Options:
   --log-dir PATH      Log directory
   --backup-dir PATH   Backup directory
   --skip-apt          Do not install APT packages
+  --skip-flatpak      Do not configure Flathub / install declared Flatpaks
   --skip-nix          Do not configure Nix daemon / flakes
   --skip-hm           Do not run home-manager switch
   --profile NAME      minimal|full (default: minimal)
@@ -155,6 +163,7 @@ parse_args() {
       --log-dir) LOG_DIR=$2; shift 2 ;;
       --backup-dir) BACKUP_DIR=$2; shift 2 ;;
       --skip-apt) SKIP_APT=1; shift ;;
+      --skip-flatpak) SKIP_FLATPAK=1; shift ;;
       --skip-nix) SKIP_NIX=1; shift ;;
       --skip-hm) SKIP_HM=1; shift ;;
       --profile) PROFILE=$2; shift 2 ;;
@@ -257,19 +266,21 @@ Ryoku bootstrap plan ($MODE)
   hm attr:     $TARGET_USER
   log dir:     $LOG_DIR
   backup dir:  $BACKUP_DIR
-  skip apt/nix/hm: $SKIP_APT / $SKIP_NIX / $SKIP_HM
+  skip apt/flatpak/nix/hm: $SKIP_APT / $SKIP_FLATPAK / $SKIP_NIX / $SKIP_HM
 
 Steps:
   0. Preflight (abort before mutations on failure)
   1. Refuse NixOS; Debian 13 Trixie amd64 on --apply /
   2. Backup configs we may overwrite
   3. APT packages from distro/apt/packages-base.txt (+ packages-full.txt if --profile full)
-  4. nix-setup-systemd + flakes
-  5. GDM session wrapper + desktop
-  6. NM / PipeWire / polkit (+ Ryoku Settings polkit action)
-  7. Write hosts/<user>/default.nix + git add; HM switch as user
-  8. Install /usr/local/libexec/ryoku-settings-apply + /etc/ryoku markers
-  9. Recovery notes
+  4. Flatpak: ensure Flathub + install distro/flatpak/apps-*.txt for profile
+  5. Merge declared Flatpak IDs into ryoku/settings.json (apps.flatpakDeclared)
+  6. nix-setup-systemd + flakes
+  7. GDM session wrapper + desktop
+  8. NM / PipeWire / polkit (+ Settings apply + pkg helper actions)
+  9. Write hosts/<user>/default.nix + git add; HM switch as user
+  10. Install libexec helpers (settings-apply + pkg-helper) + /etc/ryoku markers
+  11. Recovery notes
 
 Out of scope: GRUB/EFI/partitions/Calamares/NixOS/osConfig/QEMU
 Guest after apply alone: GUEST_NOT_RUN (do not invent PASS_MANUAL)
@@ -377,6 +388,11 @@ preflight() {
   [[ -f "$APT_HYPR_LIST" ]] && ok "Hyprland APT list" || fail "missing Hyprland APT list"
   [[ -f "$APT_FULL_LIST" ]] && ok "Full APT list" || warn "missing packages-full.txt"
   [[ -f "$POLKIT_POLICY" ]] && ok "Ryoku Settings polkit policy" || fail "missing polkit policy"
+  [[ -f "$POLKIT_PKG_POLICY" ]] && ok "Ryoku pkg polkit policy" || fail "missing pkg polkit policy"
+  [[ -f "$FLATPAK_MIN_LIST" ]] && ok "Flatpak minimal list" || fail "missing flatpak apps-minimal.txt"
+  [[ -f "$FLATPAK_FULL_LIST" ]] && ok "Flatpak full list" || fail "missing flatpak apps-full.txt"
+  [[ -x "$FLATPAK_SYNC" ]] && ok "ryoku-flatpak-sync" || fail "ryoku-flatpak-sync missing/not executable"
+  [[ -x "$PKG_HELPER" ]] && ok "ryoku-pkg-helper" || fail "ryoku-pkg-helper missing/not executable"
   [[ -x "$DISTRO_DIR/scripts/ryoku-doctor" ]] && ok "ryoku-doctor" || fail "ryoku-doctor missing/not executable"
   [[ -f "$FLAKE_DIR/home/settings.nix" ]] && ok "settings.nix" || fail "missing settings.nix"
   [[ -f "$FLAKE_DIR/home/build-info.nix" ]] && ok "build-info.nix" || fail "missing build-info.nix"
@@ -615,6 +631,79 @@ install_apt() {
   if [[ -n "$hypr_ver" ]] && ! grep -Eq '0\.55\.' <<<"$hypr_ver"; then
     warn "Hyprland version is not 0.55.x ($hypr_ver) — conf targets ~0.55; verify before GUI login"
   fi
+}
+
+# Merge profile Flatpak IDs into apps.flatpakDeclared (sorted unique).
+# Compatible with Settings; does not remove user-added IDs already present.
+merge_flatpak_declared_into_settings() {
+  local settings=""
+  if [[ -f "$DISTRO_DIR/ryoku/settings.json" ]]; then
+    settings="$DISTRO_DIR/ryoku/settings.json"
+  elif [[ -f "$REPO_ROOT/ryoku/settings.json" ]]; then
+    settings="$REPO_ROOT/ryoku/settings.json"
+  else
+    warn "no settings.json to merge flatpakDeclared"
+    return 0
+  fi
+  local ids=()
+  mapfile -t ids < <("$FLATPAK_SYNC" --list-declared --profile "$PROFILE" 2>/dev/null || true)
+  if [[ "${#ids[@]}" -eq 0 ]]; then
+    info "flatpakDeclared merge: no profile IDs (profile=$PROFILE)"
+    return 0
+  fi
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] merge flatpakDeclared into $settings: ${ids[*]}"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 missing — cannot merge flatpakDeclared (install manually via Settings)"
+    return 0
+  fi
+  PROFILE_IDS="${ids[*]}" SETTINGS_PATH="$settings" python3 - <<'PY'
+import json, os
+path = os.environ["SETTINGS_PATH"]
+ids = sorted(set(os.environ.get("PROFILE_IDS", "").split()))
+with open(path, encoding="utf-8") as f:
+    data = json.load(f)
+apps = data.setdefault("apps", {})
+cur = apps.get("flatpakDeclared") or []
+if not isinstance(cur, list):
+    cur = []
+merged = sorted(set([str(x) for x in cur if str(x).strip()] + ids))
+apps["flatpakDeclared"] = merged
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=4, ensure_ascii=False)
+    f.write("\n")
+print(f"merged flatpakDeclared ({len(merged)}): {', '.join(merged)}")
+PY
+  # Keep root mirror in sync when both exist.
+  if [[ -f "$REPO_ROOT/ryoku/settings.json" && "$settings" != "$REPO_ROOT/ryoku/settings.json" ]]; then
+    cp -a "$settings" "$REPO_ROOT/ryoku/settings.json"
+  elif [[ -f "$DISTRO_DIR/ryoku/settings.json" && "$settings" != "$DISTRO_DIR/ryoku/settings.json" ]]; then
+    cp -a "$settings" "$DISTRO_DIR/ryoku/settings.json"
+  fi
+}
+
+install_flatpak() {
+  [[ "$SKIP_FLATPAK" -eq 0 ]] || { info "skip Flatpak"; return 0; }
+  [[ -x "$FLATPAK_SYNC" ]] || die "missing executable $FLATPAK_SYNC"
+  if [[ "$MODE" == "dry-run" ]]; then
+    "$FLATPAK_SYNC" --dry-run --profile "$PROFILE" --sysroot "$SYSROOT"
+    merge_flatpak_declared_into_settings
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    "$FLATPAK_SYNC" --apply --profile "$PROFILE" --sysroot "$SYSROOT"
+    merge_flatpak_declared_into_settings
+    return 0
+  fi
+  # Real host: flatpak binary comes from APT step.
+  if ! command -v flatpak >/dev/null 2>&1; then
+    die "flatpak missing after APT — cannot sync Flathub apps"
+  fi
+  "$FLATPAK_SYNC" --apply --profile "$PROFILE" \
+    || die "Flatpak sync failed (network/Flathub) — aborting apply (no false success)"
+  merge_flatpak_declared_into_settings
 }
 
 configure_nix() {
@@ -893,7 +982,7 @@ activate_home_manager() {
 
 install_settings_helper() {
   # Stable Debian path for Polkit exec.path + ApplyController detection.
-  local home_dir helper_src dest_policy etc_ryoku
+  local home_dir helper_src dest_policy dest_pkg_policy etc_ryoku
   home_dir=$(resolve_home_dir)
   helper_src=""
   for cand in \
@@ -908,7 +997,7 @@ install_settings_helper() {
   done
 
   if [[ "$MODE" == "dry-run" ]]; then
-    info "[dry-run] would install polkit policy + libexec helper (src=${helper_src:-pending-HM})"
+    info "[dry-run] would install polkit policies + libexec helpers (apply src=${helper_src:-pending-HM}; pkg=$PKG_HELPER)"
     return 0
   fi
   if [[ "$SYSROOT" != "/" ]]; then
@@ -921,6 +1010,11 @@ install_settings_helper() {
     copy_file "$POLKIT_POLICY" "$dest_policy" 0644
     info "installed polkit policy $dest_policy"
   fi
+  dest_pkg_policy=$(sysroot_path /usr/share/polkit-1/actions/org.ryoku.pkg.policy)
+  if [[ -f "$POLKIT_PKG_POLICY" ]]; then
+    copy_file "$POLKIT_PKG_POLICY" "$dest_pkg_policy" 0644
+    info "installed polkit policy $dest_pkg_policy"
+  fi
 
   mkdir -p "$(dirname "$(sysroot_path "$SETTINGS_APPLY_LIBEXEC")")"
   if [[ -n "$helper_src" ]]; then
@@ -930,10 +1024,29 @@ install_settings_helper() {
     warn "ryoku-settings-apply not in HM profile yet — Settings Apply needs a successful HM switch that builds the package"
   fi
 
+  # Pkg helper is a repo script (not Nix-built) — install a stable copy.
+  if [[ -x "$PKG_HELPER" ]]; then
+    install -m 0755 "$PKG_HELPER" "$(sysroot_path "$PKG_HELPER_LIBEXEC")"
+    # flatpak-sync is invoked by pkg-helper via sibling path under distro/scripts
+    # when run from the checkout; also keep a libexec copy of sync for apply hosts
+    # that may not have the same checkout layout after moves.
+    install -m 0755 "$FLATPAK_SYNC" "$(sysroot_path /usr/local/libexec/ryoku-flatpak-sync)"
+    # Rewrite FLATPAK_SYNC discovery for the installed copy: prefer libexec sibling.
+    info "installed $PKG_HELPER_LIBEXEC + ryoku-flatpak-sync"
+  else
+    warn "ryoku-pkg-helper missing — Settings Apps install/remove unavailable"
+  fi
+
   etc_ryoku=$(sysroot_path /etc/ryoku)
   mkdir -p "$etc_ryoku"
+  # Absolute checkout paths for pkg-helper / flatpak-sync (no machine guess).
+  printf '%s\n' "$REPO_ROOT" > "$etc_ryoku/repo-path"
+  printf '%s\n' "$DISTRO_DIR" > "$etc_ryoku/distro-dir"
   if [[ -n "$helper_src" ]]; then
     printf '%s\n' "$SETTINGS_APPLY_LIBEXEC" > "$etc_ryoku/settings-apply-helper"
+  fi
+  if [[ -x "$(sysroot_path "$PKG_HELPER_LIBEXEC")" ]]; then
+    printf '%s\n' "$PKG_HELPER_LIBEXEC" > "$etc_ryoku/pkg-helper"
   fi
   # Do NOT seed applied-settings-hash with a non-SHA256 placeholder ("unapplied"
   # made ApplyController warn invalid hash len=9). Absent marker = not applied.
@@ -1042,6 +1155,10 @@ main() {
   preflight || die "preflight failed"
 
   if [[ "$MODE" == "dry-run" ]]; then
+    # Plan-only: reuse install_* dry-run branches (no durable writes on /).
+    install_apt
+    install_flatpak
+    install_settings_helper
     info "dry-run complete — no durable changes"
     info "done ($MODE). Guest desktop verification: GUEST_NOT_RUN"
     return 0
@@ -1051,6 +1168,7 @@ main() {
   mkdir -p "$BACKUP_DIR"
 
   install_apt
+  install_flatpak
   configure_nix
   install_session
   enable_services

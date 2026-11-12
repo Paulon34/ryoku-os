@@ -314,6 +314,10 @@ grep -Fq "pgrep -u \"\$uid\" -f -- 'quickshell'" "$DMS_MODULE" ||
   fail "idempotent start must detect Nix .quickshell-wrapped (not only -x qs)"
 ! grep -Fq 'pgrep -x quickshell' "$DMS_MODULE" ||
   fail "pgrep -x quickshell misses Nix wrapper process name"
+grep -Fq 'flock' "$DMS_MODULE" ||
+  fail "ryoku-start-dms must flock to close Hyprland/Niri double-start race"
+grep -Fq 'ryoku-dusk.jpg' "$MATUGEN_MODULE" ||
+  fail "first-login wallpaper seed must match settings default (ryoku-dusk.jpg)"
 grep -qx 'network-manager-gnome' "$APT_LIST" ||
   fail "network-manager-gnome required for nm-applet tray"
 grep -qx 'mate-polkit' "$APT_LIST" ||

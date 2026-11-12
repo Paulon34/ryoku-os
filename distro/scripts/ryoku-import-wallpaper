@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Import a local wallpaper into the private gallery (never touches git).
+#
+#   ryoku-import-wallpaper /path/to/image.jpg [name.jpg]
+#
+# Destination: ~/.local/share/ryoku/wallpapers-private/
+# Public CC0 set stays in ~/.local/share/wallpapers (HM-managed).
+#
+set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+src=${1:-}
+[[ -n "$src" ]] || die "usage: ryoku-import-wallpaper <image> [dest-name]"
+[[ -f "$src" ]] || die "not a file: $src"
+
+ext=${src##*.}
+ext_lc=$(printf '%s' "$ext" | tr 'A-Z' 'a-z')
+case "$ext_lc" in
+  jpg|jpeg|png|webp) ;;
+  *) die "unsupported extension: .$ext (use jpg/jpeg/png/webp)" ;;
+esac
+
+dest_name=${2:-$(basename "$src")}
+# Sanitize dest basename
+dest_name=$(basename "$dest_name")
+[[ "$dest_name" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid destination name: $dest_name"
+
+priv="${XDG_DATA_HOME:-$HOME/.local/share}/ryoku/wallpapers-private"
+mkdir -p "$priv"
+dest="$priv/$dest_name"
+cp -f "$src" "$dest"
+chmod 0644 "$dest"
+echo "imported: $dest"
+echo "Open Ryoku Settings → Appearance to select it (gallery merges private + public)."

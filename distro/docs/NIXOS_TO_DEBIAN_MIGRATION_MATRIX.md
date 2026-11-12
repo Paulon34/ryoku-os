@@ -28,10 +28,12 @@ Install legend: **APT** | **Nix/HM** | **Flatpak** | **N/A**
 | ryoku-doctor / build-info | (NixOS generations UI) | **`distro/scripts/ryoku-doctor`** + HM `build-info.json` | — | read-only | Code ready | Guest stale-HM check TBD |
 | Video wallpaper | ryoku-video-wallpaper | **N/A** (static only on Debian) | — | — | — | Helper optional no-op |
 | dgop | optional monitor | **optional Nix** later | — | — | — | Does not hide bar |
-| Flatpaks | settings.json list | **APT** `flatpak` (minimal) + Full extras; Settings Apps page | seed settings.json | flatpak | Partial | Declared installs TBD |
-| Firefox / FM / terminal | mixed | **APT** firefox-esr, thunar, kitty | — | — | Wired | Guest launch TBD |
+| Flatpaks | settings.json list | **APT** `flatpak` + Flathub via `ryoku-flatpak-sync`; Full IDs in `distro/flatpak/apps-full.txt`; Settings Apps + `apps.flatpakDeclared` | seed/merge settings.json | flatpak | Wired (static) | Guest Flathub install TBD |
+| Firefox / FM / terminal / archive / imv | mixed | **APT** firefox-esr, thunar, file-roller, kitty, imv | — | — | Wired | Guest launch TBD |
+| Full media/office | Nix multimedia | **APT** mpv/vlc/gimp/libreoffice-gtk3; Flatpak LocalSend/Telegram/Flatseal | packages-full + apps-full | — | Wired | Guest Full TBD |
 | Module groups Full | NixOS modules | **APT** `packages-full.txt` via `--profile full` + HM profile edition | bootstrap | — | Wired | Guest Full TBD |
-| External .deb | rare | Profile metadata later | — | sha256 | — | No blobs in git |
+| External .deb | rare | `ryoku-pkg-helper apt-install-deb` (APT, not raw dpkg -i) | polkit | — | Wired | Guest .deb TBD |
+| Wallpapers | CC0 procedural | `distro/assets/wallpapers` + private `~/.local/share/ryoku/wallpapers-private` | matugen + Settings | — | Wired | Guest palette TBD |
 
 ## Preserve Nix/HM where it still makes sense
 

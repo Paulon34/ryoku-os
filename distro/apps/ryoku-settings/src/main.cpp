@@ -3,6 +3,7 @@
 #include "DisplayModel.h"
 #include "FlakeMetadataModel.h"
 #include "FlakeUpdateModel.h"
+#include "DesktopAppsModel.h"
 #include "FlatpakAppsModel.h"
 #include "GenerationsModel.h"
 #include "GitStatusModel.h"
@@ -76,6 +77,7 @@ int main(int argc, char *argv[])
     WallpaperGalleryModel videoWallpaperGallery(WallpaperGalleryModel::MediaKind::Videos);
     WallpaperApplier wallpaperApplier;
     FlatpakAppsModel flatpakApps;
+    DesktopAppsModel desktopApps;
     NetworkManagerModel networkModel;
     BluetoothModel bluetoothModel;
     SoundModel soundModel;
@@ -94,6 +96,7 @@ int main(int argc, char *argv[])
     wallpaperApplier.setGalleryModel(&wallpaperGallery);
     wallpaperApplier.setVideoGalleryModel(&videoWallpaperGallery);
     flatpakApps.setDeclaredIds(settingsStore.flatpakDeclared());
+    desktopApps.setRepoPath(repoPath);
     applyController.setSettingsStore(&settingsStore);
     applyController.setRepoPath(repoPath);
     flakeMetadata.setRepoPath(repoPath);
@@ -113,6 +116,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("videoWallpaperGallery"), &videoWallpaperGallery);
     ctx->setContextProperty(QStringLiteral("wallpaperApplier"), &wallpaperApplier);
     ctx->setContextProperty(QStringLiteral("flatpakApps"), &flatpakApps);
+    ctx->setContextProperty(QStringLiteral("desktopApps"), &desktopApps);
     ctx->setContextProperty(QStringLiteral("networkModel"), &networkModel);
     ctx->setContextProperty(QStringLiteral("bluetoothModel"), &bluetoothModel);
     ctx->setContextProperty(QStringLiteral("soundModel"), &soundModel);
@@ -138,6 +142,7 @@ int main(int argc, char *argv[])
         networkModel.retranslateUi();
         bluetoothModel.retranslateUi();
         flatpakApps.retranslateUi();
+        desktopApps.retranslateUi();
         flakeUpdate.retranslateUi();
         generationsModel.retranslateUi();
     };

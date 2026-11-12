@@ -107,11 +107,11 @@
     "apps": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Application management. Flatpaks declared here are projected to nix-flatpak.",
+      "description": "Application management. Flatpaks declared here are synced via ryoku-flatpak-sync / ryoku-pkg-helper on Debian (Flathub).",
       "properties": {
         "flatpakDeclared": {
           "type": "array",
-          "description": "Flatpak application IDs managed by Ryoku (alphabetical, unique). Projected to services.flatpak.packages. Empty array = declare none.",
+          "description": "Flatpak application IDs managed by Ryoku (alphabetical, unique). Debian: Flathub via bootstrap/pkg-helper. Empty array = declare none.",
           "items": {
             "type": "string",
             "minLength": 3,
