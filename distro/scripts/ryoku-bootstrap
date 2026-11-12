@@ -628,7 +628,7 @@ install_apt() {
   # Hyprland --version itself may abort without XDG_RUNTIME_DIR on Debian 13:
   # read Debian's package metadata rather than launching the compositor here.
   local hypr_ver
-  hypr_ver=$(dpkg-query -W -f='\${Version}' hyprland 2>/dev/null || true)
+  hypr_ver=$(dpkg-query -W -f='${Version}' hyprland 2>/dev/null || true)
   info "Hyprland installed (APT): ${hypr_ver:-unknown}"
   # Soft check: expect 0.55.x on Debian backports (not NixOS 0.56.2).
   if [[ -n "$hypr_ver" ]] && ! grep -Eq '0\.55\.' <<<"$hypr_ver"; then
