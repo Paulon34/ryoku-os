@@ -122,12 +122,24 @@ grep -Fq 'org.ryoku.pkg.policy' "$ROOT/distro/scripts/ryoku-bootstrap" \
 grep -Fq 'ryoku-pkg-helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
   || fail_msg "bootstrap must install pkg helper"
 
-# Compile apply helper ops (C only — no Qt needed)
-tmpdir=$(mktemp -d)
-cc -std=c11 -c "$ROOT/distro/apps/ryoku-settings-apply/src/ops.c" -I"$ROOT/distro/apps/ryoku-settings-apply/src" -o "$tmpdir/ops.o" \
-  && pass "ops.c compiles" \
-  || fail_msg "ops.c compile failed"
-rm -rf "$tmpdir"
+# Compile apply helper ops (C only — no Qt needed).
+# A bare gcc package is not sufficient on Debian: libc6-dev provides ctype.h.
+# The Debian Minimal bootstrap installs build-essential so this is reproducible.
+if ! command -v cc >/dev/null 2>&1; then
+  fail_msg "C compiler missing: install build-essential (provides gcc + libc6-dev)"
+elif ! printf '#include <ctype.h>\nint main(void) { return isalpha(65) ? 0 : 1; }\n' \
+       | cc -x c -o /dev/null - >/dev/null 2>&1; then
+  fail_msg "C standard headers/linker missing (ctype.h): install build-essential (includes libc6-dev)"
+else
+  tmpdir=$(mktemp -d)
+  if cc -std=c11 -c "$ROOT/distro/apps/ryoku-settings-apply/src/ops.c" \
+      -I"$ROOT/distro/apps/ryoku-settings-apply/src" -o "$tmpdir/ops.o"; then
+    pass "ops.c compiles"
+  else
+    fail_msg "ops.c compile failed with build-essential available (inspect compiler errors)"
+  fi
+  rm -rf "$tmpdir"
+fi
 
 if [[ "$fail" -eq 0 ]]; then
   echo "ALL PASS_STATIC (settings-port)"
