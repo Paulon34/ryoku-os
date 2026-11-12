@@ -16,6 +16,15 @@ grep -Fq 'build-info.json' "$DOC" || fail_msg "doctor must read build-info.json"
 grep -Fq '.local/state/ryoku/build-info.json' "$DOC" || fail_msg "doctor must prefer XDG state path"
 grep -Fq 'gitCommit' "$DOC" || fail_msg "doctor must compare gitCommit"
 grep -Fq 'windowrulev2' "$DOC" || fail_msg "doctor must flag windowrulev2"
+# Only active directives are errors; comments mentioning obsolete syntax are harmless.
+grep -Fq "^[[:space:]]*windowrulev2[[:space:]]*=" "$DOC" \
+  || fail_msg "doctor must anchor deprecated rule detection to directives"
+grep -Fq "^[[:space:]]*windowrule[[:space:]]*=" "$DOC" \
+  || fail_msg "doctor must anchor classic windowrule detection to directives"
+grep -Fq 'home-path/bin/niri' "$DOC" \
+  || fail_msg "doctor must detect HM Niri outside SSH PATH"
+grep -Fq 'home-path/bin/ryoku-settings' "$DOC" \
+  || fail_msg "doctor must detect HM Settings outside SSH PATH"
 grep -Fq 'STALE HM' "$DOC" || fail_msg "doctor must report STALE HM"
 
 # build-info module — mutable state only (no xdg.configFile conflict)
