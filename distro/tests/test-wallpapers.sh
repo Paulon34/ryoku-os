@@ -45,6 +45,18 @@ grep -Fq 'wallpapers-private' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGal
 # DMS single-instance flock (Hyprland exec-once reuse)
 grep -Fq 'flock' "$ROOT/distro/flake/home/dms.nix" \
   && pass "dms start flock" || fail_msg "ryoku-start-dms missing flock"
+
+# Guest regression: DMS starts when dispatched manually but first GUI login
+# showed a black screen. Persist startup diagnostics and ensure an async
+# bar-settings worker cannot keep fd9 locked after an early DMS failure.
+grep -Fq 'dms-startup.log' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS login diagnostics persisted" || fail_msg "DMS startup log missing"
+grep -Fq ') 9>&- &' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS child closes inherited flock" || fail_msg "async DMS worker inherits fd9"
+grep -Fq 'for attempt in 1 2; do' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS early-exit retry is bounded" || fail_msg "bounded DMS recovery missing"
+grep -Fq 'missing Wayland socket' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS startup waits for Wayland" || fail_msg "DMS missing Wayland readiness guard"
 grep -Fq 'ryoku-start-dms' "$ROOT/distro/flake/home/hyprland.nix" \
   && pass "hyprland exec-once dms" || fail_msg "hyprland missing dms exec-once"
 # Exactly one exec-once for dms in hyprland.nix
