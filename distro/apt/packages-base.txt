@@ -5,6 +5,10 @@
 # screenshots / clipboard / audio / network / Flatpak plumbing.
 
 # Core
+# Required for the Debian guest's source-level C smoke checks and local
+# debugging: pulls gcc, g++, make, dpkg-dev and libc6-dev (ctype.h etc.).
+# Explicitly include the metapackage: gcc alone does NOT include C headers.
+build-essential
 ca-certificates
 curl
 git
