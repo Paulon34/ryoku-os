@@ -47,6 +47,8 @@ grep -Fq 'wallpapers-private' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGal
 # matugen ran independently; image selection never changed shell colors.
 grep -Fq 'currentThemeName = "dynamic";' "$ROOT/distro/flake/home/dms.nix" \
   && pass "DMS first-login theme is dynamic" || fail_msg "DMS seeds stock theme"
+grep -Fq 'defaultWallpaper = "${config.home.homeDirectory}/.local/share/wallpapers/ryoku-dusk.jpg"' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS first wallpaper matches Ryoku default" || fail_msg "DMS default differs from Ryoku wallpaper"
 grep -Fq '.currentThemeName = "dynamic"' "$ROOT/distro/flake/home/dms.nix" \
   && pass "DMS HM activation migrates stock theme" || fail_msg "DMS does not migrate existing settings"
 grep -Fq 'appearance.dynamicColors == false' "$ROOT/distro/flake/home/dms.nix" \
