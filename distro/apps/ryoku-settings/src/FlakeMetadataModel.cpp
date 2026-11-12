@@ -1,4 +1,5 @@
 #include "FlakeMetadataModel.h"
+#include "RepoPath.h"
 
 #include <QDateTime>
 #include <QFileInfo>
@@ -47,7 +48,11 @@ void FlakeMetadataModel::refreshLockFileInfo(const QString &repoPath, bool *pres
         *modifiedLabel = QStringLiteral("Unavailable");
     if (repoPath.isEmpty())
         return;
-    const QFileInfo fi(repoPath + QStringLiteral("/flake.lock"));
+    // repoPath arg may be git root; resolve nested distro/flake when needed.
+    const QString flakeDir = Ryoku::resolveFlakeDir(repoPath);
+    if (flakeDir.isEmpty())
+        return;
+    const QFileInfo fi(flakeDir + QStringLiteral("/flake.lock"));
     if (!fi.exists())
         return;
     if (present)
@@ -141,6 +146,18 @@ void FlakeMetadataModel::refresh()
         return;
     }
 
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty()) {
+        m_available = false;
+        m_error = QStringLiteral(
+            "Flake directory not found (expected flake.nix or distro/flake/flake.nix)");
+        m_details.clear();
+        m_inputs.clear();
+        m_lockedInputCount = 0;
+        emit changed();
+        return;
+    }
+
     if (!m_process) {
         m_process = new QProcess(this);
         connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -157,7 +174,7 @@ void FlakeMetadataModel::refresh()
     m_process->setProgram(QStringLiteral("nix"));
     m_process->setArguments({QStringLiteral("flake"), QStringLiteral("metadata"),
                              QStringLiteral("--json"), QStringLiteral(".")});
-    m_process->setWorkingDirectory(m_repoPath);
+    m_process->setWorkingDirectory(flakeDir);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
     m_process->start();
 }

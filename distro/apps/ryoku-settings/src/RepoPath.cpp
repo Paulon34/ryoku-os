@@ -21,6 +21,29 @@ bool looksLikeRyokuRepo(const QString &path)
     return hasSettings && hasFlake;
 }
 
+bool looksLikeFlakeDir(const QString &path)
+{
+    if (path.isEmpty())
+        return false;
+    return QDir(path).exists(QStringLiteral("flake.nix"));
+}
+
+QString resolveFlakeDir(const QString &repoPath)
+{
+    if (repoPath.isEmpty())
+        return {};
+    const QFileInfo root(repoPath);
+    if (!root.exists() || !root.isDir())
+        return {};
+    const QString abs = root.absoluteFilePath();
+    if (looksLikeFlakeDir(abs))
+        return abs;
+    const QString nested = QDir(abs).filePath(QStringLiteral("distro/flake"));
+    if (looksLikeFlakeDir(nested))
+        return QFileInfo(nested).absoluteFilePath();
+    return {};
+}
+
 QString resolveRepoPath()
 {
     // Never use process cwd / "." — launcher starts with arbitrary working directory.

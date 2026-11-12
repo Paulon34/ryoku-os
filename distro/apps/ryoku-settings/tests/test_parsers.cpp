@@ -43,6 +43,7 @@ private slots:
     void settingsValidNulls();
     void settingsInvalid();
     void repoLooksLike();
+    void resolveFlakeDirLayouts();
     void appIdentityAndDesktopContract();
     void gitPorcelain();
     void gitWorkflowParsersAndSafety();
@@ -189,6 +190,49 @@ void ParserTests::repoLooksLike()
     settings.write("{}");
     settings.close();
     QVERIFY(Ryoku::looksLikeRyokuRepo(dir.path()));
+}
+
+void ParserTests::resolveFlakeDirLayouts()
+{
+    QVERIFY(Ryoku::resolveFlakeDir(QString()).isEmpty());
+    QVERIFY(Ryoku::resolveFlakeDir(QStringLiteral("/no/such/path")).isEmpty());
+
+    // ryoku-desktop / NixOS: flake.nix at repo root
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QFile flake(dir.filePath(QStringLiteral("flake.nix")));
+        QVERIFY(flake.open(QIODevice::WriteOnly));
+        flake.write("{}\n");
+        flake.close();
+        QCOMPARE(Ryoku::resolveFlakeDir(dir.path()),
+                 QFileInfo(dir.path()).absoluteFilePath());
+        QVERIFY(Ryoku::looksLikeFlakeDir(dir.path()));
+    }
+
+    // ryoku-os Debian Modular: flake under distro/flake/
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir(dir.path()).mkpath(QStringLiteral("distro/flake")));
+        const QString nested = dir.filePath(QStringLiteral("distro/flake"));
+        QFile flake(QDir(nested).filePath(QStringLiteral("flake.nix")));
+        QVERIFY(flake.open(QIODevice::WriteOnly));
+        flake.write("{}\n");
+        flake.close();
+        QCOMPARE(Ryoku::resolveFlakeDir(dir.path()),
+                 QFileInfo(nested).absoluteFilePath());
+        QVERIFY(!Ryoku::looksLikeFlakeDir(dir.path()));
+        QVERIFY(Ryoku::looksLikeFlakeDir(nested));
+    }
+
+    // Repo without flake.nix anywhere → empty
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir(dir.path()).mkpath(QStringLiteral("distro/flake")));
+        QVERIFY(Ryoku::resolveFlakeDir(dir.path()).isEmpty());
+    }
 }
 
 void ParserTests::appIdentityAndDesktopContract()

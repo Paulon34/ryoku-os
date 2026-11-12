@@ -21,4 +21,9 @@ QString resolveRepoPath();
 
 bool looksLikeRyokuRepo(const QString &path);
 
+// Flake directory for nix flake/eval/check (may differ from git repo root).
+// Prefer <repo>/flake.nix (ryoku-desktop) else <repo>/distro/flake/flake.nix (ryoku-os).
+QString resolveFlakeDir(const QString &repoPath);
+bool looksLikeFlakeDir(const QString &path);
+
 } // namespace Ryoku

@@ -87,6 +87,25 @@ grep -Fq 'settingsBin' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings launcher must exec absolute store binary (no PATH loop)"
 grep -Fq 'ryoku-settings-unwrapped' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings.nix must expose unwrapped debug binary"
+grep -Fq 'xdg.desktopEntries."org.ryoku.Settings"' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must expose canonical org.ryoku.Settings desktop id"
+! grep -Fq 'xdg.desktopEntries.ryoku-settings' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "must not emit ryoku-settings.desktop (portal appId mismatch)"
+grep -Fq 'hiPrio settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must hiPrio nixGL launcher over package bin"
+grep -Fq 'settingsGui' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must install settingsGui for icons/desktop share"
+# Flake dir resolution for Debian layout
+grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/RepoPath.cpp" \
+  || fail_msg "RepoPath must resolve distro/flake"
+grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.cpp" \
+  || fail_msg "ApplyController must use resolveFlakeDir"
+grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/FlakeMetadataModel.cpp" \
+  || fail_msg "FlakeMetadataModel must use resolveFlakeDir"
+grep -Fq 'RYOKU_ALLOW_FLAKE_UPDATE' "$ROOT/distro/apps/ryoku-settings/src/FlakeUpdateModel.cpp" \
+  || fail_msg "FlakeUpdateModel must disable flake update by default"
+grep -Fq 'unapplied' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.cpp" \
+  || fail_msg "ApplyController must treat unapplied sentinel as not-applied"
 # Bootstrap must not seed invalid applied hash as file contents
 ! grep -E "printf .*unapplied" "$ROOT/distro/scripts/ryoku-bootstrap" \
   || fail_msg "bootstrap must not write invalid applied-settings-hash placeholder"

@@ -187,6 +187,9 @@ bool ApplyController::canApply() const
         return false;
     if (m_pkexec.isEmpty() || m_helperPath.isEmpty())
         return false;
+    // Block Apply until flakeDir resolves (Debian: distro/flake).
+    if (Ryoku::resolveFlakeDir(m_repoPath).isEmpty())
+        return false;
     return (m_needsSystemApply || m_lockfilePendingRebuild)
            && (m_status == QLatin1String(StatusNeedsApply)
                || m_status == QLatin1String(StatusReady)
@@ -1008,10 +1011,21 @@ void ApplyController::readAppliedMarker()
         return;
     }
 
+    const QString raw = normalizeHash(QString::fromUtf8(f.readAll()));
+    // Bootstrap used to seed a non-hash sentinel ("unapplied"). Treat any
+    // non-SHA256 marker as absent — not corruption — so Apply stays blocked
+    // until a real generation writes a hash.
+    if (!isValidSha256Hex(raw)) {
+        m_appliedMarkerPresent = false;
+        m_appliedHash.clear();
+        if (!raw.isEmpty() && raw != QLatin1String("unapplied"))
+            qInfo(lcApply) << "applied marker not a SHA-256 (treating as not-applied) len="
+                           << raw.size();
+        return;
+    }
+
     m_appliedMarkerPresent = true;
-    m_appliedHash = normalizeHash(QString::fromUtf8(f.readAll()));
-    if (!isValidSha256Hex(m_appliedHash))
-        qWarning(lcApply) << "applied marker has invalid hash format len=" << m_appliedHash.size();
+    m_appliedHash = raw;
 }
 
 void ApplyController::refresh()
@@ -1035,6 +1049,17 @@ void ApplyController::requestCurrentHash()
         m_currentHashResolved = true;
         m_currentHashFailed = true;
         m_lastError = QStringLiteral("Ryoku repository path invalid");
+        recomputeApplyState();
+        emit changed();
+        return;
+    }
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty()) {
+        m_currentHash.clear();
+        m_currentHashResolved = true;
+        m_currentHashFailed = true;
+        m_lastError = QStringLiteral(
+            "Flake directory not found (expected flake.nix or distro/flake/flake.nix)");
         recomputeApplyState();
         emit changed();
         return;
@@ -1081,7 +1106,7 @@ void ApplyController::requestCurrentHash()
 
     m_hashProcess->setProgram(m_nix);
     m_hashProcess->setArguments(args);
-    m_hashProcess->setWorkingDirectory(m_repoPath);
+    m_hashProcess->setWorkingDirectory(flakeDir);
     m_hashProcess->setProcessChannelMode(QProcess::SeparateChannels);
     m_hashProcess->start();
 
@@ -1303,8 +1328,17 @@ void ApplyController::validate()
                 this, &ApplyController::onValidateFinished);
     }
 
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty()) {
+        m_lastError = QStringLiteral(
+            "Flake directory not found (expected flake.nix or distro/flake/flake.nix)");
+        emit operationFailed(m_lastError);
+        emit changed();
+        return;
+    }
+
     clearLog();
-    appendLog(QStringLiteral("$ nix flake check\n"));
+    appendLog(QStringLiteral("$ nix flake check  (cwd=%1)\n").arg(flakeDir));
     m_validatedOk = false;
     setBusy(true);
     setStatus(QString::fromLatin1(StatusValidating));
@@ -1315,7 +1349,7 @@ void ApplyController::validate()
 
     m_validateProcess->setProgram(m_nix);
     m_validateProcess->setArguments(args);
-    m_validateProcess->setWorkingDirectory(m_repoPath);
+    m_validateProcess->setWorkingDirectory(flakeDir);
     m_validateProcess->setProcessChannelMode(QProcess::SeparateChannels);
     m_validateProcess->start();
 }

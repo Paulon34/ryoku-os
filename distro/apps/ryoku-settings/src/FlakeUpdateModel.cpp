@@ -1,6 +1,7 @@
 #include "FlakeUpdateModel.h"
 
 #include "ApplyController.h"
+#include "RepoPath.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -70,7 +71,10 @@ void FlakeUpdateModel::setRepoWasDirtyBeforeUpdate(bool dirty)
 
 QString FlakeUpdateModel::lockPath() const
 {
-    return m_repoPath + QStringLiteral("/flake.lock");
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty())
+        return {};
+    return flakeDir + QStringLiteral("/flake.lock");
 }
 
 void FlakeUpdateModel::setBusy(bool busy)
@@ -585,11 +589,22 @@ void FlakeUpdateModel::startNextCheck()
     if (m_process->state() != QProcess::NotRunning)
         return;
 
-    appendDetails(QStringLiteral("$ nix flake metadata --json %1\n").arg(url));
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty()) {
+        appendDetails(QStringLiteral("flake directory unavailable\n"));
+        m_error = QStringLiteral(
+            "Flake directory not found (expected flake.nix or distro/flake/flake.nix)");
+        setBusy(false);
+        setPhase(QStringLiteral("error"));
+        m_op = Op::None;
+        emit changed();
+        return;
+    }
+    appendDetails(QStringLiteral("$ nix flake metadata --json %1  (cwd=%2)\n").arg(url, flakeDir));
     m_process->setProgram(m_nix);
     m_process->setArguments(
         {QStringLiteral("flake"), QStringLiteral("metadata"), QStringLiteral("--json"), url});
-    m_process->setWorkingDirectory(m_repoPath);
+    m_process->setWorkingDirectory(flakeDir);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
     m_timeout->start(kCheckTimeoutMs);
     m_process->start();
@@ -662,6 +677,22 @@ void FlakeUpdateModel::updateAll()
 {
     if (m_busy || m_repoPath.isEmpty())
         return;
+    // Debian Modular: never mutate flake.lock by default (preserve guest lock).
+    if (qEnvironmentVariable(QByteArrayLiteral("RYOKU_ALLOW_FLAKE_UPDATE")) != QLatin1String("1")) {
+        m_error = QStringLiteral(
+            "nix flake update is disabled by default (set RYOKU_ALLOW_FLAKE_UPDATE=1 to opt in)");
+        setPhase(QStringLiteral("error"));
+        emit changed();
+        return;
+    }
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty()) {
+        m_error = QStringLiteral(
+            "Flake directory not found (expected flake.nix or distro/flake/flake.nix)");
+        setPhase(QStringLiteral("error"));
+        emit changed();
+        return;
+    }
     loadInputsFromLock();
     QString err;
     if (!snapshotLockBeforeMutation(&err)) {
@@ -699,10 +730,10 @@ void FlakeUpdateModel::updateAll()
         emit changed();
         return;
     }
-    appendDetails(QStringLiteral("$ nix flake update\n"));
+    appendDetails(QStringLiteral("$ nix flake update  (cwd=%1)\n").arg(flakeDir));
     m_process->setProgram(m_nix);
     m_process->setArguments(args);
-    m_process->setWorkingDirectory(m_repoPath);
+    m_process->setWorkingDirectory(flakeDir);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
     m_timeout->start(kUpdateTimeoutMs);
     m_process->start();
@@ -712,6 +743,21 @@ void FlakeUpdateModel::updateInput(const QString &inputName)
 {
     if (m_busy || m_repoPath.isEmpty())
         return;
+    if (qEnvironmentVariable(QByteArrayLiteral("RYOKU_ALLOW_FLAKE_UPDATE")) != QLatin1String("1")) {
+        m_error = QStringLiteral(
+            "nix flake update is disabled by default (set RYOKU_ALLOW_FLAKE_UPDATE=1 to opt in)");
+        setPhase(QStringLiteral("error"));
+        emit changed();
+        return;
+    }
+    const QString flakeDir = Ryoku::resolveFlakeDir(m_repoPath);
+    if (flakeDir.isEmpty()) {
+        m_error = QStringLiteral(
+            "Flake directory not found (expected flake.nix or distro/flake/flake.nix)");
+        setPhase(QStringLiteral("error"));
+        emit changed();
+        return;
+    }
     loadInputsFromLock();
     if (!isValidInputName(inputName) || !knownInputNames().contains(inputName)) {
         m_error = QStringLiteral("Unknown or invalid input name");
@@ -754,10 +800,10 @@ void FlakeUpdateModel::updateInput(const QString &inputName)
         emit changed();
         return;
     }
-    appendDetails(QStringLiteral("$ nix flake update %1\n").arg(inputName));
+    appendDetails(QStringLiteral("$ nix flake update %1  (cwd=%2)\n").arg(inputName, flakeDir));
     m_process->setProgram(m_nix);
     m_process->setArguments(args);
-    m_process->setWorkingDirectory(m_repoPath);
+    m_process->setWorkingDirectory(flakeDir);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
     m_timeout->start(kUpdateTimeoutMs);
     m_process->start();

@@ -14,6 +14,9 @@
 # Qt Quick on Debian needs nixGL for host Mesa (same class of failure as DMS
 # without nixGLIntel: EGL unavailable → RHI abort). Wrapper calls the store
 # binary by absolute path to avoid PATH recursion.
+#
+# Portal / Wayland appId is org.ryoku.Settings — desktop basename must match
+# (xdg.desktopEntries."org.ryoku.Settings" + package share icons/desktop).
 let
   cfg = config.ryoku.settingsApply;
   username = config.home.username;
@@ -120,9 +123,13 @@ in
     }
 
     (lib.mkIf cfg.enable {
-      # Launcher only (nixGL → absolute store binary). Do not also put
-      # settingsGui on PATH under the same name — that would invite loops.
-      home.packages = [ settingsLauncher ] ++ lib.optionals haveRepo [
+      # hiPrio launcher shadows settingsGui's bin/ryoku-settings; settingsGui still
+      # contributes share/applications/org.ryoku.Settings.desktop + hicolor icons.
+      home.packages = [
+        (lib.hiPrio settingsLauncher)
+        settingsGui
+      ]
+      ++ lib.optionals haveRepo [
         applyHelper
         polkitPolicy
       ];
@@ -144,7 +151,7 @@ in
         text = "${lib.getExe applyHelper}\n";
       };
 
-      # Also expose a debug unwrapped name (absolute store path only).
+      # Debug unwrapped name (absolute store path only).
       home.file.".local/bin/ryoku-settings-unwrapped" = {
         executable = true;
         text = ''
@@ -154,7 +161,9 @@ in
         '';
       };
 
-      xdg.desktopEntries.ryoku-settings = {
+      # Canonical FreeDesktop id for portals (matches Qt appId org.ryoku.Settings).
+      # Do not emit ryoku-settings.desktop — that breaks portal app lookup.
+      xdg.desktopEntries."org.ryoku.Settings" = {
         name = "Ryoku Settings";
         genericName = "Settings";
         comment = "Configure Ryoku desktop appearance and system";
