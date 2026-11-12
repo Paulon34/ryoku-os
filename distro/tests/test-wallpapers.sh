@@ -42,6 +42,26 @@ grep -Fq 'resolvePrivateGalleryPath' "$ROOT/distro/apps/ryoku-settings/src/Wallp
 grep -Fq 'wallpapers-private' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
   && pass "private path string" || fail_msg "missing wallpapers-private string"
 
+# Material You regression: wallpaper must change palette, not just background.
+# On the first Debian VM boot, DMS used fixed stock Purple (#D0BCFF) and
+# matugen ran independently; image selection never changed shell colors.
+grep -Fq 'currentThemeName = "dynamic";' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS first-login theme is dynamic" || fail_msg "DMS seeds stock theme"
+grep -Fq '.currentThemeName = "dynamic"' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS HM activation migrates stock theme" || fail_msg "DMS does not migrate existing settings"
+grep -Fq 'appearance.dynamicColors == false' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS respects user dynamicColors off" || fail_msg "DMS ignores saved Dynamic Colors switch"
+grep -Fq 'runUserMatugenTemplates = true' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS runs custom Matugen templates" || fail_msg "DMS Matugen templates disabled"
+grep -Fq 'applyWallpaperWithTheme(fileName, root.draftDynamicColors)' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "Settings passes live Dynamic Colors preference" || fail_msg "Settings applies wallpaper without theme preference"
+grep -Fq 'wallpaperApplier.setDynamicColors(draftDynamicColors)' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "Settings Save synchronizes DMS theme" || fail_msg "Settings Save does not refresh dynamic mode"
+grep -Fq 'settings"), QStringLiteral("set")' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  && pass "Settings changes DMS theme via IPC" || fail_msg "Settings does not sync DMS theme over IPC"
+grep -Fq 'mg.exitCode() != 0' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  && pass "Matugen failures are checked" || fail_msg "Matugen failure silently ignored"
+
 # DMS single-instance flock (Hyprland exec-once reuse)
 grep -Fq 'flock' "$ROOT/distro/flake/home/dms.nix" \
   && pass "dms start flock" || fail_msg "ryoku-start-dms missing flock"
