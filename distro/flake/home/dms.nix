@@ -377,7 +377,7 @@ in
       ${pkgs.coreutils}/bin/mkdir -p "$state_dir"
       exec >>"$state_dir/dms-startup.log" 2>&1
       echo "=== ryoku-start-dms $(${pkgs.coreutils}/bin/date -Is) ==="
-      echo "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}; XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}"
+      echo "WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-unset}; XDG_RUNTIME_DIR=''${XDG_RUNTIME_DIR:-unset}"
 
       # GDM must supply the compositor session environment; never invent it.
       if [[ -z "''${XDG_RUNTIME_DIR:-}" ]]; then
@@ -440,7 +440,7 @@ in
           rc=$?
         fi
         elapsed=$(( $(${pkgs.coreutils}/bin/date +%s) - started ))
-        echo "ryoku-start-dms: DMS exited rc=$rc elapsed=${elapsed}s"
+        echo "ryoku-start-dms: DMS exited rc=$rc elapsed=''${elapsed}s"
         if [[ "$elapsed" -ge 15 || "$attempt" -eq 2 ]]; then
           exit "$rc"
         fi
