@@ -242,7 +242,7 @@ Flickable {
     function selectWallpaper(fileName) {
         errorMessage = ""
         wallpaperPreviewNote = ""
-        if (!wallpaperApplier.applyWallpaper(fileName)) {
+        if (!wallpaperApplier.applyWallpaperWithTheme(fileName, root.draftDynamicColors)) {
             errorMessage = wallpaperApplier.lastError.length
                            ? wallpaperApplier.lastError
                            : qsTr("Failed to apply wallpaper")
@@ -251,7 +251,9 @@ Flickable {
         draftWallpaper = fileName
         draftWallpaperType = "image"
         markDirty()
-        wallpaperPreviewNote = qsTr("Wallpaper preview remains active until changed again.")
+        wallpaperPreviewNote = wallpaperApplier.lastError.length
+                               ? wallpaperApplier.lastError
+                               : qsTr("Wallpaper preview remains active until changed again.")
     }
 
     function applyVideo(fileName) {
@@ -356,6 +358,12 @@ Flickable {
         needsApply = false
         wallpaperPreviewNote = ""
         choosingLoginWallpaper = false
+        // Saving the Dynamic Colors switch must update the running DMS too,
+        // even when the user keeps the same wallpaper.
+        if (!wallpaperApplier.setDynamicColors(draftDynamicColors))
+            errorMessage = wallpaperApplier.lastError.length
+                           ? wallpaperApplier.lastError
+                           : qsTr("Failed to synchronize Material You")
         gitStatus.refresh()
         applyController.refresh()
     }

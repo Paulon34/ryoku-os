@@ -1,8 +1,14 @@
 # Ryoku Debian foundation — APT packages (Debian 13 Trixie amd64)
 # One package per line. Comments and blank lines ignored.
 # Bootstrap never partitions disks or touches GRUB/bootloader config.
+# Minimal profile: usable browser / FM / terminal / archive / image /
+# screenshots / clipboard / audio / network / Flatpak plumbing.
 
 # Core
+# Required for the Debian guest's source-level C smoke checks and local
+# debugging: pulls gcc, g++, make, dpkg-dev and libc6-dev (ctype.h etc.).
+# Explicitly include the metapackage: gcc alone does NOT include C headers.
+build-essential
 ca-certificates
 curl
 git
@@ -34,8 +40,11 @@ seatd
 # Desktop essentials (APT)
 kitty
 thunar
+thunar-archive-plugin
+file-roller
 fuzzel
 firefox-esr
+imv
 xdg-utils
 xdg-user-dirs
 xdg-desktop-portal
@@ -47,7 +56,7 @@ grim
 slurp
 wl-clipboard
 
-# Flatpak plumbing (minimal keeps runtime; declared apps are Full/Settings)
+# Flatpak plumbing (Flathub + declared apps: bootstrap / Settings)
 flatpak
 
 # Fonts / icons (minimal usable set)

@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# ryoku-flatpak-sync — idempotent Flathub + declared Flatpak apps (Debian).
+#
+# No nix-flatpak / NixOS. Fail honestly on network errors. Skip installed apps.
+#
+# Usage:
+#   ryoku-flatpak-sync --dry-run [--profile minimal|full] [--sysroot PATH]
+#   ryoku-flatpak-sync --apply  [--profile minimal|full] [--sysroot PATH]
+#   ryoku-flatpak-sync --list-declared [--profile …]
+#
+set -euo pipefail
+
+PROG=$(basename "$0")
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MODE=""
+PROFILE="minimal"
+SYSROOT="/"
+FLATHUB_URL="https://dl.flathub.org/repo/flathub.flatpakrepo"
+FLATHUB_REMOTE="flathub"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+warn() { echo "WARN: $*" >&2; }
+ok() { echo "OK: $*"; }
+
+resolve_flatpak_dir() {
+  if [[ -n "${RYOKU_DISTRO_DIR:-}" && -d "${RYOKU_DISTRO_DIR}/flatpak" ]]; then
+    echo "${RYOKU_DISTRO_DIR}/flatpak"
+    return 0
+  fi
+  if [[ -f /etc/ryoku/distro-dir ]]; then
+    local d
+    d=$(tr -d '[:space:]' </etc/ryoku/distro-dir || true)
+    if [[ -n "$d" && -d "$d/flatpak" ]]; then
+      echo "$d/flatpak"
+      return 0
+    fi
+  fi
+  if [[ -f /etc/ryoku/repo-path ]]; then
+    local r
+    r=$(tr -d '[:space:]' </etc/ryoku/repo-path || true)
+    if [[ -n "$r" && -d "$r/distro/flatpak" ]]; then
+      echo "$r/distro/flatpak"
+      return 0
+    fi
+  fi
+  if [[ -d "$SCRIPT_DIR/../flatpak" ]]; then
+    echo "$(cd "$SCRIPT_DIR/../flatpak" && pwd)"
+    return 0
+  fi
+  return 1
+}
+
+FLATPAK_DIR=$(resolve_flatpak_dir) || FLATPAK_DIR=""
+
+usage() {
+  cat <<EOF
+$PROG — ensure Flathub + install declared Flatpak apps for a Ryoku profile
+
+  --dry-run | --apply
+  --profile minimal|full   (default: minimal)
+  --sysroot PATH           (fixture / tests; skips real flatpak when != /)
+  --list-declared          print IDs for profile and exit
+EOF
+}
+
+sysroot_path() {
+  local rel=$1
+  rel=${rel#/}
+  if [[ "$SYSROOT" == "/" ]]; then
+    echo "/$rel"
+  else
+    echo "$SYSROOT/$rel"
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) MODE=dry-run; shift ;;
+      --apply) MODE=apply; shift ;;
+      --list-declared) MODE=list; shift ;;
+      --profile) PROFILE=$2; shift 2 ;;
+      --sysroot) SYSROOT=$2; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown arg: $1" ;;
+    esac
+  done
+  [[ -n "$MODE" ]] || die "need --dry-run, --apply, or --list-declared"
+  [[ "$PROFILE" == "minimal" || "$PROFILE" == "full" ]] || die "invalid --profile: $PROFILE"
+}
+
+read_ids() {
+  local f=$1
+  [[ -f "$f" ]] || return 0
+  # grep exits 1 when the file is comments-only — do not trip pipefail.
+  grep -vE '^\s*(#|$)' "$f" 2>/dev/null | sed 's/[[:space:]]*$//' | awk 'NF && !seen[$0]++' || true
+}
+
+declared_ids() {
+  {
+    read_ids "$FLATPAK_DIR/apps-minimal.txt"
+    if [[ "$PROFILE" == "full" ]]; then
+      read_ids "$FLATPAK_DIR/apps-full.txt"
+    fi
+  } | awk 'NF && !seen[$0]++'
+}
+
+validate_id() {
+  local id=$1
+  [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(\.[A-Za-z0-9][A-Za-z0-9._-]*)+$ ]] \
+    || die "invalid flatpak id: $id"
+}
+
+is_installed() {
+  local id=$1
+  flatpak info "$id" >/dev/null 2>&1
+}
+
+ensure_flathub() {
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] flatpak remote-add --if-not-exists $FLATHUB_REMOTE $FLATHUB_URL"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    local remotes
+    remotes=$(sysroot_path /var/lib/flatpak/ryoku-remotes.stamp)
+    mkdir -p "$(dirname "$remotes")"
+    printf '%s\n' "$FLATHUB_REMOTE" > "$remotes"
+    info "fixture: stamped Flathub remote at $remotes"
+    return 0
+  fi
+  command -v flatpak >/dev/null 2>&1 || die "flatpak binary missing (install APT flatpak first)"
+  if flatpak remotes --columns=name 2>/dev/null | grep -qx "$FLATHUB_REMOTE"; then
+    ok "Flathub remote already present"
+  else
+    info "adding Flathub remote"
+    flatpak remote-add --if-not-exists "$FLATHUB_REMOTE" "$FLATHUB_URL" \
+      || die "failed to add Flathub remote (network/DNS?)"
+  fi
+}
+
+install_declared() {
+  local ids=()
+  mapfile -t ids < <(declared_ids)
+  if [[ "${#ids[@]}" -eq 0 ]]; then
+    info "no Flatpak apps declared for profile=$PROFILE"
+    return 0
+  fi
+  local id
+  for id in "${ids[@]}"; do
+    validate_id "$id"
+  done
+  info "declared Flatpaks (${#ids[@]}): ${ids[*]}"
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] flatpak install -y $FLATHUB_REMOTE ${ids[*]}"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    local stamp
+    stamp=$(sysroot_path /var/lib/flatpak/ryoku-installed.stamp)
+    mkdir -p "$(dirname "$stamp")"
+    printf '%s\n' "${ids[@]}" > "$stamp"
+    info "fixture: stamped declared installs at $stamp"
+    return 0
+  fi
+  local missing=()
+  for id in "${ids[@]}"; do
+    if is_installed "$id"; then
+      ok "already installed: $id"
+    else
+      missing+=("$id")
+    fi
+  done
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    ok "all declared Flatpaks already installed"
+    return 0
+  fi
+  info "installing ${#missing[@]} Flatpak(s) from Flathub"
+  # Non-interactive; fail closed on network / ref errors (no silent skip).
+  flatpak install -y --noninteractive "$FLATHUB_REMOTE" "${missing[@]}" \
+    || die "flatpak install failed for: ${missing[*]} (check network / Flathub)"
+  for id in "${missing[@]}"; do
+    is_installed "$id" || die "flatpak reported success but $id is still missing"
+    ok "installed: $id"
+  done
+}
+
+main() {
+  parse_args "$@"
+  if [[ -z "$FLATPAK_DIR" || ! -d "$FLATPAK_DIR" ]]; then
+    FLATPAK_DIR=$(resolve_flatpak_dir) || die "missing flatpak manifests dir"
+  fi
+  [[ -d "$FLATPAK_DIR" ]] || die "missing $FLATPAK_DIR"
+
+  if [[ "$MODE" == "list" ]]; then
+    declared_ids
+    exit 0
+  fi
+
+  ensure_flathub
+  install_declared
+  info "flatpak-sync done ($MODE profile=$PROFILE)"
+}
+
+main "$@"

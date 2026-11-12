@@ -1,35 +1,21 @@
 # Full edition extras (Debian 13 Trixie amd64) — installed when --profile full.
 # Minimal already covers session/compositor essentials in packages-base.txt +
 # packages-hyprland.txt. This list is additive and idempotent.
-
-# Browser
-firefox-esr
-
-# Flatpak runtime (apps declared later via Settings)
-flatpak
-xdg-desktop-portal-gtk
-
-# Screenshots / clipboard (also available via Nix HM; APT for host tools)
-grim
-slurp
-wl-clipboard
-cliphist
-
-# Fonts / icons
-fonts-noto-core
-fonts-noto-color-emoji
-fonts-jetbrains-mono
-papirus-icon-theme
+# Do NOT duplicate packages already listed in packages-base.txt (bootstrap
+# dedupes, but keeping the union clean avoids review noise).
+#
+# Flatpak-preferred apps (LocalSend, Telegram, Flatseal) live in
+# distro/flatpak/apps-full.txt — not here.
 
 # Media / viewers
 mpv
-imv
+vlc
+cliphist
 
-# Office-light optional
-# libreoffice-gtk3  # deferred — large; enable when Full guest validates disk
+# Creative / office (APT; Flatpak IDs also exist on Flathub if needed later)
+gimp
+libreoffice-gtk3
 
-# Bluetooth GUI
+# Bluetooth / volume GUIs
 blueman
-
-# Volume
 pavucontrol

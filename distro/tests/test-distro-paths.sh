@@ -49,8 +49,17 @@ require distro/session/ryoku-hyprland.desktop
 require distro/session/ryoku-hyprland-session
 require distro/apt/packages-hyprland.txt
 require distro/polkit/org.ryoku.settings.apply.policy
+require distro/polkit/org.ryoku.pkg.policy
 require distro/scripts/ryoku-doctor
+require distro/scripts/ryoku-flatpak-sync
+require distro/scripts/ryoku-pkg-helper
+require distro/scripts/ryoku-import-wallpaper
+require distro/scripts/make-wallpapers.sh
+require distro/flatpak/apps-minimal.txt
+require distro/flatpak/apps-full.txt
+require distro/assets/wallpapers/CREDITS.md
 require distro/apps/ryoku-settings/CMakeLists.txt
+require distro/apps/ryoku-settings/src/DesktopAppsModel.cpp
 require distro/apps/ryoku-settings-apply/CMakeLists.txt
 require distro/ryoku/settings.json
 require distro/ryoku/lib.nix
@@ -67,6 +76,8 @@ require distro/tests/test-hyprland-conf-055.sh
 require distro/tests/test-ryoku-doctor.sh
 require distro/tests/test-settings-port.sh
 require distro/tests/test-apt-groups.sh
+require distro/tests/test-flatpak-apps.sh
+require distro/tests/test-wallpapers.sh
 require distro/docs/COMPOSITOR.md
 require distro/docs/SERVICE_OWNERSHIP.md
 require distro/docs/DMS_BAR_SURFACE.md
@@ -105,6 +116,11 @@ fi
 # Shell syntax.
 bash -n "$ROOT/distro/scripts/ryoku-bootstrap"
 bash -n "$ROOT/distro/scripts/ryoku-doctor"
+bash -n "$ROOT/distro/scripts/ryoku-flatpak-sync"
+bash -n "$ROOT/distro/scripts/ryoku-pkg-helper"
+bash -n "$ROOT/distro/scripts/ryoku-import-wallpaper"
+bash -n "$ROOT/distro/tests/test-flatpak-apps.sh"
+bash -n "$ROOT/distro/tests/test-wallpapers.sh"
 bash -n "$ROOT/distro/session/ryoku-niri-session"
 bash -n "$ROOT/distro/session/ryoku-hyprland-session"
 bash -n "$ROOT/distro/tests/test-bootstrap-policy.sh"

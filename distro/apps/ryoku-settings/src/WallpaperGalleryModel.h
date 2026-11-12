@@ -54,6 +54,8 @@ public:
 
     // Resolve allowed gallery root (prefer ~/.local/share/wallpapers).
     static QString resolveGalleryPath(const QString &repoPath);
+    // Optional private import dir (never managed by git / HM store symlink).
+    static QString resolvePrivateGalleryPath();
     static QString findVideoHelper();
 
 signals:
@@ -62,11 +64,13 @@ signals:
 
 private:
     void startNextPoster();
+    void appendFromDir(const QString &dirPath, const QStringList &nameFilters);
 
     MediaKind m_kind = MediaKind::Images;
     QString m_repoPath;
     QString m_galleryPath;
     QStringList m_files; // basenames
+    QHash<QString, QString> m_absById; // basename → absolute path (public + private)
     QHash<QString, QString> m_posters; // basename → poster absolute path
     QStringList m_posterQueue;
     QProcess *m_posterProc = nullptr;

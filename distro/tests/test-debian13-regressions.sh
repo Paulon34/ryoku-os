@@ -17,6 +17,15 @@ grep -qx 'polkitd' "$APT_LIST" || fail "polkitd missing"
 grep -qx 'pkexec' "$APT_LIST" || fail "pkexec missing"
 pass "Debian 13 polkit packages"
 
+# Bootstrap runs as root over SSH without a Wayland session.
+# Running Hyprland --version there previously logged a false version warning:
+# "CRIT: XDG_RUNTIME_DIR is not set!" instead of 0.55.2.
+grep -Fq 'hypr_ver=$(dpkg-query -W' "$BOOTSTRAP" ||
+  fail "bootstrap must read Hyprland package version without starting compositor"
+! grep -Fq 'hypr_ver=$(Hyprland --version' "$BOOTSTRAP" ||
+  fail "bootstrap version probe must not require XDG_RUNTIME_DIR"
+pass "Hyprland package version probe is headless-safe"
+
 # nixGLDefault auto NVIDIA detection uses builtins.currentTime (impure).
 ! grep -q 'wrappers.nixGLDefault' "$NIXGL" || fail "impure nixGLDefault in HM"
 grep -q 'wrappers.nixGLIntel' "$NIXGL" || fail "pure Mesa wrapper missing"
@@ -205,6 +214,22 @@ grep -Fq 'home.file.".local/bin/ryoku-dms-ipc"' "$DMS_MODULE" ||
   fail "ryoku-dms-ipc helper missing"
 pass "DMS IPC PATH and absolute helpers"
 
+# VM regression: Ryoku Settings .desktop is correctly installed in the HM
+# profile, but DMS launcher cannot find it if GDM starts with XDG_DATA_DIRS
+# restricted to /usr/share. Both graphical entrypoints must expose it.
+HYPR_SESSION="$ROOT/distro/session/ryoku-hyprland-session"
+for session in "$HYPR_SESSION" "$SESSION"; do
+  grep -Fq 'export XDG_DATA_DIRS=' "$session" ||
+    fail "missing XDG_DATA_DIRS export in $(basename "$session")"
+  grep -Fq 'HM_SHARE="${HM_BIN%/bin}/share"' "$session" ||
+    fail "HM desktop share dir missing in $(basename "$session")"
+  grep -Fq 'NIX_SHARE="${NIX_BIN%/bin}/share"' "$session" ||
+    fail "Nix desktop share dir missing in $(basename "$session")"
+  grep -Fq '${XDG_DATA_DIRS:-/usr/local/share:/usr/share}' "$session" ||
+    fail "system XDG_DATA_DIRS fallback/preservation missing in $(basename "$session")"
+done
+pass "DMS discovers Nix/Home Manager desktop entries after GDM login"
+
 # Matugen must eventually write ~/.config/niri/colors.kdl (VM observed missing).
 grep -Fq 'ensureRyokuNiriColors' "$MATUGEN_MODULE" ||
   fail "colors.kdl seed activation missing"
@@ -308,12 +333,23 @@ HARDCODE_HITS=$(
 }
 grep -Fq 'XDG_RUNTIME_DIR unset' "$SESSION" ||
   fail "session must require pam XDG_RUNTIME_DIR"
-grep -Fq 'already running' "$DMS_MODULE" ||
-  fail "ryoku-start-dms must be idempotent against double spawn"
-grep -Fq "pgrep -u \"\$uid\" -f -- 'quickshell'" "$DMS_MODULE" ||
-  fail "idempotent start must detect Nix .quickshell-wrapped (not only -x qs)"
-! grep -Fq 'pgrep -x quickshell' "$DMS_MODULE" ||
-  fail "pgrep -x quickshell misses Nix wrapper process name"
+# VM login 2026-11-12: pgrep -f quickshell matched a transient process,
+# causing a false "already running" skip and black screen after fresh boot.
+# The managed launcher must rely on its per-session flock for first start.
+grep -Fq 'flock -n 9' "$DMS_MODULE" ||
+  fail "ryoku-start-dms must flock to prevent duplicate launches"
+grep -Fq 'acquired session flock' "$DMS_MODULE" ||
+  fail "DMS startup must record when it acquired the flock"
+! grep -Fq 'pgrep -u "$uid" -f -- '\''quickshell'\'' >/dev/null' "$DMS_MODULE" ||
+  fail "DMS startup must not use broad process-name guard"
+grep -Fq 'quickshell_alive()' "$DMS_MODULE" ||
+  fail "DMS early-retry must check if real Quickshell remains alive"
+grep -Fq 'readlink -f "/proc/$pid/exe"' "$DMS_MODULE" ||
+  fail "DMS retry must validate executable, not loose cmdline string"
+grep -Fq 'if quickshell_alive; then' "$DMS_MODULE" ||
+  fail "DMS retry must reject a second instance when Quickshell is still running"
+grep -Fq 'ryoku-dusk.jpg' "$MATUGEN_MODULE" ||
+  fail "first-login wallpaper seed must match settings default (ryoku-dusk.jpg)"
 grep -qx 'network-manager-gnome' "$APT_LIST" ||
   fail "network-manager-gnome required for nm-applet tray"
 grep -qx 'mate-polkit' "$APT_LIST" ||

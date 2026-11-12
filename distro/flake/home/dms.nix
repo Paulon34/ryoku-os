@@ -185,7 +185,7 @@ let
 
   ryokuDefaultBar = pkgs.writeText "ryoku-dms-default-bar.json" (builtins.toJSON styleBar);
 
-  defaultWallpaper = "${config.home.homeDirectory}/.local/share/wallpapers/ryoku-night.jpg";
+  defaultWallpaper = "${config.home.homeDirectory}/.local/share/wallpapers/ryoku-dusk.jpg";
 
   # Seed only when missing — file must stay mutable for DMS + Matugen.
   ryokuSettingsSeed = pkgs.writeText "ryoku-dms-settings-seed.json" (
@@ -194,6 +194,11 @@ let
       // {
         barConfigs = [ styleBar ];
         currentWallpaper = defaultWallpaper;
+        # Material You: DMS must use wallpaper-derived colors, not the stock
+        # purple theme. Subsequent HM activation reads the Ryoku preference.
+        currentThemeName = "dynamic";
+        currentThemeCategory = "dynamic";
+        runUserMatugenTemplates = true;
       }
     )
   );
@@ -231,8 +236,17 @@ let
 
     before=$(${pkgs.coreutils}/bin/sha256sum < "$settings")
 
+    # The checkbox in Ryoku Settings is stored in the writable repo settings,
+    # not in the Home Manager seed at ~/.config/ryoku/settings.json.
+    # Explicit false keeps stock colors; missing/true defaults to Material You.
+    ryoku_settings=${lib.escapeShellArg (if config.ryoku.settingsApply.repoPath != "" then "${config.ryoku.settingsApply.repoPath}/ryoku/settings.json" else "")}
+    dynamic=true
+    if [[ -n "$ryoku_settings" && -f "$ryoku_settings" ]]; then
+      dynamic=$("$jq" -r 'if .appearance.dynamicColors == false then "false" else "true" end' "$ryoku_settings" 2>/dev/null || echo true)
+    fi
+
     # DMS 1.5.3 barConfigs is an ARRAY of { id, ... }. Object maps are ignored.
-    "$jq" -s '
+    "$jq" --argjson dynamic "$dynamic" -s '
       .[0] as $s | .[1] as $p | .[2] as $bar |
       ($s + $p) |
       .barConfigs = (
@@ -242,7 +256,14 @@ let
         else
           $cfgs + [$bar]
         end
-      )
+      ) |
+      if $dynamic then
+        .currentThemeName = "dynamic" |
+        .currentThemeCategory = "dynamic" |
+        .runUserMatugenTemplates = true
+      elif .currentThemeName == "dynamic" then
+        .currentThemeName = "purple" | .currentThemeCategory = "generic"
+      else . end
     ' "$settings" "$patch" ${ryokuDefaultBar} > "$settings.tmp"
 
     mv "$settings.tmp" "$settings"
@@ -291,7 +312,7 @@ in
     appearance = {
       shellStyle = shellStyle;
       visualProfile = visualProfile;
-      wallpaper = "ryoku-night.jpg";
+      wallpaper = "ryoku-dusk.jpg";
     };
   };
 
@@ -371,36 +392,102 @@ in
       # (auth/blur/IPC). Export BOTH binaries to the entire child process tree.
       export PATH="${dmsRuntimePath}:$PATH"
 
-      # Do not invent WAYLAND_DISPLAY — Niri sets it. Refuse empty runtime dir.
+      # Hyprland exec-once has no interactive stderr. Persist local startup logs
+      # to distinguish missing autostart from early DMS/Qt failures.
+      state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/ryoku"
+      ${pkgs.coreutils}/bin/mkdir -p "$state_dir"
+      exec >>"$state_dir/dms-startup.log" 2>&1
+      echo "=== ryoku-start-dms $(${pkgs.coreutils}/bin/date -Is) ==="
+      echo "WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-unset}; XDG_RUNTIME_DIR=''${XDG_RUNTIME_DIR:-unset}"
+
+      # GDM must supply the compositor session environment; never invent it.
       if [[ -z "''${XDG_RUNTIME_DIR:-}" ]]; then
-        echo "ryoku-start-dms: XDG_RUNTIME_DIR unset" >&2
+        echo "ryoku-start-dms: XDG_RUNTIME_DIR unset"
         exit 1
       fi
       if [[ -z "''${WAYLAND_DISPLAY:-}" ]]; then
-        echo "ryoku-start-dms: WAYLAND_DISPLAY unset (is Niri up?)" >&2
+        echo "ryoku-start-dms: WAYLAND_DISPLAY unset"
         exit 1
       fi
       if [[ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-        echo "ryoku-start-dms: warning: DBUS_SESSION_BUS_ADDRESS unset" >&2
+        echo "ryoku-start-dms: warning: DBUS_SESSION_BUS_ADDRESS unset"
       fi
 
-      # Idempotent reentry: Niri may re-fire spawn-at-startup; never double-shell.
-      # Nix quickshell often appears as .quickshell-wrapped — never rely on -x quickshell.
+      # Wait for the compositor socket at first login, rather than racing it.
+      socket="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+      for ((i=0; i<40; i++)); do
+        [[ -S "$socket" ]] && break
+        ${pkgs.coreutils}/bin/sleep 0.25
+      done
+      if [[ ! -S "$socket" ]]; then
+        echo "ryoku-start-dms: missing Wayland socket $socket"
+        exit 1
+      fi
+
+      # This is the ONLY managed DMS entry point for Hyprland/Niri. The
+      # per-user flock (held throughout DMS execution) prevents duplicates.
+      # Do not use broad "pgrep -f quickshell" as a startup veto: real guest
+      # login saw a transient false positive here and stayed black, with no
+      # DMS/Quickshell process or layers surviving after login.
       uid=$(${pkgs.coreutils}/bin/id -u)
-      if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- '${dmsBin}' >/dev/null 2>&1 \
-        || ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
-        || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
-        echo "ryoku-start-dms: DMS/Quickshell already running for uid $uid; skipping" >&2
+      lock="''${XDG_RUNTIME_DIR}/ryoku-dms.start.lock"
+      exec 9>"$lock" || {
+        echo "ryoku-start-dms: cannot open lock $lock"
+        exit 1
+      }
+      if ! ${pkgs.util-linux}/bin/flock -n 9; then
+        echo "ryoku-start-dms: another managed DMS instance holds flock for uid $uid; skipping"
         exit 0
       fi
+      echo "ryoku-start-dms: acquired session flock (uid=$uid)"
 
-      # Apply Quattro bar after DMS writes/loads settings (best-effort).
+      # When the DMS launcher exits very early, Quickshell might still be
+      # alive on its own. Only an actual Quickshell executable can veto a
+      # retry; command-line substring matches wrongly catch shell/helpers.
+      quickshell_alive() {
+        local pid exe
+        while IFS= read -r pid; do
+          [[ -n "$pid" && "$pid" != "$$" ]] || continue
+          exe=$(${pkgs.coreutils}/bin/readlink -f "/proc/$pid/exe" 2>/dev/null || true)
+          case "$exe" in
+            */bin/quickshell|*/bin/.quickshell-wrapped|*/bin/qs)
+              echo "ryoku-start-dms: active Quickshell exe=$exe pid=$pid"
+              return 0
+              ;;
+          esac
+        done < <(${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell|/bin/qs' || true)
+        return 1
+      }
+
+      # Async bar IPC retries must not inherit fd9. Otherwise a failed DMS
+      # start leaves its flock held by the helper for up to ~60 seconds.
       (
-        sleep 2
+        ${pkgs.coreutils}/bin/sleep 2
         ${applyRyokuBar} || true
         ${applyRyokuSession} || true
-      ) &
-      exec "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsBin}" run
+      ) 9>&- &
+
+      # If startup fails immediately due to an early graphics/DBus race,
+      # retry ONCE. Never restart after a normal long-running session exits.
+      for attempt in 1 2; do
+        started=$(${pkgs.coreutils}/bin/date +%s)
+        echo "ryoku-start-dms: starting DMS attempt=$attempt"
+        if "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsBin}" run; then
+          rc=0
+        else
+          rc=$?
+        fi
+        elapsed=$(( $(${pkgs.coreutils}/bin/date +%s) - started ))
+        echo "ryoku-start-dms: DMS exited rc=$rc elapsed=''${elapsed}s"
+        if [[ "$elapsed" -ge 15 || "$attempt" -eq 2 ]]; then
+          exit "$rc"
+        fi
+        if quickshell_alive; then
+          echo "ryoku-start-dms: Quickshell still active; not launching duplicate"
+          exit "$rc"
+        fi
+        ${pkgs.coreutils}/bin/sleep 3
+      done
     '';
   };
 }

@@ -12,19 +12,30 @@ for f in packages-base.txt packages-hyprland.txt packages-full.txt; do
   [[ -f "$ROOT/distro/apt/$f" ]] && pass "$f" || fail_msg "missing $f"
 done
 
-need_base=(firefox-esr kitty thunar flatpak grim slurp fonts-noto-core papirus-icon-theme)
+# Source-level helper checks need standard C headers; gcc alone omits libc6-dev.
+# Keep build-essential in Minimal so the guest check works after bootstrap.
+need_base=(build-essential firefox-esr kitty thunar thunar-archive-plugin file-roller imv flatpak grim slurp fonts-noto-core papirus-icon-theme)
 for pkg in "${need_base[@]}"; do
   grep -Eq "^${pkg}$" "$ROOT/distro/apt/packages-base.txt" \
     && pass "base has $pkg" \
     || fail_msg "packages-base missing $pkg"
 done
 
-need_full=(mpv blueman pavucontrol fonts-jetbrains-mono)
+need_full=(mpv vlc gimp libreoffice-gtk3 blueman pavucontrol cliphist)
 for pkg in "${need_full[@]}"; do
   grep -Eq "^${pkg}$" "$ROOT/distro/apt/packages-full.txt" \
     && pass "full has $pkg" \
     || fail_msg "packages-full missing $pkg"
 done
+
+# No duplicates between base and full (review hygiene; bootstrap also dedupes)
+while read -r pkg; do
+  [[ -z "$pkg" ]] && continue
+  if grep -Eq "^${pkg}$" "$ROOT/distro/apt/packages-base.txt"; then
+    fail_msg "packages-full duplicates base entry: $pkg"
+  fi
+done < <(grep -vE '^\s*(#|$)' "$ROOT/distro/apt/packages-full.txt")
+pass "full list has no base duplicates"
 
 grep -Eq '^hyprland$' "$ROOT/distro/apt/packages-hyprland.txt" || fail_msg "hyprland list"
 grep -Eq '^hyprland-guiutils$' "$ROOT/distro/apt/packages-hyprland.txt" || fail_msg "hyprland-guiutils"

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>Ryoku</vendor>
+  <vendor_url>https://github.com/Paulon34/ryoku-os</vendor_url>
+
+  <!--
+    Allowlisted APT / Flatpak / local .deb helper.
+    Bootstrap installs the script to /usr/local/libexec/ryoku-pkg-helper.
+    Verbs are fixed inside the helper; GUI never supplies a shell string.
+  -->
+  <action id="org.ryoku.pkg.helper">
+    <description>Install, update, or remove Ryoku allowlisted packages</description>
+    <description xml:lang="pt_BR">Instalar, atualizar ou remover pacotes allowlisted do Ryoku</description>
+    <message>Authentication is required to change Ryoku APT or Flatpak packages.</message>
+    <message xml:lang="pt_BR">É necessária autenticação para alterar pacotes APT ou Flatpak do Ryoku.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/ryoku-pkg-helper</annotate>
+  </action>
+</policyconfig>
