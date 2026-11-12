@@ -88,33 +88,21 @@ git_branch() {
 }
 
 hm_generation() {
-  local profile gen
-  profile="${HOME_MANAGER_PROFILE:-$HOME/.local/state/home-manager/gcroots/current-home}"
-  if [[ -L "$profile" || -e "$profile" ]]; then
-    readlink -f "$profile" 2>/dev/null || readlink "$profile" 2>/dev/null || true
-  fi
-  # Prefer classic nix profile link name for generation number.
+  # Report a numeric generation only when the profile symlink names one.
+  # The resolved /nix/store path is reported separately as HM_PATH.
+  local cand target
   for cand in \
-    "$HOME/.local/state/home-manager/gcroots/current-home" \
+    "${HOME_MANAGER_PROFILE:-$HOME/.local/state/home-manager/gcroots/current-home}" \
     "/nix/var/nix/profiles/per-user/${USER:-}/home-manager"
   do
     if [[ -L "$cand" ]]; then
-      local target
       target=$(readlink "$cand" 2>/dev/null || true)
       if [[ "$target" =~ home-manager-([0-9]+)-link ]]; then
         echo "${BASH_REMATCH[1]}"
         return 0
       fi
-      # current-home often points at a generation store path; try sibling profile.
     fi
   done
-  if [[ -L "/nix/var/nix/profiles/per-user/${USER:-}/home-manager" ]]; then
-    target=$(readlink "/nix/var/nix/profiles/per-user/${USER:-}/home-manager" || true)
-    if [[ "$target" =~ home-manager-([0-9]+)-link ]]; then
-      echo "${BASH_REMATCH[1]}"
-      return 0
-    fi
-  fi
   return 0
 }
 
@@ -199,15 +187,15 @@ if [[ -n "$HYPR_CONF" ]]; then
   if [[ "$HYPR_CONF" == /nix/store/* ]]; then
     info "hyprland.conf is a Nix store path (good — managed by HM)"
   fi
-  if grep -q 'windowrulev2' "$HYPR_CONF" 2>/dev/null; then
+  if grep -Eq '^[[:space:]]*windowrulev2[[:space:]]*=' "$HYPR_CONF" 2>/dev/null; then
     fail "active conf still contains windowrulev2 (0.55 deprecation overlay)"
   else
     ok "no windowrulev2 in active conf"
   fi
-  if grep -Eq 'windowrule[[:space:]]*=[[:space:]]*float,' "$HYPR_CONF" 2>/dev/null; then
+  if grep -Eq '^[[:space:]]*windowrule[[:space:]]*=[[:space:]]*float,' "$HYPR_CONF" 2>/dev/null; then
     fail "active conf has bare float effect (invalid on 0.55.2)"
   fi
-  if grep -Eq 'match:class|float on' "$HYPR_CONF" 2>/dev/null; then
+  if grep -Eq '^[[:space:]]*windowrule[[:space:]]*=.*(match:class|float on)' "$HYPR_CONF" 2>/dev/null; then
     ok "modern match:/float on windowrules present"
   else
     warn "modern match: windowrules not found in active conf"
@@ -236,8 +224,14 @@ if command -v Hyprland >/dev/null 2>&1 || command -v start-hyprland >/dev/null 2
 else
   warn "Hyprland/start-hyprland not on PATH (APT backports not applied?)"
 fi
-if command -v niri >/dev/null 2>&1; then
-  ok "Niri recovery binary present ($(command -v niri))"
+NIRI_BIN=$(command -v niri 2>/dev/null || true)
+if [[ -z "$NIRI_BIN" ]]; then
+  for cand in "$HOME/.local/state/nix/profiles/home-manager/home-path/bin/niri" "$HOME/.nix-profile/bin/niri"; do
+    if [[ -x "$cand" ]]; then NIRI_BIN=$cand; break; fi
+  done
+fi
+if [[ -n "$NIRI_BIN" ]]; then
+  ok "Niri recovery binary present ($NIRI_BIN)"
 else
   warn "niri binary missing (recovery session may be broken)"
 fi
@@ -250,10 +244,16 @@ else
 fi
 
 # --- settings ---
-if command -v ryoku-settings >/dev/null 2>&1; then
-  ok "ryoku-settings on PATH"
+SETTINGS_BIN=$(command -v ryoku-settings 2>/dev/null || true)
+if [[ -z "$SETTINGS_BIN" ]]; then
+  for cand in "$HOME/.local/state/nix/profiles/home-manager/home-path/bin/ryoku-settings" "$HOME/.nix-profile/bin/ryoku-settings"; do
+    if [[ -x "$cand" ]]; then SETTINGS_BIN=$cand; break; fi
+  done
+fi
+if [[ -n "$SETTINGS_BIN" ]]; then
+  ok "Ryoku Settings binary present ($SETTINGS_BIN)"
 else
-  warn "ryoku-settings not on PATH (HM package not installed yet)"
+  warn "ryoku-settings binary missing (HM package not installed yet)"
 fi
 if [[ -f "$HOME/.config/ryoku/settings.json" || -f "$REPO_ROOT/distro/ryoku/settings.json" || -f "$REPO_ROOT/ryoku/settings.json" ]]; then
   ok "settings.json found"
