@@ -138,16 +138,39 @@ in
       # Persist selection for Settings + next login.
       printf '%s\n' "$(basename "$pick")" > "${config.home.homeDirectory}/.config/ryoku/current-wallpaper-id" || true
 
-      # Single wallpaper owner: DMS (Material You into Theme / QML / stock templates).
-      ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
-      if [[ -x "$ipc" ]]; then
-        "$ipc" wallpaper set "$pick" 2>/dev/null || true
-      elif command -v dms >/dev/null 2>&1; then
-        dms ipc call wallpaper set "$pick" 2>/dev/null || true
+      # Ryoku Settings stores the Dynamic Colors checkbox in its writable
+      # checkout. Match the live DMS theme before changing the wallpaper,
+      # otherwise DMS stays on fixed stock Purple (#D0BCFF).
+      ryoku_settings=${lib.escapeShellArg (if config.ryoku.settingsApply.repoPath != "" then "${config.ryoku.settingsApply.repoPath}/ryoku/settings.json" else "")}
+      dynamic=true
+      if [[ -f "$ryoku_settings" ]]; then
+        dynamic=$(${lib.getExe pkgs.jq} -r 'if .appearance.dynamicColors == false then "false" else "true" end' "$ryoku_settings" 2>/dev/null || echo true)
       fi
 
-      if command -v matugen >/dev/null 2>&1; then
-        matugen image "$pick" || true
+      # One wallpaper owner: DMS. Sync mode via DMS's IPC settings API.
+      ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
+      if [[ -x "$ipc" ]]; then
+        if [[ "$dynamic" == true ]]; then
+          "$ipc" settings set currentThemeName dynamic || echo "WARN: DMS dynamic theme set failed" >&2
+          "$ipc" settings set currentThemeCategory dynamic || true
+          "$ipc" settings set runUserMatugenTemplates true || true
+        else
+          "$ipc" settings set currentThemeName purple || true
+          "$ipc" settings set currentThemeCategory generic || true
+        fi
+        "$ipc" wallpaper set "$pick" || echo "WARN: DMS wallpaper IPC failed" >&2
+      elif command -v dms >/dev/null 2>&1; then
+        dms ipc call wallpaper set "$pick" || echo "WARN: DMS wallpaper IPC failed" >&2
+      else
+        echo "WARN: dms not available; wallpaper will apply when DMS starts" >&2
+      fi
+
+      if [[ "$dynamic" == true ]]; then
+        if command -v matugen >/dev/null 2>&1; then
+          matugen image "$pick" || echo "WARN: matugen image failed" >&2
+        else
+          echo "WARN: matugen missing; colors not regenerated" >&2
+        fi
       fi
 
       # Compositor refresh (best-effort; no dual wallpaper managers).
