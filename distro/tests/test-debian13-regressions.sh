@@ -214,6 +214,22 @@ grep -Fq 'home.file.".local/bin/ryoku-dms-ipc"' "$DMS_MODULE" ||
   fail "ryoku-dms-ipc helper missing"
 pass "DMS IPC PATH and absolute helpers"
 
+# VM regression: Ryoku Settings .desktop is correctly installed in the HM
+# profile, but DMS launcher cannot find it if GDM starts with XDG_DATA_DIRS
+# restricted to /usr/share. Both graphical entrypoints must expose it.
+HYPR_SESSION="$ROOT/distro/session/ryoku-hyprland-session"
+for session in "$HYPR_SESSION" "$SESSION"; do
+  grep -Fq 'export XDG_DATA_DIRS=' "$session" ||
+    fail "missing XDG_DATA_DIRS export in $(basename "$session")"
+  grep -Fq 'HM_SHARE="${HM_BIN%/bin}/share"' "$session" ||
+    fail "HM desktop share dir missing in $(basename "$session")"
+  grep -Fq 'NIX_SHARE="${NIX_BIN%/bin}/share"' "$session" ||
+    fail "Nix desktop share dir missing in $(basename "$session")"
+  grep -Fq '${XDG_DATA_DIRS:-/usr/local/share:/usr/share}' "$session" ||
+    fail "system XDG_DATA_DIRS fallback/preservation missing in $(basename "$session")"
+done
+pass "DMS discovers Nix/Home Manager desktop entries after GDM login"
+
 # Matugen must eventually write ~/.config/niri/colors.kdl (VM observed missing).
 grep -Fq 'ensureRyokuNiriColors' "$MATUGEN_MODULE" ||
   fail "colors.kdl seed activation missing"
