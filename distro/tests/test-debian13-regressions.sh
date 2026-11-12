@@ -17,6 +17,15 @@ grep -qx 'polkitd' "$APT_LIST" || fail "polkitd missing"
 grep -qx 'pkexec' "$APT_LIST" || fail "pkexec missing"
 pass "Debian 13 polkit packages"
 
+# Bootstrap runs as root over SSH without a Wayland session.
+# Running Hyprland --version there previously logged a false version warning:
+# "CRIT: XDG_RUNTIME_DIR is not set!" instead of 0.55.2.
+grep -Fq 'hypr_ver=$(dpkg-query -W' "$BOOTSTRAP" ||
+  fail "bootstrap must read Hyprland package version without starting compositor"
+! grep -Fq 'hypr_ver=$(Hyprland --version' "$BOOTSTRAP" ||
+  fail "bootstrap version probe must not require XDG_RUNTIME_DIR"
+pass "Hyprland package version probe is headless-safe"
+
 # nixGLDefault auto NVIDIA detection uses builtins.currentTime (impure).
 ! grep -q 'wrappers.nixGLDefault' "$NIXGL" || fail "impure nixGLDefault in HM"
 grep -q 'wrappers.nixGLIntel' "$NIXGL" || fail "pure Mesa wrapper missing"
