@@ -12,7 +12,9 @@ for f in packages-base.txt packages-hyprland.txt packages-full.txt; do
   [[ -f "$ROOT/distro/apt/$f" ]] && pass "$f" || fail_msg "missing $f"
 done
 
-need_base=(firefox-esr kitty thunar thunar-archive-plugin file-roller imv flatpak grim slurp fonts-noto-core papirus-icon-theme)
+# Source-level helper checks need standard C headers; gcc alone omits libc6-dev.
+# Keep build-essential in Minimal so the guest check works after bootstrap.
+need_base=(build-essential firefox-esr kitty thunar thunar-archive-plugin file-roller imv flatpak grim slurp fonts-noto-core papirus-icon-theme)
 for pkg in "${need_base[@]}"; do
   grep -Eq "^${pkg}$" "$ROOT/distro/apt/packages-base.txt" \
     && pass "base has $pkg" \
