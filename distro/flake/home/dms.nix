@@ -371,48 +371,86 @@ in
       # (auth/blur/IPC). Export BOTH binaries to the entire child process tree.
       export PATH="${dmsRuntimePath}:$PATH"
 
-      # Do not invent WAYLAND_DISPLAY — Niri sets it. Refuse empty runtime dir.
+      # Hyprland exec-once has no interactive stderr. Persist local startup logs
+      # to distinguish missing autostart from early DMS/Qt failures.
+      state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/ryoku"
+      ${pkgs.coreutils}/bin/mkdir -p "$state_dir"
+      exec >>"$state_dir/dms-startup.log" 2>&1
+      echo "=== ryoku-start-dms $(${pkgs.coreutils}/bin/date -Is) ==="
+      echo "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}; XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}"
+
+      # GDM must supply the compositor session environment; never invent it.
       if [[ -z "''${XDG_RUNTIME_DIR:-}" ]]; then
-        echo "ryoku-start-dms: XDG_RUNTIME_DIR unset" >&2
+        echo "ryoku-start-dms: XDG_RUNTIME_DIR unset"
         exit 1
       fi
       if [[ -z "''${WAYLAND_DISPLAY:-}" ]]; then
-        echo "ryoku-start-dms: WAYLAND_DISPLAY unset (is Niri up?)" >&2
+        echo "ryoku-start-dms: WAYLAND_DISPLAY unset"
         exit 1
       fi
       if [[ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-        echo "ryoku-start-dms: warning: DBUS_SESSION_BUS_ADDRESS unset" >&2
+        echo "ryoku-start-dms: warning: DBUS_SESSION_BUS_ADDRESS unset"
       fi
 
-      # Idempotent reentry: Hyprland exec-once + Niri spawn-at-startup must never
-      # double-shell. Combine pgrep with an exclusive flock so two near-simultaneous
-      # starts cannot both pass the process check (race observed on guest logins).
-      # Nix quickshell often appears as .quickshell-wrapped — never rely on -x quickshell.
+      # Wait for the compositor socket at first login, rather than racing it.
+      socket="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+      for ((i=0; i<40; i++)); do
+        [[ -S "$socket" ]] && break
+        ${pkgs.coreutils}/bin/sleep 0.25
+      done
+      if [[ ! -S "$socket" ]]; then
+        echo "ryoku-start-dms: missing Wayland socket $socket"
+        exit 1
+      fi
+
+      # Lock before checking processes: Hyprland / Niri only ever run one DMS.
       uid=$(${pkgs.coreutils}/bin/id -u)
       lock="''${XDG_RUNTIME_DIR}/ryoku-dms.start.lock"
       exec 9>"$lock" || {
-        echo "ryoku-start-dms: cannot open lock $lock" >&2
+        echo "ryoku-start-dms: cannot open lock $lock"
         exit 1
       }
       if ! ${pkgs.util-linux}/bin/flock -n 9; then
-        echo "ryoku-start-dms: another start in progress for uid $uid; skipping" >&2
+        echo "ryoku-start-dms: another start in progress for uid $uid; skipping"
         exit 0
       fi
       if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- '${dmsBin}' >/dev/null 2>&1 \
         || ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
         || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
-        echo "ryoku-start-dms: DMS/Quickshell already running for uid $uid; skipping" >&2
+        echo "ryoku-start-dms: DMS/Quickshell already running for uid $uid; skipping"
         exit 0
       fi
 
-      # Apply Quattro bar after DMS writes/loads settings (best-effort).
+      # Async bar IPC retries must not inherit fd9. Otherwise a failed DMS
+      # start leaves its flock held by the helper for up to ~60 seconds.
       (
-        sleep 2
+        ${pkgs.coreutils}/bin/sleep 2
         ${applyRyokuBar} || true
         ${applyRyokuSession} || true
-      ) &
-      # Hold flock (fd 9) until DMS exits so a late re-fire still sees the lock.
-      exec "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsBin}" run
+      ) 9>&- &
+
+      # If startup fails immediately due to an early graphics/DBus race,
+      # retry ONCE. Never restart after a normal long-running session exits.
+      for attempt in 1 2; do
+        started=$(${pkgs.coreutils}/bin/date +%s)
+        echo "ryoku-start-dms: starting DMS attempt=$attempt"
+        if "${nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel}/bin/nixGLIntel" "${dmsBin}" run; then
+          rc=0
+        else
+          rc=$?
+        fi
+        elapsed=$(( $(${pkgs.coreutils}/bin/date +%s) - started ))
+        echo "ryoku-start-dms: DMS exited rc=$rc elapsed=${elapsed}s"
+        if [[ "$elapsed" -ge 15 || "$attempt" -eq 2 ]]; then
+          exit "$rc"
+        fi
+        if ${pkgs.procps}/bin/pgrep -u "$uid" -f -- 'quickshell' >/dev/null 2>&1 \
+          || ${pkgs.procps}/bin/pgrep -u "$uid" -x qs >/dev/null 2>&1; then
+          echo "ryoku-start-dms: Quickshell still active; not launching duplicate"
+          exit "$rc"
+        fi
+        ${pkgs.coreutils}/bin/sleep 3
+      done
     '';
   };
 }
