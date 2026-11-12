@@ -333,14 +333,21 @@ HARDCODE_HITS=$(
 }
 grep -Fq 'XDG_RUNTIME_DIR unset' "$SESSION" ||
   fail "session must require pam XDG_RUNTIME_DIR"
-grep -Fq 'already running' "$DMS_MODULE" ||
-  fail "ryoku-start-dms must be idempotent against double spawn"
-grep -Fq "pgrep -u \"\$uid\" -f -- 'quickshell'" "$DMS_MODULE" ||
-  fail "idempotent start must detect Nix .quickshell-wrapped (not only -x qs)"
-! grep -Fq 'pgrep -x quickshell' "$DMS_MODULE" ||
-  fail "pgrep -x quickshell misses Nix wrapper process name"
-grep -Fq 'flock' "$DMS_MODULE" ||
-  fail "ryoku-start-dms must flock to close Hyprland/Niri double-start race"
+# VM login 2026-11-12: pgrep -f quickshell matched a transient process,
+# causing a false "already running" skip and black screen after fresh boot.
+# The managed launcher must rely on its per-session flock for first start.
+grep -Fq 'flock -n 9' "$DMS_MODULE" ||
+  fail "ryoku-start-dms must flock to prevent duplicate launches"
+grep -Fq 'acquired session flock' "$DMS_MODULE" ||
+  fail "DMS startup must record when it acquired the flock"
+! grep -Fq 'pgrep -u "$uid" -f -- '\''quickshell'\'' >/dev/null' "$DMS_MODULE" ||
+  fail "DMS startup must not use broad process-name guard"
+grep -Fq 'quickshell_alive()' "$DMS_MODULE" ||
+  fail "DMS early-retry must check if real Quickshell remains alive"
+grep -Fq 'readlink -f "/proc/$pid/exe"' "$DMS_MODULE" ||
+  fail "DMS retry must validate executable, not loose cmdline string"
+grep -Fq 'if quickshell_alive; then' "$DMS_MODULE" ||
+  fail "DMS retry must reject a second instance when Quickshell is still running"
 grep -Fq 'ryoku-dusk.jpg' "$MATUGEN_MODULE" ||
   fail "first-login wallpaper seed must match settings default (ryoku-dusk.jpg)"
 grep -qx 'network-manager-gnome' "$APT_LIST" ||
