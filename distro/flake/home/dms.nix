@@ -194,6 +194,11 @@ let
       // {
         barConfigs = [ styleBar ];
         currentWallpaper = defaultWallpaper;
+        # Material You: DMS must use wallpaper-derived colors, not the stock
+        # purple theme. Subsequent HM activation reads the Ryoku preference.
+        currentThemeName = "dynamic";
+        currentThemeCategory = "dynamic";
+        runUserMatugenTemplates = true;
       }
     )
   );
@@ -231,8 +236,17 @@ let
 
     before=$(${pkgs.coreutils}/bin/sha256sum < "$settings")
 
+    # The checkbox in Ryoku Settings is stored in the writable repo settings,
+    # not in the Home Manager seed at ~/.config/ryoku/settings.json.
+    # Explicit false keeps stock colors; missing/true defaults to Material You.
+    ryoku_settings=${lib.escapeShellArg (if config.ryoku.settingsApply.repoPath != "" then "${config.ryoku.settingsApply.repoPath}/ryoku/settings.json" else "")}
+    dynamic=true
+    if [[ -n "$ryoku_settings" && -f "$ryoku_settings" ]]; then
+      dynamic=$("$jq" -r 'if .appearance.dynamicColors == false then "false" else "true" end' "$ryoku_settings" 2>/dev/null || echo true)
+    fi
+
     # DMS 1.5.3 barConfigs is an ARRAY of { id, ... }. Object maps are ignored.
-    "$jq" -s '
+    "$jq" --argjson dynamic "$dynamic" -s '
       .[0] as $s | .[1] as $p | .[2] as $bar |
       ($s + $p) |
       .barConfigs = (
@@ -242,7 +256,14 @@ let
         else
           $cfgs + [$bar]
         end
-      )
+      ) |
+      if $dynamic then
+        .currentThemeName = "dynamic" |
+        .currentThemeCategory = "dynamic" |
+        .runUserMatugenTemplates = true
+      elif .currentThemeName == "dynamic" then
+        .currentThemeName = "purple" | .currentThemeCategory = "generic"
+      else . end
     ' "$settings" "$patch" ${ryokuDefaultBar} > "$settings.tmp"
 
     mv "$settings.tmp" "$settings"
