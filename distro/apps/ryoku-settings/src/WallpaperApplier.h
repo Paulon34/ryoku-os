@@ -29,6 +29,10 @@ public:
     //   dms ipc call wallpaper set <absolute>
     // and stops an active video wallpaper.
     Q_INVOKABLE bool applyWallpaper(const QString &relativeId);
+    // Sets the DMS theme via its supported settings IPC, then applies the
+    // wallpaper. The Settings checkbox must control real Material You mode.
+    Q_INVOKABLE bool applyWallpaperWithTheme(const QString &relativeId, bool dynamicColors);
+    Q_INVOKABLE bool setDynamicColors(bool enabled);
 
     // Asynchronous; result via videoApplyFinished. profile: economy|balanced|quality.
     Q_INVOKABLE bool applyVideoWallpaper(const QString &relativeId,
