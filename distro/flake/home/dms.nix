@@ -185,7 +185,7 @@ let
 
   ryokuDefaultBar = pkgs.writeText "ryoku-dms-default-bar.json" (builtins.toJSON styleBar);
 
-  defaultWallpaper = "${config.home.homeDirectory}/.local/share/wallpapers/ryoku-night.jpg";
+  defaultWallpaper = "${config.home.homeDirectory}/.local/share/wallpapers/ryoku-dusk.jpg";
 
   # Seed only when missing — file must stay mutable for DMS + Matugen.
   ryokuSettingsSeed = pkgs.writeText "ryoku-dms-settings-seed.json" (
@@ -312,7 +312,7 @@ in
     appearance = {
       shellStyle = shellStyle;
       visualProfile = visualProfile;
-      wallpaper = "ryoku-night.jpg";
+      wallpaper = "ryoku-dusk.jpg";
     };
   };
 
