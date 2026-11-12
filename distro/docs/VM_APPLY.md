@@ -5,13 +5,22 @@ session unless Paulo authorizes it. Preserve `flake.lock` and `hosts/paulo`.
 
 ## 0. Preconditions (before sudo apply)
 
-1. Isolated worktree on the **exact tip** you intend to apply (PR #30 tip stacked on #29).
+1. Isolated worktree on the **exact tip** you intend to apply (PR #31 tip stacked on #29).
 2. Preserve guest `flake.lock` and `hosts/paulo` (copy aside if the worktree is fresh).
 3. Prefer: `nix build` / `home-manager build` for `.#paulo` when Nix is available.
 4. `ryoku-bootstrap --dry-run` must pass (APT + Flatpak plan).
 5. Proxmox snapshot **before** `--apply`.
 
 CI `PASS_STATIC` does **not** prove Qt/Nix build, graphical session, Flathub install, or Apply helper.
+
+Debian 13 guest prerequisite: `build-essential` (not just `gcc`) provides
+`libc6-dev` headers such as `ctype.h` for
+`distro/tests/test-settings-port.sh`. It is now declared in Minimal's APT
+manifest and installed by future `ryoku-bootstrap --apply` runs. On an
+already-installed guest, install it once before source-level tests:
+`sudo apt-get install -y --no-install-recommends build-essential`.
+Do not repeat bootstrap merely to repair test headers. For low-space guests,
+run `apt-get -s install build-essential` and check `df -h /` first.
 
 ## 1. Correct worktree
 
@@ -23,7 +32,7 @@ git fetch https://github.com/Paulon34/ryoku-os.git cursor/debian-apps-wallpapers
 cd /path/to/approved-checkout
 git fetch origin
 git checkout --detach origin/cursor/debian-apps-wallpapers
-git rev-parse HEAD   # expect the published tip SHA from PR #30
+git rev-parse HEAD   # expect the published tip SHA from PR #31
 
 # Preserve lock + host from the live guest tree if this worktree is new:
 test -f distro/flake/flake.lock && echo "KEEP flake.lock" || echo "NEED lock from guest"
