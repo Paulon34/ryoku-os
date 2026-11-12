@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>Ryoku</vendor>
+  <vendor_url>https://github.com/Paulon34/ryoku-os</vendor_url>
+
+  <!--
+    Stable Debian path. Bootstrap installs/symlinks the Nix-built helper to
+    /usr/local/libexec/ryoku-settings-apply after home-manager switch.
+  -->
+  <action id="org.ryoku.settings.apply">
+    <description>Apply or switch Ryoku Home Manager configuration</description>
+    <description xml:lang="pt_BR">Aplicar ou trocar configuração Home Manager do Ryoku</description>
+    <message>Authentication is required to apply or switch Ryoku Home Manager generations.</message>
+    <message xml:lang="pt_BR">É necessária autenticação para aplicar ou trocar gerações Home Manager do Ryoku.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/ryoku-settings-apply</annotate>
+  </action>
+</policyconfig>

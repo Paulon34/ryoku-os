@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+# ryoku-doctor — Debian Modular desktop diagnostics (read-only).
+#
+# Detects stale Home Manager generations vs git tip (root cause of red Hyprland
+# overlay when an old /nix/store/...-home-manager-files/...hyprland.conf is still
+# active). Never uses sudo, never mutates the system.
+#
+# Exit: 0 = all required checks OK (WARNs allowed); 1 = at least one FAIL.
+set -euo pipefail
+
+PROG=$(basename "$0")
+VERSION="0.1.0-debian-desktop"
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+DISTRO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(cd "$DISTRO_DIR/.." && pwd)
+FLAKE_DIR="${RYOKU_FLAKE_DIR:-$DISTRO_DIR/flake}"
+# Prefer XDG state (mutable activation stamp). Never require HM-managed
+# ~/.config/ryoku/build-info.json — that path conflicts with linkGeneration.
+BUILD_INFO_CANDIDATES=(
+  "${XDG_STATE_HOME:-$HOME/.local/state}/ryoku/build-info.json"
+  "$HOME/.local/state/ryoku/build-info.json"
+  "${XDG_CONFIG_HOME:-$HOME/.config}/ryoku/build-info.json"
+  "$HOME/.config/ryoku/build-info.json"
+  "/etc/ryoku/build-info.json"
+)
+
+FAILS=0
+WARNS=0
+OKS=0
+
+ok() { echo "OK: $*"; OKS=$((OKS + 1)); }
+warn() { echo "WARN: $*"; WARNS=$((WARNS + 1)); }
+fail() { echo "FAIL: $*"; FAILS=$((FAILS + 1)); }
+info() { echo "-- $*"; }
+
+usage() {
+  cat <<EOF
+$PROG $VERSION — Ryoku Debian desktop doctor (read-only)
+
+Usage: $PROG [--json] [--help]
+
+Reports build-info, git tip vs active HM generation, compositor/profile,
+Hyprland conf path, windowrule syntax markers, DMS process, and session wrappers.
+EOF
+}
+
+JSON=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) JSON=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+find_build_info() {
+  local f
+  for f in "${BUILD_INFO_CANDIDATES[@]}"; do
+    if [[ -f "$f" ]]; then
+      echo "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+json_get() {
+  # Minimal JSON string/number getter without requiring jq.
+  local key=$1 file=$2
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg k "$key" '.[$k] // empty' "$file" 2>/dev/null || true
+    return 0
+  fi
+  sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$file" | head -1
+}
+
+git_tip() {
+  if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true
+  fi
+}
+
+git_branch() {
+  if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true
+  fi
+}
+
+hm_generation() {
+  # Report a numeric generation only when the profile symlink names one.
+  # The resolved /nix/store path is reported separately as HM_PATH.
+  local cand target
+  for cand in \
+    "${HOME_MANAGER_PROFILE:-$HOME/.local/state/home-manager/gcroots/current-home}" \
+    "/nix/var/nix/profiles/per-user/${USER:-}/home-manager"
+  do
+    if [[ -L "$cand" ]]; then
+      target=$(readlink "$cand" 2>/dev/null || true)
+      if [[ "$target" =~ home-manager-([0-9]+)-link ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+      fi
+    fi
+  done
+  return 0
+}
+
+active_hyprland_conf() {
+  local conf="$HOME/.config/hypr/hyprland.conf"
+  if [[ -L "$conf" || -f "$conf" ]]; then
+    readlink -f "$conf" 2>/dev/null || echo "$conf"
+  fi
+}
+
+echo "=== ryoku-doctor $VERSION ==="
+info "repo=$REPO_ROOT"
+info "flake=$FLAKE_DIR"
+info "user=${USER:-unknown} home=${HOME:-}"
+info "host=$(uname -n 2>/dev/null || true) arch=$(uname -m)"
+
+# --- build-info ---
+BI=""
+if BI=$(find_build_info); then
+  ok "build-info present: $BI"
+else
+  warn "build-info.json missing (HM generation may predate ryoku build-info module)"
+  BI=""
+fi
+
+BI_COMMIT=""
+BI_VERSION=""
+BI_PROFILE=""
+BI_COMPOSITOR=""
+BI_SHELL=""
+BI_HM_GEN=""
+BI_DATE=""
+if [[ -n "$BI" ]]; then
+  BI_COMMIT=$(json_get gitCommit "$BI")
+  BI_VERSION=$(json_get ryokuVersion "$BI")
+  BI_PROFILE=$(json_get profile "$BI")
+  BI_COMPOSITOR=$(json_get compositor "$BI")
+  BI_SHELL=$(json_get shellStyle "$BI")
+  BI_HM_GEN=$(json_get hmGeneration "$BI")
+  BI_DATE=$(json_get buildDate "$BI")
+  info "build-info: version=${BI_VERSION:-?} commit=${BI_COMMIT:-?} profile=${BI_PROFILE:-?} compositor=${BI_COMPOSITOR:-?} shellStyle=${BI_SHELL:-?} hmGen=${BI_HM_GEN:-?} date=${BI_DATE:-?}"
+fi
+
+TIP=$(git_tip)
+BRANCH=$(git_branch)
+if [[ -n "$TIP" ]]; then
+  ok "git tip $TIP (branch ${BRANCH:-detached})"
+else
+  warn "git tip unavailable (not a git checkout?)"
+fi
+
+if [[ -n "$TIP" && -n "$BI_COMMIT" && "$BI_COMMIT" != "unknown" ]]; then
+  if [[ "$TIP" == "$BI_COMMIT"* || "$BI_COMMIT" == "$TIP"* ]]; then
+    ok "build-info gitCommit matches worktree tip"
+  else
+    fail "STALE HM: build-info commit=$BI_COMMIT but worktree tip=$TIP — run home-manager switch / ryoku-bootstrap --apply"
+  fi
+elif [[ -n "$TIP" && -z "$BI_COMMIT" ]]; then
+  warn "cannot compare tip vs build-info (missing gitCommit field)"
+fi
+
+# --- profile env ---
+info "env RYOKU_EDITION=${RYOKU_EDITION:-unset} RYOKU_VISUAL_PROFILE=${RYOKU_VISUAL_PROFILE:-unset} RYOKU_SHELL_STYLE=${RYOKU_SHELL_STYLE:-unset} RYOKU_COMPOSITOR=${RYOKU_COMPOSITOR:-unset}"
+info "XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset} XDG_SESSION_DESKTOP=${XDG_SESSION_DESKTOP:-unset}"
+
+# --- HM generation ---
+HM_GEN=$(hm_generation || true)
+HM_PATH=$(readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" 2>/dev/null || true)
+if [[ -n "$HM_PATH" ]]; then
+  ok "active HM generation path: $HM_PATH"
+else
+  warn "no current-home gcroots link (HM not switched on this account?)"
+fi
+if [[ -n "$HM_GEN" ]]; then
+  info "HM generation number: $HM_GEN"
+fi
+
+# --- Hyprland conf ---
+HYPR_CONF=$(active_hyprland_conf || true)
+if [[ -n "$HYPR_CONF" ]]; then
+  ok "active hyprland.conf → $HYPR_CONF"
+  if [[ "$HYPR_CONF" == /nix/store/* ]]; then
+    info "hyprland.conf is a Nix store path (good — managed by HM)"
+  fi
+  if grep -Eq '^[[:space:]]*windowrulev2[[:space:]]*=' "$HYPR_CONF" 2>/dev/null; then
+    fail "active conf still contains windowrulev2 (0.55 deprecation overlay)"
+  else
+    ok "no windowrulev2 in active conf"
+  fi
+  if grep -Eq '^[[:space:]]*windowrule[[:space:]]*=[[:space:]]*float,' "$HYPR_CONF" 2>/dev/null; then
+    fail "active conf has bare float effect (invalid on 0.55.2)"
+  fi
+  if grep -Eq '^[[:space:]]*windowrule[[:space:]]*=.*(match:class|float on)' "$HYPR_CONF" 2>/dev/null; then
+    ok "modern match:/float on windowrules present"
+  else
+    warn "modern match: windowrules not found in active conf"
+  fi
+else
+  warn "hyprland.conf not found under ~/.config/hypr"
+fi
+
+# --- session wrappers / GDM ---
+for f in /usr/local/bin/ryoku-hyprland-session /usr/local/bin/ryoku-niri-session \
+         /usr/share/wayland-sessions/ryoku-hyprland.desktop \
+         /usr/share/wayland-sessions/ryoku-niri.desktop; do
+  if [[ -e "$f" ]]; then
+    ok "session artifact: $f"
+  else
+    warn "missing session artifact: $f"
+  fi
+done
+
+# --- compositor binaries ---
+if command -v Hyprland >/dev/null 2>&1 || command -v start-hyprland >/dev/null 2>&1; then
+  ok "Hyprland binary on PATH ($(command -v start-hyprland 2>/dev/null || command -v Hyprland))"
+  if command -v Hyprland >/dev/null 2>&1; then
+    info "Hyprland --version: $(Hyprland --version 2>/dev/null | head -1 || echo unknown)"
+  fi
+else
+  warn "Hyprland/start-hyprland not on PATH (APT backports not applied?)"
+fi
+NIRI_BIN=$(command -v niri 2>/dev/null || true)
+if [[ -z "$NIRI_BIN" ]]; then
+  for cand in "$HOME/.local/state/nix/profiles/home-manager/home-path/bin/niri" "$HOME/.nix-profile/bin/niri"; do
+    if [[ -x "$cand" ]]; then NIRI_BIN=$cand; break; fi
+  done
+fi
+if [[ -n "$NIRI_BIN" ]]; then
+  ok "Niri recovery binary present ($NIRI_BIN)"
+else
+  warn "niri binary missing (recovery session may be broken)"
+fi
+
+# --- DMS ---
+if pgrep -u "${USER:-$(id -u)}" -f 'quickshell|dms-shell|dms run' >/dev/null 2>&1; then
+  ok "DMS/Quickshell process detected"
+else
+  warn "DMS/Quickshell not running (expected outside an active Wayland session)"
+fi
+
+# --- settings ---
+SETTINGS_BIN=$(command -v ryoku-settings 2>/dev/null || true)
+if [[ -z "$SETTINGS_BIN" ]]; then
+  for cand in "$HOME/.local/state/nix/profiles/home-manager/home-path/bin/ryoku-settings" "$HOME/.nix-profile/bin/ryoku-settings"; do
+    if [[ -x "$cand" ]]; then SETTINGS_BIN=$cand; break; fi
+  done
+fi
+if [[ -n "$SETTINGS_BIN" ]]; then
+  ok "Ryoku Settings binary present ($SETTINGS_BIN)"
+else
+  warn "ryoku-settings binary missing (HM package not installed yet)"
+fi
+if [[ -f "$HOME/.config/ryoku/settings.json" || -f "$REPO_ROOT/distro/ryoku/settings.json" || -f "$REPO_ROOT/ryoku/settings.json" ]]; then
+  ok "settings.json found"
+else
+  warn "settings.json not found"
+fi
+
+# --- live hyprctl (only if session) ---
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+  ERR=$(hyprctl configerrors 2>/dev/null || true)
+  if [[ -z "$ERR" || "$ERR" == "ok" || "$ERR" == "no errors"* ]]; then
+    ok "hyprctl configerrors empty/ok"
+  else
+    fail "hyprctl configerrors: $ERR"
+  fi
+else
+  info "hyprctl live checks skipped (no HYPRLAND_INSTANCE_SIGNATURE)"
+fi
+
+echo "=== summary: OK=$OKS WARN=$WARNS FAIL=$FAILS ==="
+if [[ "$FAILS" -gt 0 ]]; then
+  echo "RESULT: FAIL"
+  exit 1
+fi
+echo "RESULT: OK"
+exit 0

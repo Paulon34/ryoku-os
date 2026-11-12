@@ -120,6 +120,9 @@ in
         "${config.home.homeDirectory}/.config/niri/dms"
       ln -sfn "$pick" "${config.home.homeDirectory}/.config/ryoku/current-wallpaper"
 
+      # Persist selection for Settings + next login.
+      printf '%s\n' "$(basename "$pick")" > "${config.home.homeDirectory}/.config/ryoku/current-wallpaper-id" || true
+
       # Single wallpaper owner: DMS (Material You into Theme / QML / stock templates).
       ipc="${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc"
       if [[ -x "$ipc" ]]; then

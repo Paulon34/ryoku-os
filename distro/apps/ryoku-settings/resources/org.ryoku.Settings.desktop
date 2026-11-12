@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Ryoku Settings
+GenericName=System Settings
+Comment=Configure the Ryoku Desktop Experience
+Exec=ryoku-settings
+Icon=org.ryoku.Settings
+Terminal=false
+Categories=Settings;System;
+Keywords=Ryoku;NixOS;Settings;System;
+StartupNotify=true
+StartupWMClass=org.ryoku.Settings
