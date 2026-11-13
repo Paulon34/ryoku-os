@@ -86,6 +86,15 @@ require distro/docs/RYOKU_PROFILE_MVP.md
 require distro/docs/NIXOS_TO_DEBIAN_MIGRATION_MATRIX.md
 require distro/docs/VM_APPLY.md
 require distro/docs/BARE_METAL_MIGRATION.md
+require distro/docs/SDDM_DEBIAN.md
+require distro/scripts/ryoku-sddm
+require distro/scripts/ryoku-sddm-wallpaper
+require distro/polkit/org.ryoku.sddm.wallpaper.policy
+require distro/sddm/astronaut-overlay/Main.qml
+require distro/sddm/astronaut-overlay/Clock.qml
+require distro/sddm/astronaut-overlay/SystemButtons.qml
+require distro/LICENSES/GPL-3.0-or-later.txt
+require distro/tests/test-sddm-port.sh
 require docs/migration/HYPRLAND_TO_NIRI_KEYBINDS.md
 
 # Standalone HM: modules must not take/use osConfig (comments mentioning the ban are OK).
@@ -133,7 +142,13 @@ bash -n "$ROOT/distro/tests/test-hyprland-conf-055.sh"
 bash -n "$ROOT/distro/tests/test-ryoku-doctor.sh"
 bash -n "$ROOT/distro/tests/test-settings-port.sh"
 bash -n "$ROOT/distro/tests/test-apt-groups.sh"
+bash -n "$ROOT/distro/scripts/ryoku-sddm"
+bash -n "$ROOT/distro/scripts/ryoku-sddm-wallpaper"
+bash -n "$ROOT/distro/tests/test-sddm-port.sh"
 echo "ok: bash -n syntax"
+
+# SDDM remains opt-in. Validate port assets without activating display-manager.
+bash "$ROOT/distro/tests/test-sddm-port.sh" || fail=$((fail + 1))
 
 bash "$ROOT/distro/tests/test-hyprland-conf-055.sh" || fail=$((fail + 1))
 
