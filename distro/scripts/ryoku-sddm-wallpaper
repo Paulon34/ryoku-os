@@ -44,6 +44,13 @@ for dir in "$public" "$private"; do
 done
 [[ -n "$src" ]] || die "wallpaper not found in allowed galleries"
 
+command -v file >/dev/null 2>&1 || die "file utility required"
+mime=$(file -b --mime-type -- "$src") || die "cannot inspect image"
+case "$mime" in
+  image/jpeg|image/png|image/webp) ;;
+  *) die "only actual JPEG, PNG or WebP images are supported ($mime)" ;;
+esac
+
 theme="/usr/share/sddm/themes/ryoku-astronaut"
 [[ -f "$theme/metadata.desktop" && -d "$theme/Backgrounds" ]] ||
   die "Ryoku SDDM theme not staged; wallpaper selection remains saved in Settings"
@@ -54,7 +61,8 @@ command -v magick >/dev/null 2>&1 || die "ImageMagick is required"
 dest="$theme/Backgrounds/ryoku-current.png"
 tmp=$(mktemp "$theme/Backgrounds/.ryoku-bg.XXXXXXXX.png")
 trap 'rm -f -- "$tmp"' EXIT
-magick "$src" -auto-orient -strip -resize '3840x2160>' "PNG:$tmp" ||
+magick -limit memory 256MiB -limit map 512MiB -limit area 32MP \
+  "$src" -auto-orient -strip -resize '3840x2160>' "PNG:$tmp" ||
   die "image conversion failed"
 chmod 0644 "$tmp"
 chown root:root "$tmp"
