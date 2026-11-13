@@ -122,6 +122,56 @@ grep -Fq 'org.ryoku.pkg.policy' "$ROOT/distro/scripts/ryoku-bootstrap" \
 grep -Fq 'ryoku-pkg-helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
   || fail_msg "bootstrap must install pkg helper"
 
+# Debian guest regression: Ryoku Settings reported "Apply failed (pkexec
+# NormalExit code=1)" when switching Quattro/Islands from the GUI.
+# Ensure GUI-edited root JSON drives HM options, pinned HM binary is used,
+# and the successful privileged switch persists the hash for GUI verification.
+grep -Fq 'settingsPath = ../../ryoku/settings.json;' "$ROOT/distro/ryoku/lib.nix" \
+  && pass "Nix apply reads GUI-edited root settings" \
+  || fail_msg "Nix reads distro seed rather than live Settings JSON"
+grep -Fq 'ryokuLib.appearance.shellStyle or null' "$ROOT/distro/flake/flake.nix" \
+  && pass "Saved Quattro/Islands style projected into HM" \
+  || fail_msg "GUI shellStyle does not override bootstrap host default"
+grep -Fq 'ryokuSettingsHash = ryokuLib.settingsHash;' "$ROOT/distro/flake/flake.nix" \
+  && pass "Flake hash and HM use same Ryoku settings" \
+  || fail_msg "Nix hash and desktop modules may use different settings"
+grep -Fq '(char *)RYOKU_HOME_MANAGER' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Apply uses pinned absolute Home Manager path" \
+  || fail_msg "pkexec helper attempts home-manager from a sanitized PATH"
+grep -Fq 'write_applied_hash_marker()' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Successful Apply records hash for Settings verification" \
+  || fail_msg "Apply never persists verified hash"
+grep -Fq 'rename(tmp, "/etc/ryoku/applied-settings-hash")' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Applied hash persisted atomically" \
+  || fail_msg "Applied hash marker missing atomic update"
+grep -Fq '(char *)RYOKU_NIX' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Nix eval uses pinned absolute executable" \
+  || fail_msg "Applied hash eval depends on root PATH"
+grep -Fq 'return fi.exists() && fi.isExecutable() ? candidate' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.cpp" \
+  && pass "Polkit Debian helper keeps policy-matching stable path" \
+  || fail_msg "Settings canonicalizes Debian helper and may mismatch Polkit policy"
+grep -Fq 'RYOKU_NIX=' "$ROOT/distro/flake/pkgs/ryoku-settings-apply.nix" \
+  && pass "Nix package defines pinned hash evaluator" \
+  || fail_msg "Apply helper has no pinned nix CLI for marker verification"
+
+# Validate actual privileged helper C++ source syntax where a compiler exists;
+# static grep alone cannot catch undefined variables and missing includes.
+if command -v c++ >/dev/null 2>&1; then
+  for macro in \
+    RYOKU_REPO_PATH RYOKU_FLAKE_HOST RYOKU_FLAKE_DIR \
+    RYOKU_HOME_MANAGER RYOKU_NIX_ENV RYOKU_NIX \
+    RYOKU_RUNUSER RYOKU_DBUS_RUN_SESSION; do
+    flags+=("-D${macro}=\"/tmp/ryoku-test\"")
+  done
+  if c++ -std=c++17 -fsyntax-only "${flags[@]}" \
+    "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+    -I"$ROOT/distro/apps/ryoku-settings-apply/src"; then
+    pass "Privileged apply helper C++ syntax"
+  else
+    fail_msg "Privileged apply helper C++ syntax failed"
+  fi
+fi
+
 # Compile apply helper ops (C only — no Qt needed).
 # A bare gcc package is not sufficient on Debian: libc6-dev provides ctype.h.
 # The Debian Minimal bootstrap installs build-essential so this is reproducible.
