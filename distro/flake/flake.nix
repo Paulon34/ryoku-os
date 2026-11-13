@@ -28,6 +28,9 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       lib = nixpkgs.lib;
+      # Read the GUI's live (Git-tracked) root settings.json. The distro/ryoku
+      # copy is only a bootstrap seed; it must not mask saved shell style.
+      ryokuLib = import ../ryoku/lib.nix { inherit lib; };
 
       # Host files under ./hosts/<name>/default.nix (plain attrsets, not gitignored).
       hostNames = lib.optionals (builtins.pathExists ./hosts) (
@@ -63,7 +66,12 @@
               ryoku.profile = {
                 edition = profile.edition or "minimal";
                 visual = profile.visual or "balanced";
-                shellStyle = profile.shellStyle or "islands";
+                # Appearance -> Quattro/Islands in Ryoku Settings takes
+                # precedence when explicitly saved. Null keeps bootstrap's
+                # host profile (Minimal defaults to Islands).
+                shellStyle =
+                  let saved = ryokuLib.appearance.shellStyle or null;
+                  in if saved == null then (profile.shellStyle or "islands") else saved;
                 jarvis = profile.jarvis or false;
                 compositor = profile.compositor or "hyprland";
               };
@@ -117,11 +125,7 @@
       };
 
       # SHA-256 of the declarative apply subset (ryoku/settings.json via lib.nix).
-      ryokuSettingsHash =
-        let
-          ryokuLib = import ../ryoku/lib.nix { inherit lib; };
-        in
-        ryokuLib.settingsHash;
+      ryokuSettingsHash = ryokuLib.settingsHash;
 
       checks.${system}.paths = pkgs.runCommand "ryoku-debian-flake-paths" { } ''
         test -f ${./home/home.nix}
