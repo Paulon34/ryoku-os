@@ -9,6 +9,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
 import QtQuick.Effects
+import QtQuick.Window
 import QtMultimedia
 
 import "Components"
@@ -16,8 +17,8 @@ import "Components"
 Pane {
     id: root
 
-    height: config.ScreenHeight || Screen.height
-    width: config.ScreenWidth || Screen.ScreenWidth
+    height: config.ScreenHeight && Number(config.ScreenHeight) > 0 ? Number(config.ScreenHeight) : Screen.height
+    width: config.ScreenWidth && Number(config.ScreenWidth) > 0 ? Number(config.ScreenWidth) : Screen.width
     padding: config.ScreenPadding
 
     LayoutMirroring.enabled: config.RightToLeftLayout == "true" ? true : Qt.application.layoutDirection === Qt.RightToLeft
