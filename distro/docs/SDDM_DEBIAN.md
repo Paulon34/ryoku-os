@@ -40,7 +40,7 @@ sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommen
   qml6-module-qtquick-layouts qml6-module-qtquick-effects \
   qml6-module-qtquick-window qml6-module-qtquick-virtualkeyboard \
   qml6-module-qtmultimedia qt6-svg-plugins imagemagick \
-  libxcb-cursor0 git python3
+  libxcb-cursor0 file git python3
 ```
 
 Check the active login manager before proceeding:
