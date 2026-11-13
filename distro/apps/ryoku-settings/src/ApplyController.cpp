@@ -924,6 +924,16 @@ void ApplyController::detectHelper()
     m_helperPath.clear();
 
     auto tryPath = [](const QString &candidate) -> QString {
+        // Debian policy annotates the STABLE /usr/local/libexec entrypoint.
+        // Keep that exact path in pkexec argv, not the /nix/store symlink
+        // target: executable/policy mismatch can fall back to generic Polkit.
+        // For other backends (NixOS), preserve the canonical store path.
+        static const QString stableDebian =
+            QStringLiteral("/usr/local/libexec/ryoku-settings-apply");
+        if (candidate == stableDebian) {
+            const QFileInfo fi(candidate);
+            return fi.exists() && fi.isExecutable() ? candidate : QString();
+        }
         return canonicalizeHelperPath(candidate);
     };
 
