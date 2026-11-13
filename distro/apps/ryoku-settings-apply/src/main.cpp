@@ -145,7 +145,7 @@ static int flake_ref(char *out, size_t outlen)
     return 0;
 }
 
-/* runuser -u USER -- dbus-run-session -- home-manager <args...> */
+/* runuser -u USER -- /usr/bin/dbus-run-session -- pinned /nix/store/.../home-manager <args...> */
 static int run_hm_as_user(char *const hm_argv[])
 {
     /* Count hm args */
@@ -165,7 +165,7 @@ static int run_hm_as_user(char *const hm_argv[])
     argv[i++] = (char *)"-u";
     argv[i++] = (char *)desktop_user();
     argv[i++] = (char *)"--";
-    argv[i++] = (char *)"dbus-run-session";
+    argv[i++] = (char *)RYOKU_DBUS_RUN_SESSION;
     argv[i++] = (char *)"--";
     for (int j = 0; j < hm_count; ++j)
         argv[i++] = hm_argv[j];
@@ -185,10 +185,12 @@ static int do_apply(void)
     }
     fprintf(stderr, "ryoku-settings-apply: home-manager switch --flake %s\n", ref);
     char *const hm_args[] = {
-        (char *)"home-manager",
+        (char *)RYOKU_HOME_MANAGER,
         (char *)"switch",
         (char *)"--flake",
         ref,
+        (char *)"-b",
+        (char *)"ryoku-hm-backup",
         NULL,
     };
     /* When already the desktop user, skip runuser. */
@@ -198,10 +200,12 @@ static int do_apply(void)
         char *const dbus_args[] = {
             (char *)"dbus-run-session",
             (char *)"--",
-            (char *)"home-manager",
+            (char *)RYOKU_HOME_MANAGER,
             (char *)"switch",
             (char *)"--flake",
             ref,
+            (char *)"-b",
+            (char *)"ryoku-hm-backup",
             NULL,
         };
         return run_execv_wait(RYOKU_DBUS_RUN_SESSION, dbus_args);
@@ -213,7 +217,7 @@ static int do_rollback(void)
 {
     fprintf(stderr, "ryoku-settings-apply: home-manager switch --rollback\n");
     char *const hm_args[] = {
-        (char *)"home-manager",
+        (char *)RYOKU_HOME_MANAGER,
         (char *)"switch",
         (char *)"--rollback",
         NULL,
@@ -224,7 +228,7 @@ static int do_rollback(void)
         char *const dbus_args[] = {
             (char *)"dbus-run-session",
             (char *)"--",
-            (char *)"home-manager",
+            (char *)RYOKU_HOME_MANAGER,
             (char *)"switch",
             (char *)"--rollback",
             NULL,
