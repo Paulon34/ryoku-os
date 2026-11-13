@@ -15,6 +15,7 @@ class WallpaperApplier : public QObject
     Q_OBJECT
     Q_PROPERTY(QString lastError READ lastError NOTIFY finished)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    Q_PROPERTY(bool loginWallpaperBusy READ loginWallpaperBusy NOTIFY loginWallpaperBusyChanged)
 
 public:
     explicit WallpaperApplier(QObject *parent = nullptr);
@@ -24,6 +25,7 @@ public:
 
     QString lastError() const { return m_lastError; }
     bool busy() const { return m_busy || m_helperRunning; }
+    bool loginWallpaperBusy() const { return m_loginProcess != nullptr; }
 
     // relativeId = basename e.g. "1.jpg". Resolves via gallery, then:
     //   dms ipc call wallpaper set <absolute>
@@ -33,6 +35,11 @@ public:
     // wallpaper. The Settings checkbox must control real Material You mode.
     Q_INVOKABLE bool applyWallpaperWithTheme(const QString &relativeId, bool dynamicColors);
     Q_INVOKABLE bool setDynamicColors(bool enabled);
+
+    // Applies only the SDDM login wallpaper. System auth is requested through
+    // a narrow Polkit helper; never hand a filesystem path to a root shell.
+    // No-op until the SDDM theme is staged on Debian.
+    Q_INVOKABLE bool syncLoginWallpaper(const QString &relativeId);
 
     // Asynchronous; result via videoApplyFinished. profile: economy|balanced|quality.
     Q_INVOKABLE bool applyVideoWallpaper(const QString &relativeId,
@@ -52,6 +59,8 @@ signals:
     void finished(bool ok);
     void videoApplyFinished(bool ok);
     void busyChanged();
+    void loginWallpaperFinished(bool ok);
+    void loginWallpaperBusyChanged();
 
 private:
     bool runHelper(const QStringList &args, bool reportVideoResult);
@@ -63,5 +72,6 @@ private:
     bool m_helperRunning = false;
     bool m_reportVideoResult = false;
     QProcess *m_helper = nullptr;
+    QProcess *m_loginProcess = nullptr;
     QTimer *m_helperTimeout = nullptr;
 };
