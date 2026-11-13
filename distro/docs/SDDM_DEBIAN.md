@@ -20,6 +20,39 @@ settings are never copied into Git. The installer fetches Astronaut upstream
 at pinned commit `abb3163c724935af888ba5ea9ac0c4f22afd8048` **without
 running the upstream setup script**.
 
+## Worktree and Home Manager on the existing Proxmox VM
+
+PR #32 is stacked on #31. Do **not** run a fresh Minimal/Full package
+bootstrap or reset the #31 worktree. Prepare a separate checkout so the
+working Islands desktop stays recoverable:
+
+```sh
+cd ~/ryoku-os-apps-31
+git fetch origin refs/heads/cursor/debian-sddm-ryoku:refs/remotes/origin/cursor/debian-sddm-ryoku
+git worktree add --detach ~/ryoku-os-sddm-32 origin/cursor/debian-sddm-ryoku
+cp ~/ryoku-os-apps-31/distro/flake/flake.lock ~/ryoku-os-sddm-32/distro/flake/flake.lock
+mkdir -p ~/ryoku-os-sddm-32/distro/flake/hosts/paulo
+cp ~/ryoku-os-apps-31/distro/flake/hosts/paulo/default.nix ~/ryoku-os-sddm-32/distro/flake/hosts/paulo/default.nix
+sed -i 's#/home/paulo/ryoku-os-apps-31#/home/paulo/ryoku-os-sddm-32#g' ~/ryoku-os-sddm-32/distro/flake/hosts/paulo/default.nix
+cd ~/ryoku-os-sddm-32
+git add -f distro/flake/flake.lock
+git add distro/flake/hosts/paulo/default.nix
+bash distro/tests/test-sddm-port.sh
+nix --extra-experimental-features "nix-command flakes" build --no-link './distro/flake#homeConfigurations.paulo.activationPackage'
+```
+
+If the Nix build succeeds, activate the **new Ryoku Settings binary** and
+other HM files without reinstalling APT, Flatpak or Nix:
+
+```sh
+sudo ./distro/scripts/ryoku-bootstrap --apply --user paulo --profile minimal \
+  --visual balanced --shell-style islands --compositor hyprland \
+  --skip-apt --skip-flatpak --skip-nix
+```
+
+Keep the existing GUI session and do not restart GDM yet. Close and reopen
+Ryoku Settings after HM activation, then continue with the staged theme.
+
 ## VM procedure — preserve the last working GDM snapshot
 
 SSH to Debian VM 201 and use the SDDM PR worktree. On Debian 13, install
