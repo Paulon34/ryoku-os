@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Ryoku SDDM wallpaper updater — deliberately wallpaper-only privileged action.
+# Called via pkexec by Ryoku Settings. No arbitrary paths, user IDs, or commands
+# accepted from the GUI. Never touches display-manager.service.
+set -euo pipefail
+
+die() { echo "ryoku-sddm-wallpaper: $*" >&2; exit 1; }
+[[ "$EUID" -eq 0 ]] || die "root via pkexec required"
+[[ "$#" -eq 1 ]] || die "expected only wallpaper basename"
+id=$1
+[[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(jpg|jpeg|png|webp|JPG|JPEG|PNG|WEBP)$ ]] ||
+  die "invalid image basename"
+[[ "$id" != *..* ]] || die "invalid basename"
+
+uid=${PKEXEC_UID:-}
+[[ "$uid" =~ ^[0-9]+$ && "$uid" -ge 1000 ]] || die "missing unprivileged PKEXEC_UID"
+account=$(getent passwd "$uid") || die "unknown user"
+IFS=: read -r username _ gid _ _ home _ <<< "$account"
+[[ "$home" == /* && -d "$home" ]] || die "invalid home"
+[[ -n "$username" ]] || die "missing username"
+
+public="$home/.local/share/wallpapers"
+private="$home/.local/share/ryoku/wallpapers-private"
+src=""
+for dir in "$public" "$private"; do
+  candidate="$dir/$id"
+  [[ -f "$candidate" ]] || continue
+  real=$(readlink -f -- "$candidate") || continue
+
+  # Public: Home Manager symlinks to read-only /nix/store, or regular
+  # user-owned files under the public gallery. Private: never follow a
+  # symlink outside the private gallery. Deny sensitive root-owned files.
+  case "$dir:$real" in
+    "$public":/nix/store/*) ;;
+    "$public":"$public"/*|"$private":"$private"/*)
+      [[ "$(stat -c '%u' -- "$real")" == "$uid" ]] || continue ;;
+    *) continue ;;
+  esac
+  [[ -r "$real" ]] || continue
+  size=$(stat -c '%s' -- "$real") || continue
+  [[ "$size" -gt 0 && "$size" -le 33554432 ]] || continue
+  src="$real"
+  break
+done
+[[ -n "$src" ]] || die "wallpaper not found in allowed galleries"
+
+theme="/usr/share/sddm/themes/ryoku-astronaut"
+[[ -f "$theme/metadata.desktop" && -d "$theme/Backgrounds" ]] ||
+  die "Ryoku SDDM theme not staged; wallpaper selection remains saved in Settings"
+command -v magick >/dev/null 2>&1 || die "ImageMagick is required"
+
+# Convert to one stable path inside the theme. SDDM runs as its own user
+# and cannot necessarily traverse /home/<user>. Never use a home path in QML.
+dest="$theme/Backgrounds/ryoku-current.png"
+tmp=$(mktemp "$theme/Backgrounds/.ryoku-bg.XXXXXXXX.png")
+trap 'rm -f -- "$tmp"' EXIT
+magick "$src" -auto-orient -strip -resize '3840x2160>' "PNG:$tmp" ||
+  die "image conversion failed"
+chmod 0644 "$tmp"
+chown root:root "$tmp"
+mv -f -- "$tmp" "$dest"
+echo "ryoku-sddm-wallpaper: updated login background from $id (uid $uid)"
