@@ -28,6 +28,7 @@ stdenv.mkDerivation {
     "-DRYOKU_FLAKE_DIR=${flakeDir}"
     "-DRYOKU_HOME_MANAGER=${lib.getExe home-manager}"
     "-DRYOKU_NIX_ENV=${lib.getExe' nix "nix-env"}"
+    "-DRYOKU_NIX=${lib.getExe' nix "nix"}"
     "-DRYOKU_RUNUSER=/usr/sbin/runuser"
     "-DRYOKU_DBUS_RUN_SESSION=/usr/bin/dbus-run-session"
   ];

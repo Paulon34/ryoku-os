@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>Ryoku OS</vendor>
+  <vendor_url>https://github.com/Paulon34/ryoku-os</vendor_url>
+  <action id="org.ryoku.sddm.wallpaper">
+    <description>Update Ryoku login wallpaper</description>
+    <description xml:lang="pt_BR">Atualizar papel de parede do login Ryoku</description>
+    <message>Authentication is required to change the system SDDM background.</message>
+    <message xml:lang="pt_BR">É necessária autenticação para alterar o papel de parede do SDDM.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/ryoku-sddm-wallpaper</annotate>
+  </action>
+</policyconfig>

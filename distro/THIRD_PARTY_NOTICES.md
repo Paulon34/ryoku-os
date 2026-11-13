@@ -18,6 +18,7 @@ This tree adds Debian + Nix desktop glue. It **does not vendor** Hyprland DMS pa
 | Thunar | File manager (APT) | GPL-2.0-or-later |
 | Fuzzel | Launcher (APT/Nix) | MIT |
 | GDM | Display manager (APT) | GPL-2.0-or-later |
+| SDDM + SDDM Astronaut | Optional Debian Qt6 greeter and theme, upstream pinned | GPL-2.0-or-later / GPL-3.0-or-later |
 | PipeWire / WirePlumber | Audio (APT) | MIT / LGPL |
 | NetworkManager | Networking (APT) | GPL-2.0-or-later |
 | xdg-desktop-portal (+ gtk/wlr) | Portals (APT) | LGPL-2.1+ |
@@ -37,7 +38,15 @@ This tree adds Debian + Nix desktop glue. It **does not vendor** Hyprland DMS pa
 
 [Paulon34/ryoku-desktop](https://github.com/Paulon34/ryoku-desktop) · [AvengeMedia/DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) `v1.5.3` (flake input).
 
-SDDM astronaut GPL-3.0-or-later QML from ryoku-desktop is **not** vendored here (GDM session instead).
+SDDM Astronaut QML is now an **optional Debian port**, staged after an explicit
+administrator action. Only the three GPL-3.0-or-later Ryoku visual overlay
+files are vendored under `distro/sddm/astronaut-overlay/`; they are adapted
+from the original private Ryoku NixOS project and the Keyitdev / MarianArlt
+theme. The full GPLv3 license is in
+`distro/LICENSES/GPL-3.0-or-later.txt`. The upstream Astronaut theme is
+fetched separately on the Debian machine at pinned revision
+`abb3163c724935af888ba5ea9ac0c4f22afd8048`, with its own upstream
+license and assets. No private wallpapers are published.
 
 ## Generated / local files (not licensed as redistributable product)
 

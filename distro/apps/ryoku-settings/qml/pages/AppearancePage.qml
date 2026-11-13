@@ -295,6 +295,12 @@ Flickable {
                                     ? wallpaperApplier.lastError
                                     : qsTr("Failed to apply video wallpaper")
         }
+        function onLoginWallpaperFinished(ok) {
+            if (!ok)
+                root.errorMessage = wallpaperApplier.lastError.length
+                                    ? wallpaperApplier.lastError
+                                    : qsTr("Failed to update the SDDM login wallpaper")
+        }
     }
 
     function selectLoginWallpaper(fileName) {
@@ -326,6 +332,9 @@ Flickable {
     function saveDraft() {
         errorMessage = ""
         const wallpaperVar = draftWallpaper.length ? draftWallpaper : null
+        const previousLoginWallpaper = settingsStore.loginWallpaperValue
+        const previousLoginId = (previousLoginWallpaper === null || previousLoginWallpaper === undefined)
+                                ? "" : String(previousLoginWallpaper)
         const loginWallpaperVar = draftLoginWallpaper.length ? draftLoginWallpaper : null
         const transparencyVar = draftTransparencyNull ? null : draftTransparency
 
@@ -364,6 +373,17 @@ Flickable {
             errorMessage = wallpaperApplier.lastError.length
                            ? wallpaperApplier.lastError
                            : qsTr("Failed to synchronize Material You")
+        // Desktop wallpaper preview != login wallpaper. Only after Save,
+        // and only when the login selection changes, request an SDDM update.
+        // SDDM is optional on Debian; before staging the saved value remains
+        // ready for its installer to import.
+        if (previousLoginId !== draftLoginWallpaper) {
+            const selectedLogin = draftLoginWallpaper.length ? draftLoginWallpaper : "ryoku-night.jpg"
+            if (!wallpaperApplier.syncLoginWallpaper(selectedLogin))
+                errorMessage = wallpaperApplier.lastError.length
+                               ? wallpaperApplier.lastError
+                               : qsTr("Failed to apply SDDM login wallpaper")
+        }
         gitStatus.refresh()
         applyController.refresh()
     }

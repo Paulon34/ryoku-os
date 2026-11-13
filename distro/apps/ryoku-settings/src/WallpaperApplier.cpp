@@ -246,6 +246,76 @@ bool WallpaperApplier::applyWallpaperWithTheme(const QString &relativeId, bool d
     return true;
 }
 
+bool WallpaperApplier::syncLoginWallpaper(const QString &relativeId)
+{
+    static const QString helper = QStringLiteral("/usr/local/libexec/ryoku-sddm-wallpaper");
+    static const QString theme = QStringLiteral("/usr/share/sddm/themes/ryoku-astronaut/metadata.desktop");
+
+    // Ryoku Settings works on GDM too. Persist the selection in settings.json;
+    // when the optional SDDM port is staged, the new helper can deploy it.
+    if (!QFileInfo::exists(theme) || !QFileInfo::exists(helper)) {
+        qInfo(lcWallApply) << "SDDM theme not installed, login wallpaper selection remains saved";
+        return true;
+    }
+
+    if (m_loginProcess) {
+        m_lastError = QStringLiteral("SDDM login wallpaper update already running");
+        return false;
+    }
+    if (!m_gallery || m_gallery->absolutePathForId(relativeId).isEmpty()) {
+        m_lastError = QStringLiteral("SDDM login wallpaper not found in Ryoku gallery");
+        return false;
+    }
+    const QString pkexec = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
+    if (pkexec.isEmpty()) {
+        m_lastError = QStringLiteral("pkexec missing: cannot authorize SDDM wallpaper update");
+        return false;
+    }
+
+    // The privileged helper accepts ONLY an image basename, obtains PKEXEC_UID
+    // itself and checks the allowed public/private galleries and file type.
+    // Never pass an arbitrary absolute path or a shell command to pkexec.
+    auto *proc = new QProcess(this);
+    m_loginProcess = proc;
+    proc->setProcessChannelMode(QProcess::MergedChannels);
+    emit loginWallpaperBusyChanged();
+
+    connect(proc, &QProcess::finished, this,
+            [this, proc](int exitCode, QProcess::ExitStatus status) {
+        const bool ok = status == QProcess::NormalExit && exitCode == 0;
+        if (!ok) {
+            m_lastError = QStringLiteral("SDDM wallpaper update failed: %1")
+                              .arg(QString::fromUtf8(proc->readAll()).trimmed());
+            qWarning(lcWallApply) << m_lastError;
+        } else {
+            qInfo(lcWallApply) << "SDDM login wallpaper synchronized";
+        }
+        m_loginProcess = nullptr;
+        emit loginWallpaperBusyChanged();
+        emit loginWallpaperFinished(ok);
+        proc->deleteLater();
+    });
+    connect(proc, &QProcess::errorOccurred, this,
+            [this, proc](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        m_lastError = QStringLiteral("pkexec could not start SDDM wallpaper helper");
+        qWarning(lcWallApply) << m_lastError;
+        m_loginProcess = nullptr;
+        emit loginWallpaperBusyChanged();
+        emit loginWallpaperFinished(false);
+        proc->deleteLater();
+    });
+    QTimer::singleShot(120000, proc, [this, proc] {
+        if (m_loginProcess == proc && proc->state() != QProcess::NotRunning) {
+            m_lastError = QStringLiteral("SDDM authorization timed out");
+            proc->kill();
+        }
+    });
+    proc->start(pkexec, {helper, relativeId});
+    return true;
+}
+
 bool WallpaperApplier::applyVideoWallpaper(const QString &relativeId,
                                            bool loop,
                                            bool audio,

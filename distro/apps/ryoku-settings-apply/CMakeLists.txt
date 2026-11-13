@@ -11,6 +11,7 @@ set(RYOKU_FLAKE_HOST "" CACHE STRING "Home Manager flake host attribute / deskto
 set(RYOKU_FLAKE_DIR "" CACHE STRING "Absolute path to distro/flake")
 set(RYOKU_HOME_MANAGER "" CACHE STRING "Absolute path to home-manager")
 set(RYOKU_NIX_ENV "" CACHE STRING "Absolute path to nix-env")
+set(RYOKU_NIX "" CACHE STRING "Absolute path to nix CLI for semantic hash verification")
 set(RYOKU_RUNUSER "/usr/sbin/runuser" CACHE STRING "Absolute path to runuser")
 set(RYOKU_DBUS_RUN_SESSION "/usr/bin/dbus-run-session" CACHE STRING "Absolute path to dbus-run-session")
 
@@ -29,6 +30,9 @@ endif()
 if(RYOKU_NIX_ENV STREQUAL "")
   message(FATAL_ERROR "RYOKU_NIX_ENV is required")
 endif()
+if(RYOKU_NIX STREQUAL "")
+  message(FATAL_ERROR "RYOKU_NIX is required")
+endif()
 
 add_executable(ryoku-settings-apply
   src/main.cpp
@@ -42,6 +46,7 @@ target_compile_definitions(ryoku-settings-apply PRIVATE
   "RYOKU_FLAKE_DIR=\"${RYOKU_FLAKE_DIR}\""
   "RYOKU_HOME_MANAGER=\"${RYOKU_HOME_MANAGER}\""
   "RYOKU_NIX_ENV=\"${RYOKU_NIX_ENV}\""
+  "RYOKU_NIX=\"${RYOKU_NIX}\""
   "RYOKU_RUNUSER=\"${RYOKU_RUNUSER}\""
   "RYOKU_DBUS_RUN_SESSION=\"${RYOKU_DBUS_RUN_SESSION}\""
 )

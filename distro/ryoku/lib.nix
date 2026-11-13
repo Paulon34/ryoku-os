@@ -19,7 +19,10 @@
 { lib }:
 
 let
-  settingsPath = ./settings.json;
+  # GUI writes the live repository root ryoku/settings.json. The sibling
+  # distro/ryoku/settings.json is only a clean first-install seed. Reading the
+  # seed here made Nix hashes and Quattro/Islands ignore GUI selections.
+  settingsPath = ../../ryoku/settings.json;
   wallpapersDir = ../assets/wallpapers;
 
   raw = builtins.fromJSON (builtins.readFile settingsPath);

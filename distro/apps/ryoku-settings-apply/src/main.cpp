@@ -21,6 +21,8 @@
 #include "ops.h"
 
 #include <errno.h>
+#include <ctype.h>
+#include <sys/stat.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +49,10 @@
 
 #ifndef RYOKU_NIX_ENV
 #error "RYOKU_NIX_ENV must be defined at compile time"
+#endif
+
+#ifndef RYOKU_NIX
+#error "RYOKU_NIX must be defined at compile time"
 #endif
 
 #ifndef RYOKU_RUNUSER
@@ -103,6 +109,94 @@ static const char *desktop_user(void)
     return RYOKU_FLAKE_HOST; /* host attr == desktop username on Debian Modular */
 }
 
+
+/*
+ * After a successful HM switch, evaluate the same declarative hash the GUI
+ * displays and write a verified SHA-256 to its marker file. Previously the
+ * Debian helper never wrote this marker, so Apply remained Failed/NeedsApply
+ * even after successful activation. Root must not evaluate user Git/Nix code:
+ * run nix eval read-only as the desktop user via runuser and capture only stdout.
+ * Never claim Applied when evaluation or marker persistence fails.
+ */
+static int write_applied_hash_marker(void)
+{
+    if (geteuid() != 0) {
+        fprintf(stderr, "ryoku-settings-apply: marker update requires pkexec root\n");
+        return 2;
+    }
+    char ref[PATH_MAX];
+    int n = snprintf(ref, sizeof(ref), "%s#ryokuSettingsHash", RYOKU_FLAKE_DIR);
+    if (n < 0 || (size_t)n >= sizeof(ref))
+        return 2;
+
+    char tmp[] = "/etc/ryoku/.applied-settings-hash.XXXXXX";
+    int fd = mkstemp(tmp);
+    if (fd < 0) {
+        fprintf(stderr, "ryoku-settings-apply: cannot create marker temp: %s\n",
+                strerror(errno));
+        return 2;
+    }
+
+    const pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "ryoku-settings-apply: marker fork failed: %s\n", strerror(errno));
+        close(fd);
+        unlink(tmp);
+        return 2;
+    }
+    if (pid == 0) {
+        if (dup2(fd, STDOUT_FILENO) < 0) _exit(127);
+        close(fd);
+        char *const argv[] = {
+            (char *)"runuser", (char *)"-u", (char *)desktop_user(), (char *)"--",
+            (char *)RYOKU_NIX, (char *)"--extra-experimental-features",
+            (char *)"nix-command flakes", (char *)"eval", (char *)"--raw", ref, NULL
+        };
+        execv(RYOKU_RUNUSER, argv);
+        fprintf(stderr, "ryoku-settings-apply: nix eval exec failed: %s\n", strerror(errno));
+        _exit(127);
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "ryoku-settings-apply: HM switched, but nix eval hash failed; "
+                        "marker was not updated\n");
+        close(fd);
+        unlink(tmp);
+        return 2;
+    }
+
+    char buf[128] = {0};
+    if (lseek(fd, 0, SEEK_SET) < 0) {
+        close(fd); unlink(tmp); return 2;
+    }
+    const ssize_t bytes = read(fd, buf, sizeof(buf) - 1);
+    if (bytes != 64) {
+        fprintf(stderr, "ryoku-settings-apply: hash has invalid length %zd\n", bytes);
+        close(fd); unlink(tmp); return 2;
+    }
+    for (int i = 0; i < 64; i++) {
+        if (!isxdigit((unsigned char)buf[i])) {
+            fprintf(stderr, "ryoku-settings-apply: hash is not hex SHA-256\n");
+            close(fd); unlink(tmp); return 2;
+        }
+    }
+
+    if (ftruncate(fd, 0) != 0 || lseek(fd, 0, SEEK_SET) < 0
+        || write(fd, buf, 64) != 64 || write(fd, "\n", 1) != 1
+        || fchmod(fd, 0644) != 0 || fsync(fd) != 0) {
+        fprintf(stderr, "ryoku-settings-apply: marker write failed: %s\n", strerror(errno));
+        close(fd); unlink(tmp); return 2;
+    }
+    close(fd);
+    if (rename(tmp, "/etc/ryoku/applied-settings-hash") != 0) {
+        fprintf(stderr, "ryoku-settings-apply: marker rename failed: %s\n", strerror(errno));
+        unlink(tmp);
+        return 2;
+    }
+    fprintf(stderr, "ryoku-settings-apply: applied hash verified and recorded\n");
+    return 0;
+}
+
 static int profile_path(char *buf, size_t buflen)
 {
     const int n = snprintf(buf, buflen, "/nix/var/nix/profiles/per-user/%s/home-manager",
@@ -145,7 +239,7 @@ static int flake_ref(char *out, size_t outlen)
     return 0;
 }
 
-/* runuser -u USER -- dbus-run-session -- home-manager <args...> */
+/* runuser -u USER -- /usr/bin/dbus-run-session -- pinned /nix/store/.../home-manager <args...> */
 static int run_hm_as_user(char *const hm_argv[])
 {
     /* Count hm args */
@@ -165,7 +259,7 @@ static int run_hm_as_user(char *const hm_argv[])
     argv[i++] = (char *)"-u";
     argv[i++] = (char *)desktop_user();
     argv[i++] = (char *)"--";
-    argv[i++] = (char *)"dbus-run-session";
+    argv[i++] = (char *)RYOKU_DBUS_RUN_SESSION;
     argv[i++] = (char *)"--";
     for (int j = 0; j < hm_count; ++j)
         argv[i++] = hm_argv[j];
@@ -185,10 +279,12 @@ static int do_apply(void)
     }
     fprintf(stderr, "ryoku-settings-apply: home-manager switch --flake %s\n", ref);
     char *const hm_args[] = {
-        (char *)"home-manager",
+        (char *)RYOKU_HOME_MANAGER,
         (char *)"switch",
         (char *)"--flake",
         ref,
+        (char *)"-b",
+        (char *)"ryoku-hm-backup",
         NULL,
     };
     /* When already the desktop user, skip runuser. */
@@ -198,22 +294,26 @@ static int do_apply(void)
         char *const dbus_args[] = {
             (char *)"dbus-run-session",
             (char *)"--",
-            (char *)"home-manager",
+            (char *)RYOKU_HOME_MANAGER,
             (char *)"switch",
             (char *)"--flake",
             ref,
+            (char *)"-b",
+            (char *)"ryoku-hm-backup",
             NULL,
         };
-        return run_execv_wait(RYOKU_DBUS_RUN_SESSION, dbus_args);
+        const int rc = run_execv_wait(RYOKU_DBUS_RUN_SESSION, dbus_args);
+        return rc == 0 ? write_applied_hash_marker() : rc;
     }
-    return run_hm_as_user(hm_args);
+    const int rc = run_hm_as_user(hm_args);
+    return rc == 0 ? write_applied_hash_marker() : rc;
 }
 
 static int do_rollback(void)
 {
     fprintf(stderr, "ryoku-settings-apply: home-manager switch --rollback\n");
     char *const hm_args[] = {
-        (char *)"home-manager",
+        (char *)RYOKU_HOME_MANAGER,
         (char *)"switch",
         (char *)"--rollback",
         NULL,
@@ -224,7 +324,7 @@ static int do_rollback(void)
         char *const dbus_args[] = {
             (char *)"dbus-run-session",
             (char *)"--",
-            (char *)"home-manager",
+            (char *)RYOKU_HOME_MANAGER,
             (char *)"switch",
             (char *)"--rollback",
             NULL,
