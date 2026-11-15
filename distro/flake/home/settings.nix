@@ -163,21 +163,28 @@ in
 
       # Canonical FreeDesktop id for portals (matches Qt appId org.ryoku.Settings).
       # Do not emit ryoku-settings.desktop — that breaks portal app lookup.
+      # Absolute Exec/TryExec so DMS DesktopEntries indexing works even when the
+      # launcher process tree has a trimmed PATH (GDM + nixGL wrapper).
       xdg.desktopEntries."org.ryoku.Settings" = {
         name = "Ryoku Settings";
         genericName = "Settings";
         comment = "Configure Ryoku desktop appearance and system";
-        # PATH resolves to nixGL-wrapped home.packages ryoku-settings.
-        exec = "ryoku-settings";
+        exec = "${lib.getExe settingsLauncher}";
         icon = "org.ryoku.Settings";
         terminal = false;
         categories = [
           "Settings"
           "DesktopSettings"
+          "System"
         ];
         startupNotify = true;
         settings = {
+          "Name[pt_BR]" = "Configurações Ryoku";
+          "GenericName[pt_BR]" = "Configurações do sistema";
+          "Comment[pt_BR]" = "Configurar a aparência e o sistema Ryoku";
+          TryExec = "${lib.getExe settingsLauncher}";
           StartupWMClass = "org.ryoku.Settings";
+          Keywords = "Ryoku;Settings;System;Configurações;Preferências;";
         };
       };
     })

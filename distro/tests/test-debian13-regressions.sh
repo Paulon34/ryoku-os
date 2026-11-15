@@ -182,6 +182,12 @@ grep -Fq 'leftWidgets' "$DMS_MODULE" ||
   fail "Quattro bar missing leftWidgets from ryoku-desktop"
 grep -Fq 'workspaceSwitcher' "$DMS_MODULE" ||
   fail "Quattro bar missing workspaceSwitcher widget"
+grep -Fq 'cpuUsage' "$DMS_MODULE" ||
+  fail "Quattro bar missing native cpuUsage widget"
+grep -Fq 'showCpuUsage = true' "$DMS_MODULE" ||
+  fail "Quattro must enable DMS showCpuUsage (native CpuMonitor)"
+grep -Fq 'showMusic = false' "$DMS_MODULE" ||
+  fail "stock Media.qml must stay off (Media Island owns MPRIS)"
 grep -Fq 'id = "default"' "$DMS_MODULE" ||
   fail "default bar id missing"
 grep -Fq 'visible = true' "$DMS_MODULE" ||
@@ -227,6 +233,12 @@ for session in "$HYPR_SESSION" "$SESSION"; do
     fail "Nix desktop share dir missing in $(basename "$session")"
   grep -Fq '${XDG_DATA_DIRS:-/usr/local/share:/usr/share}' "$session" ||
     fail "system XDG_DATA_DIRS fallback/preservation missing in $(basename "$session")"
+  grep -Fq 'USER_SHARE="${HOME}/.local/share"' "$session" ||
+    fail "user share dir missing in $(basename "$session") (xdg.desktopEntries)"
+  grep -Fq 'flatpak/exports/share' "$session" ||
+    fail "Flatpak export shares missing in $(basename "$session")"
+  grep -Fq 'XCURSOR_THEME' "$session" ||
+    fail "XCURSOR_THEME export missing in $(basename "$session")"
 done
 pass "DMS discovers Nix/Home Manager desktop entries after GDM login"
 

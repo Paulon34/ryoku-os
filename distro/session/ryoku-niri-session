@@ -39,10 +39,19 @@ export PATH="${LOCAL_BIN}:${HM_BIN}:${NIX_BIN}:${PATH}"
 # GDM does not source Home Manager's XDG_DATA_DIRS either. Without these
 # profile share dirs, DMS cannot discover org.ryoku.Settings.desktop (or
 # other Nix-installed applications) even when their executables are on PATH.
-# Preserve system and Flatpak directories inherited from GDM when present.
+# Preserve system and Flatpak directories inherited from GDM when present, and
+# always include the user applications dir (xdg.desktopEntries) + Flatpak
+# exports so launcher indexing sees Ryoku Settings after HM switch.
 HM_SHARE="${HM_BIN%/bin}/share"
 NIX_SHARE="${NIX_BIN%/bin}/share"
-export XDG_DATA_DIRS="${HM_SHARE}:${NIX_SHARE}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+USER_SHARE="${HOME}/.local/share"
+FLATPAK_USER="${HOME}/.local/share/flatpak/exports/share"
+FLATPAK_SYSTEM="/var/lib/flatpak/exports/share"
+export XDG_DATA_DIRS="${HM_SHARE}:${NIX_SHARE}:${USER_SHARE}:${FLATPAK_USER}:${FLATPAK_SYSTEM}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# Pointer theme: GDM does not source HM sessionVariables.
+export XCURSOR_THEME="${XCURSOR_THEME:-Bibata-Modern-Ice}"
+export XCURSOR_SIZE="${XCURSOR_SIZE:-24}"
 
 HM_NIRI="${HM_BIN}/niri"
 NIX_NIRI="${NIX_BIN}/niri"

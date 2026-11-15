@@ -72,8 +72,11 @@ grep -Fq 'current-wallpaper' "$ROOT/distro/apps/ryoku-settings/src/WallpaperAppl
 # Desktop entry contract
 desk="$ROOT/distro/apps/ryoku-settings/resources/org.ryoku.Settings.desktop"
 grep -q '^Exec=ryoku-settings$' "$desk" || fail_msg "desktop Exec"
+grep -q '^TryExec=ryoku-settings$' "$desk" || fail_msg "desktop TryExec"
+grep -q '^Name\[pt_BR\]=Configurações Ryoku$' "$desk" || fail_msg "desktop Name[pt_BR]"
 grep -q '^Terminal=false$' "$desk" || fail_msg "desktop Terminal"
 grep -q '^Icon=org.ryoku.Settings$' "$desk" || fail_msg "desktop Icon"
+grep -Fq 'DesktopSettings' "$desk" || fail_msg "desktop Categories must include DesktopSettings"
 ! grep -q '^X-GNOME-Autostart' "$desk" || fail_msg "desktop must not autostart"
 
 # HM imports
@@ -91,6 +94,10 @@ grep -Fq 'xdg.desktopEntries."org.ryoku.Settings"' "$ROOT/distro/flake/home/sett
   || fail_msg "settings.nix must expose canonical org.ryoku.Settings desktop id"
 ! grep -Fq 'xdg.desktopEntries.ryoku-settings' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "must not emit ryoku-settings.desktop (portal appId mismatch)"
+grep -Fq 'lib.getExe settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings desktop Exec must use absolute nixGL launcher path"
+grep -Fq 'Name[pt_BR]' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings desktop entry must expose Name[pt_BR]"
 grep -Fq 'hiPrio settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings.nix must hiPrio nixGL launcher over package bin"
 grep -Fq 'settingsGui' "$ROOT/distro/flake/home/settings.nix" \
