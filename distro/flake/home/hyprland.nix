@@ -65,7 +65,7 @@ let
     source = ~/.config/ryoku/hyprland-colors.conf
 
     $mod = SUPER
-    $terminal = kitty
+    $terminal = /usr/bin/kitty
     $menu = ${ipc} spotlight toggle
     $fileManager = thunar
 
@@ -137,9 +137,11 @@ let
     windowrule = match:class ^(org[.]pulseaudio[.]pavucontrol)$, float on, center on, size 920 640
     windowrule = match:class ^(blueman-manager)$, float on, center on
     windowrule = match:class ^(nm-connection-editor)$, float on, center on
+    windowrule = match:class ^(swappy)$, float on, center on
     windowrule = match:title ^(Open File|Save File|Open Folder|Select Folder|Save As|Abrir arquivo|Salvar arquivo|Abrir pasta|Selecionar pasta|Salvar como)$, float on, center on
 
     bind = $mod, RETURN, exec, $terminal
+    bind = $mod, KP_Enter, exec, $terminal
     bind = $mod, SPACE, exec, $menu
     bind = $mod, E, exec, $fileManager
     bind = $mod, Q, killactive,
