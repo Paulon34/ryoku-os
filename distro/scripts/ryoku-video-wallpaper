@@ -217,7 +217,9 @@ cmd_run() {
   esac
 
   if [[ "${RYOKU_VIDEO_WALLPAPER_PAUSE_COVERED:-1}" == 1 ]]; then
-    flags+=(--auto-pause --auto-mode FULL)
+    # MAX also covers maximized windows, not only fullscreen games.
+    # The native compositor heuristic is best-effort, not per-output policy.
+    flags+=(--auto-pause --auto-mode MAX)
   fi
 
   # One mpvpaper instance; ALL outputs (multi-monitor).
