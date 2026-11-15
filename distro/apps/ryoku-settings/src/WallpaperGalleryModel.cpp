@@ -128,8 +128,7 @@ void WallpaperGalleryModel::reload()
                       QStringLiteral("*.PNG"), QStringLiteral("*.WEBP")};
 
     appendFromDir(m_galleryPath, nameFilters);
-    if (!isVideoGallery())
-        appendFromDir(resolvePrivateGalleryPath(), nameFilters);
+    appendFromDir(resolvePrivateGalleryPath(), nameFilters);
 
     if (m_files.isEmpty())
         qWarning(lcWallGallery) << "gallery empty — public:" << m_galleryPath
@@ -188,7 +187,7 @@ void WallpaperGalleryModel::startNextPoster()
     }
 
     m_posterPending = m_posterQueue.takeFirst();
-    m_posterProc->start(helper, {QStringLiteral("poster"), QDir(m_galleryPath).filePath(m_posterPending)});
+    m_posterProc->start(helper, {QStringLiteral("poster"), m_absById.value(m_posterPending)});
 }
 
 int WallpaperGalleryModel::rowCount(const QModelIndex &parent) const
