@@ -83,3 +83,14 @@ system-config-printer
 fwupd
 udisks2
 gvfs
+
+# Printing: mandatory on Full, including non-IPP legacy HP/USB printers
+hplip
+printer-driver-hpcups
+printer-driver-gutenprint
+cups-client
+cups-bsd
+avahi-daemon
+libnss-mdns
+libcups2t64
+printer-driver-escpr
