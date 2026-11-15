@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Install the explicitly supplied private vendor driver, never download or
+# redistribute it. Run as administrator only with a trusted local checkout.
+set -euo pipefail
+die() { echo "ERROR: $*" >&2; exit 1; }
+[[ $# == 1 ]] || die "usage: sudo bash ryoku-printers /path/to/private/ryoku-nixos"
+[[ $EUID == 0 ]] || die "sudo required"
+. /etc/os-release
+[[ "${ID:-}" == debian && "${VERSION_CODENAME:-}" == trixie && "$(dpkg --print-architecture)" == amd64 ]] || die "requires Debian 13 amd64"
+src="$1/hosts/notebook/drivers/4barcode"
+ppd="$src/4B-2054L.ppd"
+filter="$src/rastertosnailtspl-x64"
+[[ -f "$ppd" && -f "$filter" ]] || die "private 4BARCODE driver files missing"
+# Copy trusted inputs to a private root-owned staging directory.
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+install -m 0644 "$ppd" "$tmp/model.ppd"
+install -m 0755 "$filter" "$tmp/filter"
+command -v readelf >/dev/null || die "binutils missing"
+readelf -h "$tmp/filter" | grep -E 'Machine:.*Advanced Micro Devices X86-64' >/dev/null || die "vendor binary is not x86-64"
+grep -Fq 'application/vnd.cups-raster 0 rastertosnailtspl-4barcode' "$tmp/model.ppd" || die "PPD filter mismatch"
+cupstestppd -q "$tmp/model.ppd" || die "vendor PPD validation failed"
+# Native vendor ELF, not Nix-patched file; dependencies must resolve on Debian.
+deps=$(ldd "$tmp/filter" 2>&1) || die "binary dependency check failed: $deps"
+printf '%s\n' "$deps"
+[[ "$deps" != *"not found"* ]] || die "vendor filter has unresolved libraries"
+install -d -m 0755 /usr/share/cups/model/4barcode /usr/lib/cups/filter
+install -o root -g root -m 0644 "$tmp/model.ppd" /usr/share/cups/model/4barcode/4B-2054L.ppd
+install -o root -g root -m 0755 "$tmp/filter" /usr/lib/cups/filter/rastertosnailtspl-4barcode
+systemctl enable --now cups.service
+systemctl enable --now avahi-daemon.service
+systemctl restart cups.service
+echo "Installed 4BARCODE 4B-2054L vendor PPD and raster filter."
+# Only create queues when a single matching physical device is offered by CUPS.
+# Never reuse old machine-specific serials or guess network addresses.
+devices=$(lpinfo -v)
+models=$(lpinfo -m)
+add_queue() {
+  local queue=$1 uri=$2 model=$3
+  if lpstat -p "$queue" >/dev/null 2>&1; then
+    echo "Existing queue preserved: $queue"; return
+  fi
+  lpadmin -p "$queue" -E -v "$uri" -m "$model" -o printer-is-shared=false
+  echo "Configured $queue"
+}
+mapfile -t thermal < <(printf '%s\n' "$devices" | awk 'tolower($0) ~ /^direct usb:\/\/.*(4barcode|4b[-%20]*2054l)/ {print $2}' | sort -u)
+thermal_model=$(printf '%s\n' "$models" | awk 'tolower($0) ~ /4barcode\/4b-2054l\.ppd/ && !found++ {print $1}')
+if ((${#thermal[@]} == 1)) && [[ -n "$thermal_model" ]]; then
+  add_queue 4BARCODE-4B-2054L "${thermal[0]}" "$thermal_model"
+else
+  echo "WARN: thermal driver staged; connect printer and rerun, or select 4B-2054L in system-config-printer."
+fi
+mapfile -t hp < <(printf '%s\n' "$devices" | awk 'tolower($0) ~ /^direct hp:\/usb\/deskjet_1510/ {print $2}' | sort -u)
+hp_model=$(printf '%s\n' "$models" | awk 'tolower($0) ~ /hp-deskjet_1510_series/ && !found++ {print $1}')
+if ((${#hp[@]} == 1)) && [[ -n "$hp_model" ]]; then
+  add_queue HP-Deskjet-1510 "${hp[0]}" "$hp_model"
+  lpadmin -p HP-Deskjet-1510 -o PageSize=A4
+else
+  echo "WARN: HP driver staged; connect printer or configure it in system-config-printer."
+fi
+lpstat -p -d || true
+echo "Driver installation is not a physical print test. Print one label and one A4 page before relying on the queues."
