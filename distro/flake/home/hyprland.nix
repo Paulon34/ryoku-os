@@ -236,6 +236,7 @@ in
       xdg.configFile."xdg-desktop-portal/hyprland-portals.conf".text = ''
         [preferred]
         default=hyprland;gtk;wlr;
+        org.freedesktop.impl.portal.Settings=gtk;
       '';
     })
   ];
