@@ -223,7 +223,8 @@ cmd_run() {
   # One mpvpaper instance; ALL outputs (multi-monitor).
   mkdir -p "$state_dir"
   printf '%s\n' "$video" >"$marker_file"
-  exec mpvpaper "${flags[@]}" --mpv-options "${opts[*]}" \
+  # Host Mesa EGL integration, as used by Ryoku Settings and DMS on Debian.
+  exec nixGLIntel mpvpaper "${flags[@]}" --mpv-options "${opts[*]}" \
     "${RYOKU_VIDEO_WALLPAPER_OUTPUTS:-ALL}" "$video"
 }
 
@@ -274,9 +275,8 @@ cmd_apply() {
   fi
   # Force dark Material You even if DMS matugen follows luminance.
   if command -v matugen >/dev/null 2>&1; then
-    matugen image "$poster" --mode dark >/dev/null 2>&1 \
-      || matugen image "$poster" >/dev/null 2>&1 \
-      || log "matugen failed for poster (non-fatal)"
+    matugen image "$poster" --mode dark >&2 \
+      || log "matugen failed for poster (non-fatal; see error above)"
   fi
 
   write_env "$video" "$loop" "$audio" "$profile" "$pause"
