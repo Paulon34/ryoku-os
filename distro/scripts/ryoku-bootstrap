@@ -690,7 +690,7 @@ install_detected_hardware() {
   # Fail-closed: Hyprland is the default compositor. A soft warn left guests
   # thinking apply succeeded without a working Hyprland binary.
   if [[ "${#hypr_pkgs[@]}" -gt 0 ]]; then
-    apt-get install -y -t trixie-backports --no-install-recommends "${hypr_pkgs[@]}" \
+    apt-get install -y --no-remove -t trixie-backports --no-install-recommends "${hypr_pkgs[@]}" \
       || die "Hyprland APT install from trixie-backports failed — aborting apply (no false success)"
   fi
   if ! command -v Hyprland >/dev/null 2>&1; then
@@ -722,6 +722,16 @@ merge_flatpak_declared_into_settings() {
   fi
   local ids=()
   mapfile -t ids < <("$FLATPAK_SYNC" --list-declared --profile "$PROFILE" 2>/dev/null || true)
+  if [[ "$MODE" == apply && "$SYSROOT" == / ]]; then
+    # Optional apps can be unavailable. Record only apps actually installed by
+    # this profile, while preserving any existing user declarations.
+    local -a installed=()
+    local id
+    for id in "${ids[@]}"; do
+      if flatpak info --system "$id" >/dev/null 2>&1; then installed+=("$id"); fi
+    done
+    ids=("${installed[@]}")
+  fi
   if [[ "${#ids[@]}" -eq 0 ]]; then
     info "flatpakDeclared merge: no profile IDs (profile=$PROFILE)"
     return 0
