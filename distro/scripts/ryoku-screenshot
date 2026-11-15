@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Shared Hyprland/Niri screenshot flow. Preserve original, annotate separately.
+set -euo pipefail
+umask 077
+mode=${1:-region}
+case "$mode" in
+  region)
+    geometry=$(/usr/bin/slurp) || exit 0
+    [[ -n "$geometry" ]] || exit 0
+    ;;
+  full) ;;
+  *) printf 'usage: ryoku-screenshot region|full\n' >&2; exit 2 ;;
+esac
+
+dir="$HOME/Pictures/Screenshots"
+mkdir -p "$dir"
+out=$(mktemp "$dir/ryoku-$(date +%Y%m%d-%H%M%S)-XXXXXX.png")
+if [[ "$mode" == region ]]; then
+  /usr/bin/grim -g "$geometry" "$out" || { rm -f -- "$out"; exit 1; }
+else
+  /usr/bin/grim "$out" || { rm -f -- "$out"; exit 1; }
+fi
+[[ -s "$out" ]] || { rm -f -- "$out"; exit 1; }
+printf '%s\n' "$out"
+# The original remains available even if the editor fails.
+if [[ -x /usr/bin/swappy ]] && /usr/bin/swappy -f "$out"; then
+  exit 0
+fi
+# Graceful fallback when annotation cannot start.
+if /usr/bin/wl-copy --type image/png < "$out"; then
+  if command -v notify-send >/dev/null; then
+    notify-send "Ryoku Screenshot" "Screenshot saved and copied to clipboard" || true
+  fi
+fi
