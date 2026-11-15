@@ -39,11 +39,13 @@
       ''
         [preferred]
         default=hyprland;gtk;wlr;
+        org.freedesktop.impl.portal.Settings=gtk;
       ''
     else
       ''
         [preferred]
         default=gtk;wlr;
+        org.freedesktop.impl.portal.Settings=gtk;
       '';
 
   home.sessionVariables = {
