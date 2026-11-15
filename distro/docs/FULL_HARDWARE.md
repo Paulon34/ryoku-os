@@ -29,7 +29,7 @@ For a laptop with compatible NVIDIA hardware, add `--nvidia-driver` explicitly a
 - Optional native packages: packages-full-optional.txt. APT candidates and no-removal simulation are checked; individual failures are warned.
 - Flatpaks: apps-full.txt (required) and apps-full-optional.txt (attempted independently, unavailable IDs reported). Only installed profile apps are added to the live root settings; existing user choices remain.
 - Original NixOS development, network diagnostics, gaming, multimedia, printing, virtualization and workstation app declarations were reviewed. Availability, versions, licenses and dependencies on Debian can differ.
-- Cursor, Codex, Tailscale, remaining security tools (e.g. Burp/ZAP), phone webcam/v4l2loopback, database servers and personal configurations require separate review. No account credentials, VPN state, personal printer addresses or wallpapers are imported. No Docker/libvirt group membership or SSH server exposure is granted by Ryoku. Some Debian packages may start their normal system services at installation; review services and firewall before connecting to an untrusted network.
+- Cursor, Codex and Tailscale have an explicit post-bootstrap installer (`ryoku-workstation-tools`); remaining security tools (e.g. Burp/ZAP), phone webcam/v4l2loopback, database servers and personal configurations require separate review. No account credentials, VPN state, personal printer addresses or wallpapers are imported. No Docker/libvirt group membership or SSH server exposure is granted by Ryoku. Some Debian packages may start their normal system services at installation; review services and firewall before connecting to an untrusted network.
 - Steam via Flatpak avoids enabling i386/non-free solely for Steam.
 - Optional software failures do not mean Full parity: inspect WARN messages and compare actual installed apps.
 - Full is much larger than Minimal. Do not run on the existing 24 GB VM without expanding the disk or making a separate test VM. No automatic partitioning.
@@ -43,3 +43,48 @@ For a laptop with compatible NVIDIA hardware, add `--nvidia-driver` explicitly a
 5. Preserve the lockfile and local settings; edit source with Cursor, review diffs and push only redistributable code.
 
 Status: source/fixture and CI tests are not real Full installation or bare-metal hardware certification.
+
+## Personal migration (private checkout)
+
+Before erasing NixOS, preserve the private source checkout or independently
+verify you can restore it using another machine. In particular preserve
+`assets/wallpapers/`, `hosts/notebook/drivers/4barcode/` and
+`ryoku/settings.json`. Do not publish credentials, printer serials,
+vendor driver binaries, or personal wallpapers in the public Ryoku repo.
+
+On fresh Debian, install git, python3 and sudo using an administrator
+account. Restore the private checkout to ~/ryoku-nixos (or adjust its path).
+From the public Ryoku checkout, as the desktop user:
+
+```sh
+bash distro/scripts/ryoku-import-personal "$HOME/ryoku-nixos"
+sudo bash distro/scripts/ryoku-bootstrap --apply --user "$USER" --profile full --hardware auto --visual auto --shell-style quattro --compositor hyprland
+sudo bash distro/scripts/ryoku-printers "$HOME/ryoku-nixos"
+bash distro/scripts/ryoku-workstation-tools
+```
+
+The personal import copies still images to
+~/.local/share/ryoku/wallpapers-private, updates only the saved image
+selections in the local root settings.json and queues a one-time DMS
+wallpaper update. The existing Settings gallery displays both private and
+public images. Private login wallpaper IDs are valid in the Debian semantic
+hash; runtime SDDM helper validates access. GDM is unchanged; Apply does not
+replace GDM or promise the SDDM login background.
+
+Full installs CUPS, HPLIP/hpcups, Gutenprint, Epson ESC/P-R, Avahi and
+system-config-printer. For the original 4BARCODE 4B-2054L driver 3.13.3,
+ryoku-printers uses the **original private vendor filter** and PPD,
+checks x86-64, cupstestppd and native library dependencies, and installs the
+filter into Debian's CUPS filter directory. It does not download any
+unlicensed binary. Plug in and power on the printers, then rerun the helper.
+Single unambiguous matching USB devices can receive automatically configured
+queues; HP Deskjet 1510 uses the HPLIP model and A4. Other connection types
+or ambiguous matches require choosing the device in system-config-printer.
+Do not reuse the old printer serial when the hardware differs. A successful
+driver staging is not a physical print test: print an actual label and A4 page.
+
+The optional post-bootstrap workstation installer uses the official
+Cursor Debian download, npm @openai/codex in the desktop user's prefix,
+and Tailscale's signed Trixie repository. It does not import credentials,
+log into your accounts, or connect Tailscale automatically. Verify Cursor
+launches, codex --version, and tailscale --version.
