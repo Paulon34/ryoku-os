@@ -547,13 +547,20 @@ in
         ${applyRyokuBar} || true
         ${applyRyokuSession} || true
         # Resume video wallpaper after DMS is up (GDM may skip graphical-session).
-        if [[ -f "''${XDG_STATE_HOME:-$HOME/.local/state}/ryoku/video-wallpaper.env" ]]; then
-          ${pkgs.systemd}/bin/systemctl --user start ryoku-video-wallpaper.service \
-            && echo "ryoku-start-dms: video wallpaper unit started" \
-            || echo "WARN: video wallpaper unit start failed (static wallpaper remains)"
+        state_ryoku="''${XDG_STATE_HOME:-$HOME/.local/state}/ryoku"
+        if [[ -f "$state_ryoku/video-wallpaper.env" ]]; then
+          # Smart controller always when a video is selected.
           ${pkgs.systemd}/bin/systemctl --user start ryoku-video-wallpaper-smart.service \
             && echo "ryoku-start-dms: video wallpaper smart controller started" \
             || echo "WARN: video wallpaper smart controller start failed"
+          # Renderer only if armed (.want). Unloaded sessions stay on DMS poster.
+          if [[ -f "$state_ryoku/video-wallpaper.want" ]]; then
+            ${pkgs.systemd}/bin/systemctl --user start ryoku-video-wallpaper.service \
+              && echo "ryoku-start-dms: video wallpaper unit started" \
+              || echo "WARN: video wallpaper unit start failed (static wallpaper remains)"
+          else
+            echo "ryoku-start-dms: video wallpaper disarmed (unloaded); skipping renderer"
+          fi
         fi
       ) 9>&- &
 

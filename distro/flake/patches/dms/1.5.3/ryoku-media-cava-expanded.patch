@@ -1,0 +1,41 @@
+diff -ruN a/Modules/DankDash/MediaPlayerTab.qml b/Modules/DankDash/MediaPlayerTab.qml
+--- a/Modules/DankDash/MediaPlayerTab.qml
++++ b/Modules/DankDash/MediaPlayerTab.qml
+@@ -36,6 +36,17 @@
+     readonly property bool volumeAvailable: !!((activePlayer && activePlayer.volumeSupported && !__isChromeBrowser) || (AudioService.sink && AudioService.sink.audio))
+     readonly property bool usePlayerVolume: activePlayer && activePlayer.volumeSupported && !__isChromeBrowser
+     readonly property real currentVolume: usePlayerVolume ? activePlayer.volume : (AudioService.sink?.audio?.volume ?? 0)
++    // Shared CavaService (refCount) — Quattro and Islands both use this tab.
++    readonly property bool vizLive: {
++        if (!CavaService.cavaAvailable)
++            return false;
++        if (SettingsData.audioVisualizerEnabled === false)
++            return false;
++        if (!activePlayer)
++            return false;
++        return activePlayer.playbackState === MprisPlaybackState.Playing;
++    }
+ 
+     property bool isSwitching: false
+ 
+@@ -948,11 +959,21 @@
+                 width: 210
+                 height: 210
+                 anchors.verticalCenter: parent.verticalCenter
+ 
++                AudioVisualization {
++                    anchors.left: parent.left
++                    anchors.right: parent.right
++                    anchors.bottom: parent.bottom
++                    height: 28
++                    visible: root.vizLive
++                    z: 2
++                }
++
+                 DankAlbumArt {
+                     width: parent.width
+                     height: parent.height
+                     anchors.centerIn: parent
+                     activePlayer: root.activePlayer
+                 }
+             }

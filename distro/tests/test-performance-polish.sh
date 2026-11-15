@@ -38,6 +38,14 @@ else
 fi
 grep -Fq 'ryoku-video-wallpaper-smart' "$ROOT/distro/flake/home/video-wallpaper.nix" \
   && pass "smart systemd unit" || fail_msg "missing smart unit"
+grep -Fq 'video-wallpaper.want' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "want arm file in helper" || fail_msg "helper missing want arm"
+grep -Fq 'entryBefore [ "checkLinkTargets" ]' "$ROOT/distro/flake/home/settings.nix" \
+  && pass "desktop adopt before checkLinkTargets" || fail_msg "adopt must precede checkLinkTargets"
+grep -Fq 'HYPRLAND_INSTANCE_SIGNATURE' "$ROOT/distro/flake/home/hyprland.nix" \
+  && pass "HIS exported to systemd" || fail_msg "HIS export missing"
+grep -Fq 'ryoku-media-cava-expanded.patch' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
+  && pass "expanded player cava patch" || fail_msg "expanded cava missing"
 grep -Fq 'smartUnload' "$ROOT/ryoku/schema/settings.schema.json" \
   && pass "schema smartUnload" || fail_msg "schema missing smartUnload"
 grep -Fq 'mediaPausePolicy' "$ROOT/ryoku/schema/settings.schema.json" \

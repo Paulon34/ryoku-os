@@ -177,8 +177,12 @@ grep -Fq 'palette_stamp' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
   && pass "palette stamp for no-rematugen reload" || fail_msg "missing palette stamp"
 grep -Fq 'ryoku-video-wallpaper-smart' "$ROOT/distro/flake/home/video-wallpaper.nix" \
   && pass "smart watch unit" || fail_msg "missing smart watch unit"
+grep -Fq 'video-wallpaper.want' "$ROOT/distro/flake/home/video-wallpaper.nix" \
+  && pass "renderer arm file (.want)" || fail_msg "missing .want arm contract"
 grep -Fq 'ryoku-media-cava.patch' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
   && pass "CAVA media patch wired" || fail_msg "CAVA patch not applied in dms-shell"
+grep -Fq 'ryoku-media-cava-expanded.patch' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
+  && pass "CAVA expanded player patch wired" || fail_msg "expanded cava patch missing"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "ALL PASS_STATIC (wallpapers)"

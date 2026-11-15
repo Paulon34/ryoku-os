@@ -30,9 +30,45 @@ smart_state="$state_dir/video-wallpaper-smart.state"
 smart_lock="$state_dir/video-wallpaper-smart.lock"
 # Palette stamp: apply writes this; reload/unload must never rematugen.
 palette_stamp="$state_dir/video-wallpaper-palette.stamp"
+# Renderer arm file: PathExists watches THIS (not .env). Unload removes it so
+# systemd cannot auto-reactivate mpvpaper until the controller authorizes resume.
+want_file="$state_dir/video-wallpaper.want"
 
 log() { printf 'ryoku-video-wallpaper: %s\n' "$*" >&2; }
 die() { log "$*"; exit 1; }
+
+arm_renderer() {
+  mkdir -p "$state_dir"
+  printf '1\n' >"$want_file"
+}
+
+disarm_renderer() {
+  rm -f "$want_file"
+}
+
+renderer_armed() { [[ -f "$want_file" ]]; }
+
+# Discover Hyprland instance when systemd user units lack the session export.
+ensure_hypr_signature() {
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    return 0
+  fi
+  local base cand
+  base="${XDG_RUNTIME_DIR:-}/hypr"
+  [[ -d "$base" ]] || return 1
+  # Prefer the newest socket2-bearing instance.
+  cand=$(
+    find "$base" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' 2>/dev/null \
+      | sort -nr | while read -r _ name; do
+          [[ -S "$base/$name/.socket2.sock" || -S "$base/$name/.socket.sock" ]] || continue
+          printf '%s\n' "$name"
+          break
+        done
+  )
+  [[ -n "$cand" ]] || return 1
+  export HYPRLAND_INSTANCE_SIGNATURE=$cand
+  log "discovered HYPRLAND_INSTANCE_SIGNATURE=$cand"
+}
 
 # Default unload grace (seconds) by profile when RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE unset.
 default_unload_grace() {
@@ -200,6 +236,10 @@ cmd_dms_restore() {
 
 cmd_check() {
   local video=${RYOKU_VIDEO_WALLPAPER:-}
+  if ! renderer_armed; then
+    log "renderer disarmed (unloaded/held); refusing start until reload/apply"
+    exit 1
+  fi
   if [[ -z "$video" ]] || ! is_video "$video" || [[ ! -r "$video" ]]; then
     log "video wallpaper unavailable (${video:-unset}); keeping the static wallpaper"
     cmd_dms_restore
@@ -324,10 +364,15 @@ cmd_unpause() {
   printf 'playing\n' >"$smart_state"
 }
 
-# Hard unload: stop mpvpaper, restore DMS poster screens. Never rematugen.
+# Hard unload: disarm first so PathExists cannot revive mpvpaper, then stop.
+# Keep env + palette stamp. Never rematugen.
 cmd_unload() {
   local video
   video=$(read_tracked_video || true)
+  # Disarm BEFORE stop — path unit watches .want; env alone must not restart us.
+  disarm_renderer
+  mkdir -p "$state_dir"
+  printf 'unloaded\n' >"$smart_state"
   # Restore static poster renderer (DMS) while keeping env for later reload.
   cmd_dms_restore
   if systemctl --user is-active --quiet "$unit" 2>/dev/null \
@@ -337,12 +382,11 @@ cmd_unload() {
   fi
   stop_orphans "$video"
   systemctl --user reset-failed "$unit" 2>/dev/null || true
-  mkdir -p "$state_dir"
-  printf 'unloaded\n' >"$smart_state"
-  log "unloaded mpvpaper (poster restored; palette stamp preserved)"
+  log "unloaded mpvpaper (disarmed; poster restored; palette stamp preserved)"
 }
 
 # Resume from unload without regenerating Material You / Matugen.
+# Only the controller (or explicit reload/apply) may re-arm.
 cmd_reload() {
   [[ -f "$env_file" ]] || die "no video-wallpaper.env; apply a video first"
   load_env_file || true
@@ -352,6 +396,7 @@ cmd_reload() {
   if [[ ! -f "$palette_stamp" ]]; then
     log "WARN: palette stamp missing (apply never completed); still skipping rematugen"
   fi
+  arm_renderer
   systemctl --user reset-failed "$unit" 2>/dev/null || true
   systemctl --user start "$unit"
   mkdir -p "$state_dir"
@@ -361,53 +406,78 @@ cmd_reload() {
 
 # Coverage probe via hyprctl JSON (best-effort). Prints:
 #   covered_all=0|1 covered_any=0|1 locked=0|1 monitors=N covered=N media_video=0|1
+# Uses scale-aware geometry + union of window intersections (side-by-side OK).
+# Independent per-monitor: covered counts monitors fully covered (≥85% or FS).
+# Fixture: RYOKU_COVERAGE_FIXTURE=/dir with monitors.json + clients.json.
 # Degrades safely when hyprctl/jq missing (covered_all=0).
 cmd_coverage() {
   local locked=0 covered_any=0 covered_all=0 media_video=0
   local monitors=0 covered=0
-  if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || ! command -v hyprctl >/dev/null 2>&1; then
-    # Niri recovery / no compositor IPC: never force unload.
-    printf 'covered_all=0 covered_any=0 locked=0 monitors=0 covered=0 media_video=0\n'
-    return 0
-  fi
-  if ! hyprctl -j monitors >/dev/null 2>&1; then
-    printf 'covered_all=0 covered_any=0 locked=0 monitors=0 covered=0 media_video=0\n'
-    return 0
-  fi
+  local mons_json='[]' cls_json='[]'
+  local fixture=${RYOKU_COVERAGE_FIXTURE:-}
 
-  # Locked sessions should pause/unload wallpaper.
-  if hyprctl -j locks 2>/dev/null | grep -Eq '"locked"[[:space:]]*:[[:space:]]*true'; then
-    locked=1
-  fi
-  if (( !locked )) && pgrep -u "$(id -u)" -x hyprlock >/dev/null 2>&1; then
-    locked=1
+  if [[ -n "$fixture" && -f "$fixture/monitors.json" && -f "$fixture/clients.json" ]]; then
+    mons_json=$(cat "$fixture/monitors.json")
+    cls_json=$(cat "$fixture/clients.json")
+    [[ -f "$fixture/locked" ]] && locked=1
+  else
+    ensure_hypr_signature || true
+    if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || ! command -v hyprctl >/dev/null 2>&1; then
+      printf 'covered_all=0 covered_any=0 locked=0 monitors=0 covered=0 media_video=0\n'
+      return 0
+    fi
+    if ! hyprctl -j monitors >/dev/null 2>&1; then
+      printf 'covered_all=0 covered_any=0 locked=0 monitors=0 covered=0 media_video=0\n'
+      return 0
+    fi
+    if hyprctl -j locks 2>/dev/null | grep -Eq '"locked"[[:space:]]*:[[:space:]]*true'; then
+      locked=1
+    fi
+    if (( !locked )) && pgrep -u "$(id -u)" -x hyprlock >/dev/null 2>&1; then
+      locked=1
+    fi
+    mons_json=$(hyprctl -j monitors 2>/dev/null || echo '[]')
+    cls_json=$(hyprctl -j clients 2>/dev/null || echo '[]')
   fi
 
   if command -v jq >/dev/null 2>&1; then
     local parsed
     parsed=$(
-      jq -n \
-        --argjson mons "$(hyprctl -j monitors 2>/dev/null || echo '[]')" \
-        --argjson cls "$(hyprctl -j clients 2>/dev/null || echo '[]')" '
-        def area: ((.width // 0) * (.height // 0));
+      jq -nr \
+        --argjson mons "$mons_json" \
+        --argjson cls "$cls_json" '
+        # Logical pixels: Hyprland size/at are already in layout coords; scale
+        # adjusts reserved area when width/height are physical.
+        def mon_w: ((.width // 0) / (if (.scale // 1) == 0 then 1 else (.scale // 1) end));
+        def mon_h: ((.height // 0) / (if (.scale // 1) == 0 then 1 else (.scale // 1) end));
+        def mon_area: (mon_w * mon_h);
+        def clip_area($m):
+          (($m.x // 0) as $mx | ($m.y // 0) as $my
+          | ($m | mon_w) as $mw | ($m | mon_h) as $mh
+          | ((.at[0] // 0) as $cx | (.at[1] // 0) as $cy
+          | (.size[0] // 0) as $cw | (.size[1] // 0) as $ch
+          | ([ $cx, $mx ] | max) as $x0
+          | ([ $cy, $my ] | max) as $y0
+          | ([ ($cx+$cw), ($mx+$mw) ] | min) as $x1
+          | ([ ($cy+$ch), ($my+$mh) ] | min) as $y1
+          | if $x1 > $x0 and $y1 > $y0 then ($x1-$x0)*($y1-$y0) else 0 end));
         ($mons | length) as $n |
         (reduce $mons[] as $m (0;
-          ($cls
-            | map(select(
-                (.mapped // true)
-                and ((.workspace.id // .workspace // -1) == ($m.activeWorkspace.id // $m.activeWorkspace // -2))
-                and (
-                  (.fullscreen // 0) != 0
-                  or (.fullscreenMode // 0) != 0
-                  or (
-                    (((.size[0] // 0) * (.size[1] // 0)) as $ca
-                    | (($m | area) as $ma
-                    | $ma > 0 and $ca >= ($ma * 0.85)))
-                  )
-                )
-              ))
-            | length) as $hits |
-          if $hits > 0 then . + 1 else . end
+          ($m.activeWorkspace.id // $m.activeWorkspace // -2) as $ws |
+          ($cls | map(select(
+              (.mapped // true)
+              and ((.hidden // false) | not)
+              and ((.workspace.id // .workspace // -1) == $ws)
+            ))) as $onws |
+          (any($onws[]; ((.fullscreen // 0) != 0) or ((.fullscreenMode // 0) != 0))) as $fs |
+          if $fs then . + 1
+          else
+            # Sum clipped areas (side-by-side non-overlap ≈ exact; overlap is
+            # conservative and still marks covered when union is large).
+            (reduce $onws[] as $c (0; . + ($c | clip_area($m)))) as $union |
+            (($m | mon_area) as $ma
+            | if $ma > 0 and $union >= ($ma * 0.85) then . + 1 else . end)
+          end
         )) as $covered |
         ($cls
           | map(select(
@@ -447,6 +517,7 @@ cmd_coverage() {
 # reload without rematugen when visible again. Single shared instance.
 cmd_watch() {
   load_env_file || die "watch requires video-wallpaper.env"
+  ensure_hypr_signature || true
   local profile=${RYOKU_VIDEO_WALLPAPER_PROFILE:-balanced}
   local smart=${RYOKU_VIDEO_WALLPAPER_SMART_UNLOAD:-1}
   local grace=${RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE:-}
@@ -468,7 +539,12 @@ cmd_watch() {
 
   local covered_since=0 state=playing last_eval=0
   [[ -f "$smart_state" ]] && state=$(tr -d '\n' <"$smart_state" || echo playing)
-  log "watch start profile=$profile grace=${grace}s media_policy=$media_policy state=$state"
+  # Disarmed want file means we are unloaded regardless of stale state text.
+  if ! renderer_armed && [[ "$state" != unloaded ]]; then
+    state=unloaded
+    printf 'unloaded\n' >"$smart_state"
+  fi
+  log "watch start profile=$profile grace=${grace}s media_policy=$media_policy state=$state HIS=${HYPRLAND_INSTANCE_SIGNATURE:-unset}"
 
   # Prefer Hyprland socket2 events; fall back to 2s polling. Debounce 400ms.
   local sock=""
@@ -604,7 +680,7 @@ cmd_apply() {
 
   write_env "$video" "$loop" "$audio" "$profile" "$pause" "$smart" "$grace" "$media"
 
-  # Stop → orphan sweep → start (avoid restart races / duplicate mpvpaper).
+  # Stop → orphan sweep → arm → start (avoid restart races / duplicate mpvpaper).
   if systemctl --user is-active --quiet "$unit" 2>/dev/null \
     || systemctl --user is-failed --quiet "$unit" 2>/dev/null; then
     cmd_dms_restore
@@ -612,6 +688,7 @@ cmd_apply() {
     sleep 0.5
   fi
   stop_orphans "$video"
+  arm_renderer
   systemctl --user reset-failed "$unit" 2>/dev/null || true
   systemctl --user start "$unit"
   # Start/restart smart watch (no duplicate: flock inside watch).
@@ -624,6 +701,7 @@ cmd_apply() {
 cmd_stop() {
   local video
   video=$(read_tracked_video || true)
+  disarm_renderer
   systemctl --user stop ryoku-video-wallpaper-smart.service 2>/dev/null || true
   cmd_dms_restore
   if systemctl --user is-active --quiet "$unit" 2>/dev/null \
@@ -631,7 +709,7 @@ cmd_stop() {
     systemctl --user stop "$unit" 2>/dev/null || true
     sleep 0.5
   fi
-  rm -f "$env_file" "$smart_state" "$palette_stamp"
+  rm -f "$env_file" "$smart_state" "$palette_stamp" "$want_file"
   stop_orphans "$video"
   systemctl --user reset-failed "$unit" 2>/dev/null || true
   systemctl --user reset-failed ryoku-video-wallpaper-smart.service 2>/dev/null || true
@@ -647,6 +725,12 @@ cmd_status() {
   else
     echo "inactive"
   fi
+  if renderer_armed; then
+    echo "armed=1"
+  else
+    echo "armed=0"
+  fi
+  [[ -f "$smart_state" ]] && echo "smart_state=$(tr -d '\n' <"$smart_state")"
   [[ -f "$env_file" ]] && cat "$env_file"
   return 0
 }

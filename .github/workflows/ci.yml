@@ -213,5 +213,8 @@ jobs:
       - name: Performance & Polish static checks
         run: bash ./distro/tests/test-performance-polish.sh
 
+      - name: Performance & Polish behavioral fixtures
+        run: bash ./distro/tests/test-performance-behavior.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

@@ -22,14 +22,26 @@ Use local notebook access for runtime checks. Backup personal settings, flake.lo
 
 ## Implementation status (code on `cursor/debian-full-hardware`)
 
-Shipped in-tree (cloud-verifiable as **PASS_STATIC** only):
+Shipped in-tree (cloud-verifiable as **PASS_STATIC** only — **no PASS_REAL**):
 
-1. Launcher — absolute Exec/TryExec, adopt/backup manual desktop, `ryoku-settings-launcher-check`, X-Ryoku-Managed marker.
-2. Smart wallpaper — `pause`/`unload`/`reload`/`watch`/`coverage`; grace by profile; no rematugen on resume; smart systemd unit.
-3. CAVA — APT `cava` + `ryoku-media-cava.patch` on Media Island / Mini Player via shared `CavaService`; `audioVisualizerEnabled=true`.
+1. Launcher — absolute Exec/TryExec; backup + adopt manual desktop **before** HM `checkLinkTargets`; `ryoku-settings-launcher-check`; X-Ryoku-Managed.
+2. Smart wallpaper — `.want` arm (PathExists cannot revive mpvpaper while unloaded); HIS in user env + `PassEnvironment`; `coverage` scale/geometry/side-by-side/independent monitors; `pause`/`unload`/`reload`/`watch`; no rematugen on resume.
+3. CAVA — APT `cava` + `ryoku-media-cava.patch` (Island/Mini) + `ryoku-media-cava-expanded.patch` (MediaPlayerTab); Quattro/Islands share tree; shared `CavaService`.
 4. Firefox — expanded `FIREFOX_MEDIA.md` (safe prefs only).
-5. Dual-monitor — Hyprland `vfr=true`, blur passes capped, dual-monitor comments; DMS bar `showOnLastDisplay`.
+5. Dual-monitor — Hyprland `vfr=true`, blur passes capped; DMS bar `showOnLastDisplay`.
 6. GPU sensors — Intel drm sysfs + one-shot `nvidia-smi` (or asleep/unavailable); no bar GPU widgets claimed.
-7. Power — `ryoku-power-policy` + user timer (battery → economy tip).
+7. Power — `ryoku-power-policy` tips economy + 20s grace; **restore** returns original profile **and** unload grace; tip stamp once.
+8. Tests — `test-performance-polish.sh` + **behavioral** `test-performance-behavior.sh` (fixtures); both in CI.
 
-Notebook/live Hyprland, mpvpaper RSS, Firefox VA-API, launcher search, CAVA frames = **NOT_TESTED** until guest validation.
+### Guest apply / rollback
+
+```sh
+bash distro/scripts/ryoku-preserve-local backup
+git -C ~/ryoku-os fetch origin && git -C ~/ryoku-os checkout cursor/debian-full-hardware
+git -C ~/ryoku-os pull --ff-only && git -C ~/ryoku-os rev-parse HEAD
+bash distro/scripts/ryoku-preserve-local hm-apply
+```
+
+Rollback: `git checkout <previous-sha>` then `hm-apply`. Desktop backups: `~/.local/state/ryoku/desktop-backup/`.
+
+Notebook/live Hyprland, mpvpaper RSS, Firefox VA-API, launcher search, CAVA frames = **NOT_TESTED**.

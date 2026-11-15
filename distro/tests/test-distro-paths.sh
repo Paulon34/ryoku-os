@@ -49,6 +49,8 @@ require distro/docs/PERSONAL_VS_SHIPPED.md
 require distro/scripts/ryoku-power-policy
 require distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch
 require distro/tests/test-performance-polish.sh
+require distro/tests/test-performance-behavior.sh
+require distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch
 require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
 require distro/assets/wallpapers/ryoku-night.jpg
 require distro/LICENSES/MIT-DankMaterialShell.txt
@@ -171,6 +173,7 @@ bash -n "$ROOT/distro/tests/test-ryoku-doctor.sh"
 bash -n "$ROOT/distro/tests/test-settings-port.sh"
 bash -n "$ROOT/distro/tests/test-apt-groups.sh"
 bash -n "$ROOT/distro/tests/test-performance-polish.sh"
+bash -n "$ROOT/distro/tests/test-performance-behavior.sh"
 bash -n "$ROOT/distro/scripts/ryoku-sddm"
 bash -n "$ROOT/distro/scripts/ryoku-sddm-wallpaper"
 bash -n "$ROOT/distro/scripts/ryoku-power-policy"
@@ -182,5 +185,6 @@ bash "$ROOT/distro/tests/test-sddm-port.sh" || fail=$((fail + 1))
 
 bash "$ROOT/distro/tests/test-hyprland-conf-055.sh" || fail=$((fail + 1))
 bash "$ROOT/distro/tests/test-performance-polish.sh" || fail=$((fail + 1))
+bash "$ROOT/distro/tests/test-performance-behavior.sh" || fail=$((fail + 1))
 
 [[ "$fail" -eq 0 ]]

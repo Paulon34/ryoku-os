@@ -227,32 +227,43 @@ in
         '';
       };
 
-      # Adopt/backup a manually created entry without clobbering user content.
+      # Adopt/backup a manually created entry WITHOUT clobbering user content.
+      # MUST run before checkLinkTargets: a regular-file desktop entry where HM
+      # wants a symlink makes activation fail. Backup then remove/move aside.
       # One canonical managed ID: org.ryoku.Settings (never ryoku-settings.desktop).
-      home.activation.ryokuSettingsDesktopAdopt = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      home.activation.ryokuSettingsDesktopAdopt = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
         data_home="''${XDG_DATA_HOME:-${homeDir}/.local/share}"
         apps="$data_home/applications"
         stamp="$apps/.ryoku-settings-desktop.managed"
         backup_dir="${homeDir}/.local/state/ryoku/desktop-backup"
         run mkdir -p "$apps" "$backup_dir"
-        # Backup legacy/manual duplicates once, then remove the legacy basename.
+        ts=$(date -u +%Y%m%dT%H%M%SZ)
+        # Backup legacy/manual duplicates, then remove the legacy basename.
         if [ -f "$apps/ryoku-settings.desktop" ]; then
-          ts=$(date -u +%Y%m%dT%H%M%SZ)
           run cp -a "$apps/ryoku-settings.desktop" "$backup_dir/ryoku-settings.desktop.$ts"
           run rm -f "$apps/ryoku-settings.desktop"
           echo "Ryoku Settings: backed up legacy ryoku-settings.desktop → $backup_dir"
         fi
-        # If a non-HM org.ryoku.Settings.desktop exists before linkGeneration,
-        # keep a copy (HM will replace the live file on the next switch).
-        if [ -f "$apps/org.ryoku.Settings.desktop" ] && [ ! -e "$stamp" ]; then
+        # Manual org.ryoku.Settings.desktop (non-symlink) blocks HM linkGeneration.
+        if [ -e "$apps/org.ryoku.Settings.desktop" ] && [ ! -L "$apps/org.ryoku.Settings.desktop" ]; then
           if ! grep -Fq 'X-Ryoku-Managed=1' "$apps/org.ryoku.Settings.desktop" 2>/dev/null; then
-            ts=$(date -u +%Y%m%dT%H%M%SZ)
             run cp -a "$apps/org.ryoku.Settings.desktop" \
               "$backup_dir/org.ryoku.Settings.desktop.manual.$ts"
             echo "Ryoku Settings: backed up manual org.ryoku.Settings.desktop"
+          else
+            run cp -a "$apps/org.ryoku.Settings.desktop" \
+              "$backup_dir/org.ryoku.Settings.desktop.pre-hm.$ts" || true
           fi
+          # Remove regular file so checkLinkTargets / linkGeneration can place the HM link.
+          run rm -f "$apps/org.ryoku.Settings.desktop"
         fi
         run printf '1\n' >"$stamp"
+      '';
+
+      # Refresh desktop database after links exist.
+      home.activation.ryokuSettingsDesktopDatabase = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        data_home="''${XDG_DATA_HOME:-${homeDir}/.local/share}"
+        apps="$data_home/applications"
         if command -v update-desktop-database >/dev/null 2>&1; then
           run update-desktop-database "$apps" || true
         fi

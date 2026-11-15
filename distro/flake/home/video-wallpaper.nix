@@ -73,14 +73,23 @@ in
       # Ordering hint only when a graphical session exists — never After=default.target
       # (that cycles with path/service WantedBy=default.target under user systemd).
       After = [ "graphical-session.target" ];
-      ConditionPathExists = "%S/ryoku/video-wallpaper.env";
+      # Arm file only. Unload removes .want so PathExists cannot revive mpvpaper.
+      # Selection stays in video-wallpaper.env (EnvironmentFile); ExecCondition
+      # also refuses start when disarmed.
+      ConditionPathExists = "%S/ryoku/video-wallpaper.want";
       StartLimitIntervalSec = 60;
       StartLimitBurst = 3;
     };
 
     Service = {
       Type = "simple";
-      EnvironmentFile = "%S/ryoku/video-wallpaper.env";
+      EnvironmentFile = "-%S/ryoku/video-wallpaper.env";
+      # Import compositor identity when Hyprland exported it into the user bus.
+      PassEnvironment = [
+        "HYPRLAND_INSTANCE_SIGNATURE"
+        "WAYLAND_DISPLAY"
+        "XDG_RUNTIME_DIR"
+      ];
       ExecCondition = "${helper} check";
       ExecStart = "${helper} run";
       ExecStartPost = [
@@ -102,11 +111,11 @@ in
     # Not installed into a target — the path unit (and ryoku-start-dms) start it.
   };
 
-  # Start when the env file appears (apply) or already exists at login.
+  # Arm file only — env alone must never start mpvpaper after unload.
   systemd.user.paths.ryoku-video-wallpaper = {
-    Unit.Description = "Watch Ryoku video wallpaper env for mpvpaper";
+    Unit.Description = "Watch Ryoku video wallpaper arm file for mpvpaper";
     Path = {
-      PathExists = "%S/ryoku/video-wallpaper.env";
+      PathExists = "%S/ryoku/video-wallpaper.want";
       Unit = "ryoku-video-wallpaper.service";
     };
     Install.WantedBy = [ "default.target" ];
@@ -114,16 +123,21 @@ in
 
   # Smart pause/unload controller (Hyprland IPC when available).
   # Separated from the renderer so stopping mpvpaper does not kill the watcher.
-  # No After=default.target; started by apply / path / ryoku-start-dms.
+  # Runs whenever a video is selected (env), even while renderer is disarmed.
   systemd.user.services.ryoku-video-wallpaper-smart = {
     Unit = {
       Description = "Ryoku video wallpaper smart pause/unload";
-      After = [ "ryoku-video-wallpaper.service" ];
+      After = [ "graphical-session.target" ];
       ConditionPathExists = "%S/ryoku/video-wallpaper.env";
     };
     Service = {
       Type = "simple";
       EnvironmentFile = "%S/ryoku/video-wallpaper.env";
+      PassEnvironment = [
+        "HYPRLAND_INSTANCE_SIGNATURE"
+        "WAYLAND_DISPLAY"
+        "XDG_RUNTIME_DIR"
+      ];
       ExecStart = "${helper} watch";
       Restart = "on-failure";
       RestartSec = 8;

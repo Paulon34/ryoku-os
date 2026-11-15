@@ -84,9 +84,10 @@ let
     # Do not invent host connector names in the shipped conf.
     monitor=,preferred,auto,1
 
-    # Re-import toolkit theme into systemd --user after WAYLAND is up
-    # (covers late D-Bus activation of file managers / portals).
-    exec-once = dbus-update-activation-environment --systemd GTK_THEME QT_STYLE_OVERRIDE XCURSOR_THEME XCURSOR_SIZE XDG_ICON_THEME WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+    # Re-import toolkit theme + Hyprland identity into systemd --user after WAYLAND
+    # is up (smart wallpaper / portals / late D-Bus activation).
+    exec-once = dbus-update-activation-environment --systemd GTK_THEME QT_STYLE_OVERRIDE XCURSOR_THEME XCURSOR_SIZE XDG_ICON_THEME WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE XDG_RUNTIME_DIR
+    exec-once = systemctl --user import-environment HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY XDG_RUNTIME_DIR
     exec-once = ${home}/.local/bin/ryoku-nm-applet
     exec-once = ${home}/.local/bin/ryoku-polkit-agent
     exec-once = ${home}/.local/bin/ryoku-cliphist-text
