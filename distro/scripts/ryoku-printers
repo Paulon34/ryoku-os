@@ -25,7 +25,27 @@ if ! grep -Eq 'Class:[[:space:]]+ELF64' <<<"$header" || ! grep -Eq 'Machine:.*Ad
   die "vendor binary is not x86-64"
 fi
 grep -Fq 'application/vnd.cups-raster 0 rastertosnailtspl-4barcode' "$tmp/model.ppd" || die "PPD filter mismatch"
-cupstestppd -q "$tmp/model.ppd" || die "vendor PPD validation failed"
+# Vendor PPD omits two size defaults. Derive both from its existing PageSize,
+# preserving its original media identifiers and physical dimensions.
+default_size=$(awk '/^\*DefaultPageSize:/ {print $2; exit}' "$tmp/model.ppd")
+[[ "$default_size" == w4h6 ]] || die "unexpected vendor default label size"
+for key in ImageableArea PaperDimension; do
+  grep -Eq "^\\*${key} ${default_size}[/ :]" "$tmp/model.ppd" || die "vendor PPD missing default $key choice"
+  if ! grep -q "^\\*Default${key}:" "$tmp/model.ppd"; then
+    # Insert the attribute directly before the first matching media entry.
+    awk -v key="$key" -v size="$default_size" '
+      !done && index($0,"*" key " ") == 1 {print "*Default" key ": " size; done=1}
+      {print}
+    ' "$tmp/model.ppd" > "$tmp/model.fixed"
+    mv "$tmp/model.fixed" "$tmp/model.ppd"
+  fi
+done
+# The original names w2h4/w4h4/w4h6 and missing zh_TW choice labels
+# are vendor compatibility issues, not a reason to change actual media sizes.
+# Check the filter in a staged CUPS root before installing anything.
+install -d "$tmp/root/usr/lib/cups/filter"
+install -m 0755 "$tmp/filter" "$tmp/root/usr/lib/cups/filter/rastertosnailtspl-4barcode"
+cupstestppd -R "$tmp/root" -W sizes -W translations -v "$tmp/model.ppd" || die "vendor PPD validation failed"
 # Native vendor ELF, not Nix-patched file; dependencies must resolve on Debian.
 deps=$(ldd "$tmp/filter" 2>&1) || die "binary dependency check failed: $deps"
 printf '%s\n' "$deps"
@@ -33,6 +53,7 @@ printf '%s\n' "$deps"
 install -d -m 0755 /usr/share/cups/model/4barcode /usr/lib/cups/filter
 install -o root -g root -m 0644 "$tmp/model.ppd" /usr/share/cups/model/4barcode/4B-2054L.ppd
 install -o root -g root -m 0755 "$tmp/filter" /usr/lib/cups/filter/rastertosnailtspl-4barcode
+cupstestppd -W sizes -W translations -v /usr/share/cups/model/4barcode/4B-2054L.ppd || die "installed PPD validation failed"
 systemctl enable --now cups.service
 systemctl enable --now avahi-daemon.service
 systemctl restart cups.service
