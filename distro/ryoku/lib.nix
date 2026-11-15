@@ -90,17 +90,14 @@ let
         "ryoku/settings.json: appearance.loginWallpaper must be a Ryoku gallery "
         + "basename (e.g. \"5.jpg\"), got: ${builtins.toJSON loginWallpaperRaw}"
       )
-    else if !(builtins.pathExists (wallpapersDir + "/${loginWallpaperRaw}")) then
-      throw (
-        "ryoku/settings.json: appearance.loginWallpaper \"${loginWallpaperRaw}\" "
-        + "not found under assets/wallpapers/"
-      )
+    # Private images deliberately live outside the pure Nix source. Their
+    # basename is validated here; SDDM's runtime helper validates the file.
     else
       loginWallpaperRaw;
 
   # Store path for SDDM (only when set). Path context copies into the Nix store.
   loginWallpaperPath =
-    if loginWallpaper == null then null else wallpapersDir + "/${loginWallpaper}";
+    if loginWallpaper == null || !(builtins.pathExists (wallpapersDir + "/${loginWallpaper}")) then null else wallpapersDir + "/${loginWallpaper}";
 
   # Weather place name, resolved by DMS's built-in Open-Meteo geocoding.
   # Personal value: lives only in settings.json, never as a Nix default.
