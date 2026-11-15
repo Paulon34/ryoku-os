@@ -83,7 +83,8 @@ let
     exec-once = ${home}/.local/bin/ryoku-start-dms
 
     input {
-        kb_layout = us
+        kb_layout = br
+        kb_model = abnt2
         numlock_by_default = true
         follow_mouse = 1
         touchpad {
