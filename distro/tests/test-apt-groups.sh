@@ -40,6 +40,14 @@ pass "full list has no base duplicates"
 grep -Eq '^hyprland$' "$ROOT/distro/apt/packages-hyprland.txt" || fail_msg "hyprland list"
 grep -Eq '^hyprland-guiutils$' "$ROOT/distro/apt/packages-hyprland.txt" || fail_msg "hyprland-guiutils"
 
+bash "$ROOT/distro/tests/test-hardware.sh" || fail_msg "hardware detection fixtures failed"
+for p in obs-studio audacity neovim git-lfs openjdk-21-jdk nodejs cargo virt-manager podman; do
+  grep -Fxq "$p" "$ROOT/distro/apt/packages-full.txt" || fail_msg "full missing $p"
+done
+for p in com.spotify.Client com.visualstudio.code com.valvesoftware.Steam com.mojang.Minecraft com.rtosta.zapzap; do
+  grep -Fxq "$p" "$ROOT/distro/flatpak/apps-full-optional.txt" || fail_msg "full Flatpak missing $p"
+done
+
 # Bootstrap dry-run still works with full profile (plan only)
 set +e
 out=$("$ROOT/distro/scripts/ryoku-bootstrap" --dry-run --user runner --profile full --yes 2>&1)
