@@ -1,0 +1,98 @@
+diff -ruN a/Modules/DankBar/Widgets/MediaIsland.qml b/Modules/DankBar/Widgets/MediaIsland.qml
+--- a/Modules/DankBar/Widgets/MediaIsland.qml
++++ b/Modules/DankBar/Widgets/MediaIsland.qml
+@@ -5,8 +5,9 @@
+ import qs.Services
+ import qs.Widgets
+ 
+ // Ryoku Dynamic Media Island — compact media chip right of the clock.
+ // Shares the CenterSection capsule (no independent pill background).
+-// 5A layout · 5B mini-player · 5C polish · central-island unify
++// 5A layout · 5B mini-player · 5C polish · central-island unify · CAVA
+ Item {
+     id: root
+ 
+@@ -36,6 +37,15 @@
+     readonly property real artSize: 22
+     readonly property real playSize: 20
+     readonly property real maxTitleWidth: 104
++    // Shared CavaService only — no second cava process, no fake spectrum.
++    readonly property bool vizLive: {
++        if (!CavaService.cavaAvailable)
++            return false;
++        if (SettingsData.audioVisualizerEnabled === false)
++            return false;
++        return root.isPlaying && root.playerAvailable && !root.hidden;
++    }
++
+     // Inner content insets within the shared central capsule.
+     // Slightly tighter on the left (clock already provides separation via widgetSpacing).
+     readonly property real hPadLeft: Math.max(4, islandPad + 1)
+@@ -168,11 +178,18 @@
+             width: root.artSize
+             height: root.artSize
+             anchors.verticalCenter: parent.verticalCenter
+ 
++            AudioVisualization {
++                anchors.fill: parent
++                visible: root.vizLive
++            }
++
+             DankAlbumArt {
+                 anchors.fill: parent
+                 activePlayer: root.activePlayer
+                 showAnimation: false
+                 animationScale: 1.0
++                visible: !root.vizLive
+             }
+         }
+ 
+diff -ruN a/Modules/DankBar/Popouts/MediaIslandPopout.qml b/Modules/DankBar/Popouts/MediaIslandPopout.qml
+--- a/Modules/DankBar/Popouts/MediaIslandPopout.qml
++++ b/Modules/DankBar/Popouts/MediaIslandPopout.qml
+@@ -4,8 +4,8 @@
+ import qs.Services
+ import qs.Widgets
+ 
+ // Ryoku Mini Media Player — quick controls for the Media Island.
+-// Anchored via DankPopout to the island trigger. No CAVA / new Timers.
++// Shared CavaService spectrum (one cava via AudioVisualization Ref); no fake data.
+ DankPopout {
+     id: root
+ 
+@@ -47,6 +47,16 @@
+             readonly property bool volumeAvailable: !!(usePlayerVolume || (AudioService.sink && AudioService.sink.audio))
+             readonly property real currentVolume: usePlayerVolume ? (activePlayer.volume || 0) : (AudioService.sink?.audio?.volume ?? 0)
+ 
++            readonly property bool vizLive: {
++                if (!CavaService.cavaAvailable)
++                    return false;
++                if (SettingsData.audioVisualizerEnabled === false)
++                    return false;
++                return panel.isPlaying && root.shouldBeVisible;
++            }
++
+             property bool isSeeking: false
+ 
+             function formatMediaTime(seconds) {
+                 if (!isFinite(seconds) || seconds < 0)
+@@ -119,6 +129,16 @@
+                         width: 80
+                         height: 80
+ 
++                        AudioVisualization {
++                            anchors.left: parent.left
++                            anchors.right: parent.right
++                            anchors.bottom: parent.bottom
++                            height: 18
++                            visible: panel.vizLive
++                            z: 2
++                        }
++
+                         DankAlbumArt {
+                             anchors.fill: parent
+                             activePlayer: panel.activePlayer
+                             showAnimation: false
+                             animationScale: 1.0
+                         }
+                     }

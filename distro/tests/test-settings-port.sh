@@ -112,6 +112,12 @@ grep -Fq 'gdebi.desktop' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "MIME defaults must prefer gdebi for .deb"
 grep -Fq 'DmsShell' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "desktop actions must keep a DMS shell settings entry"
+grep -Fq 'ryokuSettingsDesktopAdopt' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must adopt/backup manual desktop entries"
+grep -Fq 'ryoku-settings-launcher-check' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must ship launcher-check helper"
+grep -Fq 'X-Ryoku-Managed' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "managed desktop must mark X-Ryoku-Managed"
 grep -Fq 'pinnedApps' "$ROOT/distro/flake/home/dms.nix" \
   || fail_msg "DMS must pin org.ryoku.Settings in launcher"
 grep -Fq '.local/bin/ryoku-settings' "$ROOT/distro/flake/home/hyprland.nix" \

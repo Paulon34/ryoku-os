@@ -55,6 +55,21 @@
             "pauseWhenCovered": {
               "type": ["boolean", "null"],
               "description": "Pause while the wallpaper is hidden (fullscreen window, locked session). Null = true."
+            },
+            "smartUnload": {
+              "type": ["boolean", "null"],
+              "description": "After pause, unload mpvpaper to the DMS poster for real RAM savings when coverage persists. Null = true. Reload never regenerates Material You."
+            },
+            "unloadGraceSec": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 600,
+              "description": "Seconds of continuous full coverage before unload. Null = profile default (economy 20, balanced 60, quality 0=pause only)."
+            },
+            "mediaPausePolicy": {
+              "type": ["string", "null"],
+              "enum": ["off", "video", "all", null],
+              "description": "When foreground media is active, pause covered wallpaper outputs. off (default) ignores audio-only; video matches fullscreen media classes/titles; all treats any fullscreen media as a pause hint."
             }
           }
         },

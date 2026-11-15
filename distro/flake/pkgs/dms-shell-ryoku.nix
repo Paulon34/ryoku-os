@@ -48,7 +48,8 @@ dms-shell.overrideAttrs (old: {
         ryoku-quattro-launcher-menus.patch \
         ryoku-quattro-notifications-osd.patch \
         ryoku-quattro-lock.patch \
-        ryoku-first-run.patch
+        ryoku-first-run.patch \
+        ryoku-media-cava.patch
       do
         ${patch}/bin/patch -p1 -d "$out/share/quickshell/dms" < "$patch_dir/$p"
       done

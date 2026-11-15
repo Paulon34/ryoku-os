@@ -26,9 +26,22 @@ screens_backup="$state_dir/dms-wallpaper-screens.json"
 poster_dir="${XDG_CACHE_HOME:-$HOME/.cache}/ryoku/video-posters"
 dms_settings="${XDG_CONFIG_HOME:-$HOME/.config}/DankMaterialShell/settings.json"
 marker_file="$state_dir/mpvpaper.marker"
+smart_state="$state_dir/video-wallpaper-smart.state"
+smart_lock="$state_dir/video-wallpaper-smart.lock"
+# Palette stamp: apply writes this; reload/unload must never rematugen.
+palette_stamp="$state_dir/video-wallpaper-palette.stamp"
 
 log() { printf 'ryoku-video-wallpaper: %s\n' "$*" >&2; }
 die() { log "$*"; exit 1; }
+
+# Default unload grace (seconds) by profile when RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE unset.
+default_unload_grace() {
+  case "${1:-balanced}" in
+    economy) echo 20 ;;
+    quality) echo 0 ;; # quality: pause only; do not auto-unload
+    *) echo 60 ;;
+  esac
+}
 
 usage() {
   cat >&2 <<'EOF'
@@ -36,9 +49,18 @@ Usage:
   ryoku-video-wallpaper apply <video> [--loop 0|1] [--audio 0|1]
                               [--profile economy|balanced|quality]
                               [--pause-covered 0|1]
+                              [--smart-unload 0|1]
+                              [--unload-grace SEC]
+                              [--media-policy off|video|all]
   ryoku-video-wallpaper stop
   ryoku-video-wallpaper poster <video>
   ryoku-video-wallpaper status
+  ryoku-video-wallpaper coverage
+  ryoku-video-wallpaper pause
+  ryoku-video-wallpaper unpause
+  ryoku-video-wallpaper unload
+  ryoku-video-wallpaper reload
+  ryoku-video-wallpaper watch
 Unit internals: check | run | dms-hide | dms-restore | stop-orphans
 EOF
   exit 2
@@ -232,26 +254,318 @@ cmd_run() {
 
 write_env() {
   local tmp="$env_file.$$"
+  local smart=${6:-1}
+  local grace=${7:-}
+  local media=${8:-off}
   mkdir -p "$state_dir"
+  if [[ -z "$grace" ]]; then
+    grace=$(default_unload_grace "$4")
+  fi
   {
     printf 'RYOKU_VIDEO_WALLPAPER="%s"\n' "$1"
     printf 'RYOKU_VIDEO_WALLPAPER_LOOP=%s\n' "$2"
     printf 'RYOKU_VIDEO_WALLPAPER_AUDIO=%s\n' "$3"
     printf 'RYOKU_VIDEO_WALLPAPER_PROFILE=%s\n' "$4"
     printf 'RYOKU_VIDEO_WALLPAPER_PAUSE_COVERED=%s\n' "$5"
+    printf 'RYOKU_VIDEO_WALLPAPER_SMART_UNLOAD=%s\n' "$smart"
+    printf 'RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE=%s\n' "$grace"
+    printf 'RYOKU_VIDEO_WALLPAPER_MEDIA_POLICY=%s\n' "$media"
     printf 'RYOKU_VIDEO_WALLPAPER_OUTPUTS=ALL\n'
   } >"$tmp"
   mv -f "$tmp" "$env_file"
 }
 
+# Source env file into the current shell (safe subset only).
+load_env_file() {
+  [[ -f "$env_file" ]] || return 1
+  # shellcheck disable=SC1090
+  set -a
+  # shellcheck source=/dev/null
+  source "$env_file"
+  set +a
+}
+
+mpvpaper_pids() {
+  local video uid pid cmdline
+  video=$(read_tracked_video "${1:-}" || true)
+  uid=$(id -u)
+  [[ -n "$video" ]] || return 0
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    cmdline=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
+    if [[ "$cmdline" == *"$video"* ]]; then
+      printf '%s\n' "$pid"
+    fi
+  done < <(pgrep -u "$uid" -x mpvpaper || true)
+}
+
+# Soft pause (SIGSTOP) — keeps RSS, stops decode/render. Prefer over kill.
+cmd_pause() {
+  local pid state
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+    [[ "$state" == T ]] && continue
+    kill -STOP "$pid" 2>/dev/null || true
+  done < <(mpvpaper_pids)
+  mkdir -p "$state_dir"
+  printf 'paused\n' >"$smart_state"
+}
+
+cmd_unpause() {
+  local pid state
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    state=$(awk '{print $3}' "/proc/$pid/stat" 2>/dev/null || true)
+    [[ "$state" == T ]] || continue
+    kill -CONT "$pid" 2>/dev/null || true
+  done < <(mpvpaper_pids)
+  mkdir -p "$state_dir"
+  printf 'playing\n' >"$smart_state"
+}
+
+# Hard unload: stop mpvpaper, restore DMS poster screens. Never rematugen.
+cmd_unload() {
+  local video
+  video=$(read_tracked_video || true)
+  # Restore static poster renderer (DMS) while keeping env for later reload.
+  cmd_dms_restore
+  if systemctl --user is-active --quiet "$unit" 2>/dev/null \
+    || systemctl --user is-failed --quiet "$unit" 2>/dev/null; then
+    systemctl --user stop "$unit" 2>/dev/null || true
+    sleep 0.4
+  fi
+  stop_orphans "$video"
+  systemctl --user reset-failed "$unit" 2>/dev/null || true
+  mkdir -p "$state_dir"
+  printf 'unloaded\n' >"$smart_state"
+  log "unloaded mpvpaper (poster restored; palette stamp preserved)"
+}
+
+# Resume from unload without regenerating Material You / Matugen.
+cmd_reload() {
+  [[ -f "$env_file" ]] || die "no video-wallpaper.env; apply a video first"
+  load_env_file || true
+  local video=${RYOKU_VIDEO_WALLPAPER:-}
+  [[ -n "$video" && -r "$video" ]] || die "tracked video missing"
+  # Do NOT call matugen or dms wallpaper set here — palette stamp stays.
+  if [[ ! -f "$palette_stamp" ]]; then
+    log "WARN: palette stamp missing (apply never completed); still skipping rematugen"
+  fi
+  systemctl --user reset-failed "$unit" 2>/dev/null || true
+  systemctl --user start "$unit"
+  mkdir -p "$state_dir"
+  printf 'playing\n' >"$smart_state"
+  log "reloaded mpvpaper without palette regeneration"
+}
+
+# Coverage probe via hyprctl JSON (best-effort). Prints:
+#   covered_all=0|1 covered_any=0|1 locked=0|1 monitors=N covered=N media_video=0|1
+# Degrades safely when hyprctl/jq missing (covered_all=0).
+cmd_coverage() {
+  local locked=0 covered_any=0 covered_all=0 media_video=0
+  local monitors=0 covered=0
+  if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || ! command -v hyprctl >/dev/null 2>&1; then
+    # Niri recovery / no compositor IPC: never force unload.
+    printf 'covered_all=0 covered_any=0 locked=0 monitors=0 covered=0 media_video=0\n'
+    return 0
+  fi
+  if ! hyprctl -j monitors >/dev/null 2>&1; then
+    printf 'covered_all=0 covered_any=0 locked=0 monitors=0 covered=0 media_video=0\n'
+    return 0
+  fi
+
+  # Locked sessions should pause/unload wallpaper.
+  if hyprctl -j locks 2>/dev/null | grep -Eq '"locked"[[:space:]]*:[[:space:]]*true'; then
+    locked=1
+  fi
+  if (( !locked )) && pgrep -u "$(id -u)" -x hyprlock >/dev/null 2>&1; then
+    locked=1
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    local parsed
+    parsed=$(
+      jq -n \
+        --argjson mons "$(hyprctl -j monitors 2>/dev/null || echo '[]')" \
+        --argjson cls "$(hyprctl -j clients 2>/dev/null || echo '[]')" '
+        def area: ((.width // 0) * (.height // 0));
+        ($mons | length) as $n |
+        (reduce $mons[] as $m (0;
+          ($cls
+            | map(select(
+                (.mapped // true)
+                and ((.workspace.id // .workspace // -1) == ($m.activeWorkspace.id // $m.activeWorkspace // -2))
+                and (
+                  (.fullscreen // 0) != 0
+                  or (.fullscreenMode // 0) != 0
+                  or (
+                    (((.size[0] // 0) * (.size[1] // 0)) as $ca
+                    | (($m | area) as $ma
+                    | $ma > 0 and $ca >= ($ma * 0.85)))
+                  )
+                )
+              ))
+            | length) as $hits |
+          if $hits > 0 then . + 1 else . end
+        )) as $covered |
+        ($cls
+          | map(select(
+              (.mapped // true)
+              and ((.fullscreen // 0) != 0 or (.fullscreenMode // 0) != 0)
+              and (
+                ((.class // "") | test("mpv|vlc|celluloid|firefox|chromium|chrome|brave"; "i"))
+                or ((.title // "") | test("YouTube|Netflix|Twitch|Prime Video"; "i"))
+              )
+            ))
+          | length) as $media |
+        "\($n) \($covered) \(if $media > 0 then 1 else 0 end)"
+      ' 2>/dev/null || echo '0 0 0'
+    )
+    # shellcheck disable=SC2086
+    set -- $parsed
+    monitors=${1:-0}
+    covered=${2:-0}
+    media_video=${3:-0}
+  fi
+
+  if (( locked )); then
+    covered_any=1
+    covered_all=1
+  elif (( monitors > 0 && covered >= monitors )); then
+    covered_any=1
+    covered_all=1
+  elif (( covered > 0 )); then
+    covered_any=1
+    covered_all=0
+  fi
+  printf 'covered_all=%s covered_any=%s locked=%s monitors=%s covered=%s media_video=%s\n' \
+    "$covered_all" "$covered_any" "$locked" "$monitors" "$covered" "$media_video"
+}
+
+# Event-driven smart controller: pause when covered; unload after grace;
+# reload without rematugen when visible again. Single shared instance.
+cmd_watch() {
+  load_env_file || die "watch requires video-wallpaper.env"
+  local profile=${RYOKU_VIDEO_WALLPAPER_PROFILE:-balanced}
+  local smart=${RYOKU_VIDEO_WALLPAPER_SMART_UNLOAD:-1}
+  local grace=${RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE:-}
+  local media_policy=${RYOKU_VIDEO_WALLPAPER_MEDIA_POLICY:-off}
+  local pause_covered=${RYOKU_VIDEO_WALLPAPER_PAUSE_COVERED:-1}
+  [[ -n "$grace" ]] || grace=$(default_unload_grace "$profile")
+  # quality profile: never auto-unload (grace forced 0 → pause only).
+  if [[ "$profile" == quality ]]; then
+    grace=0
+  fi
+  (( smart )) || { log "smart unload disabled; watch exiting"; exit 0; }
+
+  mkdir -p "$state_dir"
+  exec 8>"$smart_lock"
+  if ! flock -n 8; then
+    log "another smart watch holds the lock; exiting"
+    exit 0
+  fi
+
+  local covered_since=0 state=playing last_eval=0
+  [[ -f "$smart_state" ]] && state=$(tr -d '\n' <"$smart_state" || echo playing)
+  log "watch start profile=$profile grace=${grace}s media_policy=$media_policy state=$state"
+
+  # Prefer Hyprland socket2 events; fall back to 2s polling. Debounce 400ms.
+  local sock=""
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    sock="$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+    [[ -S "$sock" ]] || sock="/tmp/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+    [[ -S "$sock" ]] || sock=""
+  fi
+
+  eval_once() {
+    local now cov covered_all=0 covered_any=0 media_video=0 want_pause=0
+    now=$(date +%s)
+    # Debounce evaluations.
+    if (( now == last_eval )); then
+      return 0
+    fi
+    last_eval=$now
+    cov=$(cmd_coverage)
+    covered_all=$(sed -n 's/.*covered_all=\([0-9]\).*/\1/p' <<<"$cov")
+    covered_any=$(sed -n 's/.*covered_any=\([0-9]\).*/\1/p' <<<"$cov")
+    media_video=$(sed -n 's/.*media_video=\([0-9]\).*/\1/p' <<<"$cov")
+    covered_all=${covered_all:-0}
+    covered_any=${covered_any:-0}
+    media_video=${media_video:-0}
+
+    if [[ "$media_policy" == video || "$media_policy" == all ]]; then
+      if (( media_video )); then
+        want_pause=1
+      fi
+    fi
+    if (( pause_covered )) && (( covered_any )); then
+      want_pause=1
+    fi
+    # Single ALL instance: unload only when every output is covered (or locked).
+    if (( covered_all )); then
+      if (( covered_since == 0 )); then
+        covered_since=$now
+      fi
+      if [[ "$state" == playing ]]; then
+        cmd_pause
+        state=paused
+      fi
+      if (( grace > 0 )) && (( now - covered_since >= grace )); then
+        if [[ "$state" != unloaded ]]; then
+          cmd_unload
+          state=unloaded
+        fi
+      fi
+    else
+      covered_since=0
+      if (( want_pause )) && [[ "$state" == playing ]]; then
+        # Partial cover or media policy: pause decode, keep process (per-output
+        # independent pause needs one mpvpaper per output — not default).
+        cmd_pause
+        state=paused
+      elif (( !want_pause )); then
+        if [[ "$state" == unloaded ]]; then
+          cmd_reload
+          state=playing
+        elif [[ "$state" == paused ]]; then
+          cmd_unpause
+          state=playing
+        fi
+      fi
+    fi
+  }
+
+  if [[ -n "$sock" ]] && command -v socat >/dev/null 2>&1; then
+    log "watch using hyprland socket2 ($sock)"
+    # shellcheck disable=SC2094
+    while true; do
+      eval_once
+      # Read events with timeout so we still re-evaluate periodically.
+      if timeout 2 socat -u "UNIX-CONNECT:$sock" - 2>/dev/null | head -n1 >/dev/null; then
+        sleep 0.4
+      fi
+    done
+  else
+    log "watch polling every 2s (no hypr socket2/socat)"
+    while true; do
+      eval_once
+      sleep 2
+    done
+  fi
+}
+
 cmd_apply() {
-  local video="" loop=1 audio=0 profile=balanced pause=1 poster out
+  local video="" loop=1 audio=0 profile=balanced pause=1 smart=1 grace="" media=off poster out
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --loop) loop=${2:-}; shift 2 ;;
       --audio) audio=${2:-}; shift 2 ;;
       --profile) profile=${2:-}; shift 2 ;;
       --pause-covered) pause=${2:-}; shift 2 ;;
+      --smart-unload) smart=${2:-}; shift 2 ;;
+      --unload-grace) grace=${2:-}; shift 2 ;;
+      --media-policy) media=${2:-}; shift 2 ;;
       -*) usage ;;
       *) [[ -z "$video" ]] || usage; video=$1; shift ;;
     esac
@@ -261,14 +575,19 @@ cmd_apply() {
   is_safe_path "$video" || die "unsupported video path: $video"
   is_video "$video" || die "unsupported video format: $video"
   [[ -r "$video" ]] || die "video not found: $video"
-  if ! is_bool "$loop" || ! is_bool "$audio" || ! is_bool "$pause"; then
-    die "--loop/--audio/--pause-covered take 0 or 1"
+  if ! is_bool "$loop" || ! is_bool "$audio" || ! is_bool "$pause" || ! is_bool "$smart"; then
+    die "--loop/--audio/--pause-covered/--smart-unload take 0 or 1"
   fi
   case "$profile" in economy | balanced | quality) ;; *) die "unknown profile: $profile" ;; esac
+  case "$media" in off | video | all) ;; *) die "media-policy must be off|video|all" ;; esac
+  if [[ -n "$grace" ]] && ! [[ "$grace" =~ ^[0-9]+$ ]]; then
+    die "--unload-grace must be integer seconds"
+  fi
 
   poster=$(cmd_poster "$video")
 
   # Palette + lock screen from the poster (Matugen once via DMS / optional CLI).
+  # Reload/unload paths must never repeat this.
   if command -v dms >/dev/null 2>&1; then
     out=$(dms ipc call wallpaper set "$poster" 2>&1) || true
     [[ "$out" == SUCCESS* ]] || log "dms: $out"
@@ -280,8 +599,10 @@ cmd_apply() {
     matugen image "$poster" --mode dark >&2 \
       || log "matugen failed for poster (non-fatal; see error above)"
   fi
+  mkdir -p "$state_dir"
+  printf '%s\t%s\n' "$(date -Is)" "$poster" >"$palette_stamp"
 
-  write_env "$video" "$loop" "$audio" "$profile" "$pause"
+  write_env "$video" "$loop" "$audio" "$profile" "$pause" "$smart" "$grace" "$media"
 
   # Stop → orphan sweep → start (avoid restart races / duplicate mpvpaper).
   if systemctl --user is-active --quiet "$unit" 2>/dev/null \
@@ -293,21 +614,27 @@ cmd_apply() {
   stop_orphans "$video"
   systemctl --user reset-failed "$unit" 2>/dev/null || true
   systemctl --user start "$unit"
+  # Start/restart smart watch (no duplicate: flock inside watch).
+  systemctl --user reset-failed ryoku-video-wallpaper-smart.service 2>/dev/null || true
+  systemctl --user start ryoku-video-wallpaper-smart.service 2>/dev/null || true
+  printf 'playing\n' >"$smart_state"
   printf '%s\n' "$poster"
 }
 
 cmd_stop() {
   local video
   video=$(read_tracked_video || true)
+  systemctl --user stop ryoku-video-wallpaper-smart.service 2>/dev/null || true
   cmd_dms_restore
   if systemctl --user is-active --quiet "$unit" 2>/dev/null \
     || systemctl --user is-failed --quiet "$unit" 2>/dev/null; then
     systemctl --user stop "$unit" 2>/dev/null || true
     sleep 0.5
   fi
-  rm -f "$env_file"
+  rm -f "$env_file" "$smart_state" "$palette_stamp"
   stop_orphans "$video"
   systemctl --user reset-failed "$unit" 2>/dev/null || true
+  systemctl --user reset-failed ryoku-video-wallpaper-smart.service 2>/dev/null || true
 }
 
 cmd_stop_orphans() {
@@ -332,6 +659,12 @@ case "$sub" in
   stop) cmd_stop ;;
   poster) [[ $# -eq 1 ]] || usage; cmd_poster "$1" ;;
   status) cmd_status ;;
+  coverage) cmd_coverage ;;
+  pause) cmd_pause ;;
+  unpause) cmd_unpause ;;
+  unload) cmd_unload ;;
+  reload) cmd_reload ;;
+  watch) cmd_watch ;;
   check) cmd_check ;;
   run) cmd_run ;;
   dms-hide) cmd_dms_hide ;;

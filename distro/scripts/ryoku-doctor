@@ -243,10 +243,12 @@ else
   warn "DMS/Quickshell not running (expected outside an active Wayland session)"
 fi
 
-# --- settings ---
+# --- settings / launcher ---
 SETTINGS_BIN=$(command -v ryoku-settings 2>/dev/null || true)
 if [[ -z "$SETTINGS_BIN" ]]; then
-  for cand in "$HOME/.local/state/nix/profiles/home-manager/home-path/bin/ryoku-settings" "$HOME/.nix-profile/bin/ryoku-settings"; do
+  for cand in "$HOME/.local/bin/ryoku-settings" \
+    "$HOME/.local/state/nix/profiles/home-manager/home-path/bin/ryoku-settings" \
+    "$HOME/.nix-profile/bin/ryoku-settings"; do
     if [[ -x "$cand" ]]; then SETTINGS_BIN=$cand; break; fi
   done
 fi
@@ -255,10 +257,47 @@ if [[ -n "$SETTINGS_BIN" ]]; then
 else
   warn "ryoku-settings binary missing (HM package not installed yet)"
 fi
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+DESK="$DATA_HOME/applications/org.ryoku.Settings.desktop"
+if [[ -f "$DESK" ]]; then
+  if grep -Eq "^Exec=$HOME/.local/bin/ryoku-settings($|[[:space:]])" "$DESK" \
+    && grep -Eq "^TryExec=$HOME/.local/bin/ryoku-settings$" "$DESK"; then
+    ok "launcher desktop absolute Exec/TryExec ($DESK)"
+  else
+    warn "org.ryoku.Settings.desktop Exec/TryExec not absolute ~/.local/bin/ryoku-settings"
+  fi
+  if [[ -f "$DATA_HOME/applications/ryoku-settings.desktop" ]]; then
+    warn "legacy ryoku-settings.desktop still present (duplicate launcher id)"
+  fi
+else
+  warn "org.ryoku.Settings.desktop missing under $DATA_HOME/applications (HM switch needed)"
+fi
+if [[ -x "$HOME/.local/bin/ryoku-settings-launcher-check" ]]; then
+  if "$HOME/.local/bin/ryoku-settings-launcher-check" >/dev/null 2>&1; then
+    ok "ryoku-settings-launcher-check passed"
+  else
+    warn "ryoku-settings-launcher-check reported failure"
+  fi
+fi
 if [[ -f "$HOME/.config/ryoku/settings.json" || -f "$REPO_ROOT/distro/ryoku/settings.json" || -f "$REPO_ROOT/ryoku/settings.json" ]]; then
   ok "settings.json found"
 else
   warn "settings.json not found"
+fi
+
+# --- cava / video smart ---
+if command -v cava >/dev/null 2>&1; then
+  ok "cava present ($(command -v cava))"
+else
+  warn "cava missing (APT packages-base; Media Island viz stays hidden)"
+fi
+if [[ -x "$HOME/.local/bin/ryoku-video-wallpaper" ]] || command -v ryoku-video-wallpaper >/dev/null 2>&1; then
+  ok "ryoku-video-wallpaper present"
+else
+  warn "ryoku-video-wallpaper missing"
+fi
+if [[ -x "$HOME/.local/bin/ryoku-power-policy" ]]; then
+  ok "ryoku-power-policy present"
 fi
 
 # --- live hyprctl (only if session) ---

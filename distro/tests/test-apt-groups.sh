@@ -14,7 +14,7 @@ done
 
 # Source-level helper checks need standard C headers; gcc alone omits libc6-dev.
 # Keep build-essential in Minimal so the guest check works after bootstrap.
-need_base=(build-essential firefox-esr kitty thunar thunar-archive-plugin file-roller imv flatpak grim slurp fonts-noto-core papirus-icon-theme gnome-themes-extra)
+need_base=(build-essential firefox-esr kitty thunar thunar-archive-plugin file-roller imv flatpak grim slurp fonts-noto-core papirus-icon-theme gnome-themes-extra cava socat)
 for pkg in "${need_base[@]}"; do
   grep -Eq "^${pkg}$" "$ROOT/distro/apt/packages-base.txt" \
     && pass "base has $pkg" \

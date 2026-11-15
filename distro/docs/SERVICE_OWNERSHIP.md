@@ -9,6 +9,9 @@ Clear owners avoid duplicate trays, notification daemons, and polkit agents.
 | Bar CPU/RAM/temp | DMS native `cpuUsage` / `memUsage` / `cpuTemp` (DgopService) | Quattro `rightWidgets` + `~/.local/bin/dgop` | Fake percentages or continuous `nvidia-smi` |
 | Bar GPU / VRAM | **Not claimed** until DgopService exposes honest GPU IDs on this DMS pin | `ryoku-hardware --sensors` one-shot | Blind dgop→dux-gop swap; waking hybrid NVIDIA for wallpaper/metrics |
 | Video wallpaper | `ryoku-video-wallpaper` + mpvpaper user unit | Settings Appearance → Video; VA-API iGPU | Second wallpaper daemon (hyprpaper/swww); `hwdec=auto` (wakes dGPU) |
+| Video smart pause/unload | `ryoku-video-wallpaper-smart` (`watch`) | Hyprland socket2 / poll; unload → DMS poster | Rematugen on every resume; duplicate mpvpaper |
+| Media Island CAVA | DMS `CavaService` (refCount) + APT `cava` | Media Island / Mini Player when Playing | Second cava process; fake spectrum when cava missing |
+| Power tips | `ryoku-power-policy` timer | Battery → economy wallpaper + optional ppd | Continuous nvidia-smi; inventing GPU % |
 | NM tray | compositor spawn | `ryoku-nm-applet` → `nm-applet` | systemd user nm-applet + spawn both |
 | Polkit GUI prompts | compositor spawn | `ryoku-polkit-agent` (mate-polkit; skips if agent already alive) | Two agents (xdg autostart + exec-once) |
 | Clipboard history DB | compositor spawn | `wl-paste --watch cliphist store` | Expect cliphist UI with empty DB |

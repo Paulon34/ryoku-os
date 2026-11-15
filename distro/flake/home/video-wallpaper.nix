@@ -38,6 +38,35 @@ in
     '';
   };
 
+  # Battery/AC tips for wallpaper economy + optional power-profiles-daemon.
+  home.file.".local/bin/ryoku-power-policy" = {
+    executable = true;
+    source = ../../scripts/ryoku-power-policy;
+  };
+
+  # Optional oneshot on login (safe no-op when no battery / no video env).
+  systemd.user.services.ryoku-power-policy = {
+    Unit = {
+      Description = "Ryoku smart power policy tips (battery/AC)";
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${config.home.homeDirectory}/.local/bin/ryoku-power-policy apply";
+    };
+  };
+
+  systemd.user.timers.ryoku-power-policy = {
+    Unit.Description = "Re-evaluate Ryoku power policy periodically";
+    Timer = {
+      OnBootSec = "2m";
+      OnUnitActiveSec = "5m";
+      Persistent = false;
+      Unit = "ryoku-power-policy.service";
+    };
+    Install.WantedBy = [ "timers.target" ];
+  };
+
   systemd.user.services.ryoku-video-wallpaper = {
     Unit = {
       Description = "Ryoku video wallpaper (mpvpaper)";
@@ -79,6 +108,33 @@ in
     Path = {
       PathExists = "%S/ryoku/video-wallpaper.env";
       Unit = "ryoku-video-wallpaper.service";
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # Smart pause/unload controller (Hyprland IPC when available).
+  # Separated from the renderer so stopping mpvpaper does not kill the watcher.
+  # No After=default.target; started by apply / path / ryoku-start-dms.
+  systemd.user.services.ryoku-video-wallpaper-smart = {
+    Unit = {
+      Description = "Ryoku video wallpaper smart pause/unload";
+      After = [ "ryoku-video-wallpaper.service" ];
+      ConditionPathExists = "%S/ryoku/video-wallpaper.env";
+    };
+    Service = {
+      Type = "simple";
+      EnvironmentFile = "%S/ryoku/video-wallpaper.env";
+      ExecStart = "${helper} watch";
+      Restart = "on-failure";
+      RestartSec = 8;
+    };
+  };
+
+  systemd.user.paths.ryoku-video-wallpaper-smart = {
+    Unit.Description = "Start smart wallpaper controller when env exists";
+    Path = {
+      PathExists = "%S/ryoku/video-wallpaper.env";
+      Unit = "ryoku-video-wallpaper-smart.service";
     };
     Install.WantedBy = [ "default.target" ];
   };

@@ -74,7 +74,7 @@ tcpdump
 wireshark
 iperf3
 ethtool
-socat
+# socat lives in packages-base (video-wallpaper smart watch + general use)
 dnsutils
 whois
 qemu-system-x86

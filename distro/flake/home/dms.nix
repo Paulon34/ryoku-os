@@ -34,6 +34,8 @@ let
   # Session children get this via ryoku-start-dms; SSH/systemd oneshots do not
   # unless every dms entrypoint prepends Quickshell. Keep declarative — never
   # patch /nix/store.
+  # Host APT cava must remain resolvable (CavaService: command -v cava).
+  # Prepend Nix tools but keep /usr/bin on PATH via session $PATH suffix.
   dmsRuntimePath = lib.makeBinPath ([
     pkgs.quickshell
     dmsPackage
@@ -204,6 +206,9 @@ let
         # Pin Ryoku Settings in the DMS launcher catalogue without removing
         # native Control Center / SUPER+, DMS shell settings.
         pinnedApps = [ "org.ryoku.Settings" ];
+        # Shared CavaService spectrum for Media Island / popout (one cava process
+        # via refCount). Real samples only — hide viz when cava unavailable.
+        audioVisualizerEnabled = true;
       }
     )
   );
@@ -473,6 +478,7 @@ in
       exec >>"$state_dir/dms-startup.log" 2>&1
       echo "=== ryoku-start-dms $(${pkgs.coreutils}/bin/date -Is) ==="
       command -v dgop || echo "WARN: dgop not on session PATH; check DMS native monitors"
+      command -v cava || echo "WARN: cava not on PATH; Media Island visualizer will stay hidden"
       echo "WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-unset}; XDG_RUNTIME_DIR=''${XDG_RUNTIME_DIR:-unset}"
 
       # GDM must supply the compositor session environment; never invent it.
@@ -545,6 +551,9 @@ in
           ${pkgs.systemd}/bin/systemctl --user start ryoku-video-wallpaper.service \
             && echo "ryoku-start-dms: video wallpaper unit started" \
             || echo "WARN: video wallpaper unit start failed (static wallpaper remains)"
+          ${pkgs.systemd}/bin/systemctl --user start ryoku-video-wallpaper-smart.service \
+            && echo "ryoku-start-dms: video wallpaper smart controller started" \
+            || echo "WARN: video wallpaper smart controller start failed"
         fi
       ) 9>&- &
 

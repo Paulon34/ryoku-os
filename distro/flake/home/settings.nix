@@ -178,6 +178,86 @@ in
         text = settingsLocalBin;
       };
 
+      # Launcher self-check (read-only): XDG dataHome entry, absolute Exec/TryExec,
+      # icon, keywords. Guest: desktop-file-validate + gio launch.
+      home.file.".local/bin/ryoku-settings-launcher-check" = {
+        executable = true;
+        text = ''
+          #!/usr/bin/env bash
+          set -euo pipefail
+          data_home="''${XDG_DATA_HOME:-$HOME/.local/share}"
+          desk="$data_home/applications/org.ryoku.Settings.desktop"
+          bin="$HOME/.local/bin/ryoku-settings"
+          echo "XDG_DATA_HOME=$data_home"
+          echo "desktop=$desk"
+          if [[ ! -f "$desk" ]]; then
+            echo "FAIL: missing canonical desktop entry"
+            exit 1
+          fi
+          if [[ ! -x "$bin" ]]; then
+            echo "FAIL: missing ~/.local/bin/ryoku-settings"
+            exit 1
+          fi
+          grep -Eq "^Exec=$bin($|[[:space:]])" "$desk" || {
+            echo "FAIL: Exec must be absolute $bin"
+            exit 1
+          }
+          grep -Eq "^TryExec=$bin$" "$desk" || {
+            echo "FAIL: TryExec must be absolute $bin"
+            exit 1
+          }
+          grep -Fq 'Icon=org.ryoku.Settings' "$desk" || {
+            echo "FAIL: Icon=org.ryoku.Settings required"
+            exit 1
+          }
+          grep -Eqi 'Keywords=.*Ryoku' "$desk" || {
+            echo "FAIL: Keywords must include Ryoku"
+            exit 1
+          }
+          if command -v desktop-file-validate >/dev/null 2>&1; then
+            desktop-file-validate "$desk"
+          else
+            echo "WARN: desktop-file-validate not installed"
+          fi
+          # Duplicate legacy id shadows search — warn only.
+          if [[ -f "$data_home/applications/ryoku-settings.desktop" ]]; then
+            echo "WARN: legacy ryoku-settings.desktop still present (prefer org.ryoku.Settings)"
+          fi
+          echo "PASS: launcher desktop contract"
+        '';
+      };
+
+      # Adopt/backup a manually created entry without clobbering user content.
+      # One canonical managed ID: org.ryoku.Settings (never ryoku-settings.desktop).
+      home.activation.ryokuSettingsDesktopAdopt = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        data_home="''${XDG_DATA_HOME:-${homeDir}/.local/share}"
+        apps="$data_home/applications"
+        stamp="$apps/.ryoku-settings-desktop.managed"
+        backup_dir="${homeDir}/.local/state/ryoku/desktop-backup"
+        run mkdir -p "$apps" "$backup_dir"
+        # Backup legacy/manual duplicates once, then remove the legacy basename.
+        if [ -f "$apps/ryoku-settings.desktop" ]; then
+          ts=$(date -u +%Y%m%dT%H%M%SZ)
+          run cp -a "$apps/ryoku-settings.desktop" "$backup_dir/ryoku-settings.desktop.$ts"
+          run rm -f "$apps/ryoku-settings.desktop"
+          echo "Ryoku Settings: backed up legacy ryoku-settings.desktop → $backup_dir"
+        fi
+        # If a non-HM org.ryoku.Settings.desktop exists before linkGeneration,
+        # keep a copy (HM will replace the live file on the next switch).
+        if [ -f "$apps/org.ryoku.Settings.desktop" ] && [ ! -e "$stamp" ]; then
+          if ! grep -Fq 'X-Ryoku-Managed=1' "$apps/org.ryoku.Settings.desktop" 2>/dev/null; then
+            ts=$(date -u +%Y%m%dT%H%M%SZ)
+            run cp -a "$apps/org.ryoku.Settings.desktop" \
+              "$backup_dir/org.ryoku.Settings.desktop.manual.$ts"
+            echo "Ryoku Settings: backed up manual org.ryoku.Settings.desktop"
+          fi
+        fi
+        run printf '1\n' >"$stamp"
+        if command -v update-desktop-database >/dev/null 2>&1; then
+          run update-desktop-database "$apps" || true
+        fi
+      '';
+
       # Canonical FreeDesktop id for portals (matches Qt appId org.ryoku.Settings).
       # Do not emit ryoku-settings.desktop — that breaks portal app lookup.
       # Absolute Exec/TryExec so DMS DesktopEntries indexing works even when the
@@ -202,7 +282,11 @@ in
           TryExec = "${homeDir}/.local/bin/ryoku-settings";
           NoDisplay = "false";
           StartupWMClass = "org.ryoku.Settings";
-          Keywords = "Ryoku;Settings;System;Configurações;Preferências;Control Center;Painel;";
+          Keywords = "Ryoku;Settings;System;Configurações;Preferências;Control Center;Painel;Ryoku Settings;";
+          "Keywords[pt_BR]" = "Ryoku;Configurações;Preferências;Sistema;Painel;Control Center;";
+          # Marker so activation can tell managed vs manual copies apart.
+          X-Ryoku-Managed = "1";
+          X-Ryoku-Launcher = "org.ryoku.Settings";
         };
         # Desktop actions: open Ryoku Settings, or native DMS shell settings
         # (does not remove Control Center / SUPER+,).

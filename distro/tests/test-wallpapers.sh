@@ -171,6 +171,14 @@ grep -Fq 'systemctl --user start "$unit"' "$ROOT/distro/scripts/ryoku-video-wall
   && pass "apply uses start after stop" || fail_msg "apply must stop then start (not only restart)"
 grep -Fq 'mpvpaper.marker' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
   && pass "mpvpaper marker for orphan tracking" || fail_msg "missing mpvpaper.marker"
+grep -Fq 'cmd_unload' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "smart unload command" || fail_msg "missing unload"
+grep -Fq 'palette_stamp' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "palette stamp for no-rematugen reload" || fail_msg "missing palette stamp"
+grep -Fq 'ryoku-video-wallpaper-smart' "$ROOT/distro/flake/home/video-wallpaper.nix" \
+  && pass "smart watch unit" || fail_msg "missing smart watch unit"
+grep -Fq 'ryoku-media-cava.patch' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
+  && pass "CAVA media patch wired" || fail_msg "CAVA patch not applied in dms-shell"
 
 if [[ "$fail" -eq 0 ]]; then
   echo "ALL PASS_STATIC (wallpapers)"

@@ -9,6 +9,8 @@
   nixGLIntel,
   procps,
   systemd,
+  util-linux,
+  socat,
   matugen ? null,
 }:
 
@@ -27,6 +29,8 @@ writeShellApplication {
     nixGLIntel
     procps
     systemd
+    util-linux
+    socat
   ]
   ++ lib.optional (matugen != null) matugen;
 

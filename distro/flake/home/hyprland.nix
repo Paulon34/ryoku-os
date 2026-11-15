@@ -78,6 +78,10 @@ let
     env = QT_STYLE_OVERRIDE,adwaita-dark
     env = XDG_ICON_THEME,Papirus-Dark
 
+    # Dual-monitor: default auto-place. Guest may pin explicit layout, e.g.:
+    #   monitor=eDP-1,preferred,0x0,1
+    #   monitor=HDMI-A-1,preferred,1920x0,1
+    # Do not invent host connector names in the shipped conf.
     monitor=,preferred,auto,1
 
     # Re-import toolkit theme into systemd --user after WAYLAND is up
@@ -113,6 +117,8 @@ let
         rounding = ${toString rounding}
         active_opacity = 1.0
         inactive_opacity = ${inactiveOpacity}
+        # Dual-output cost: keep blur modest (passes≤2). Economy visual profile
+        # disables blur via DMS/RyokuVisual — do not raise passes here.
         blur {
             enabled = true
             size = 6
@@ -141,6 +147,10 @@ let
     misc {
         disable_hyprland_logo = true
         disable_splash_rendering = true
+        # Variable refresh pacing reduces compositor wakeups on idle dual-monitor.
+        vfr = true
+        # Do not force VRR on unknown panels (guest may enable per-output).
+        vrr = 0
     }
 
     # Debian Hyprland 0.55.2 (src/config/legacy/ConfigManager.cpp handleWindowrule):

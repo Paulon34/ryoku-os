@@ -207,5 +207,11 @@ jobs:
       - name: APT module groups + bootstrap full dry-run
         run: bash ./distro/tests/test-apt-groups.sh
 
+      - name: Wallpapers + video wallpaper static checks
+        run: bash ./distro/tests/test-wallpapers.sh
+
+      - name: Performance & Polish static checks
+        run: bash ./distro/tests/test-performance-polish.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

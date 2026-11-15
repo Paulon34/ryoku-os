@@ -18,4 +18,18 @@ Reuse the actual pinned DMS audio service API, inspect upstream QML from the pin
 Use about:support, codec support, vainfo and intel_gpu_top to determine actual hardware decode; avoid disabling sandbox or forcing unsupported options. Compare identical video content and monitor refresh rates. Inspect Hyprland monitors/clients/layers and Quickshell timers, loaders, artwork caches, animations and duplicate instances. Preserve visual quality. Inspect PSS via /proc/PID/smaps_rollup for user processes, sample top CPU repeatedly, record battery/power where supported. Compare static, video visible, covered, paused, unloaded, and resume; repeat with two outputs and foreground video. Record actual results and uncertainty, not fabricated percentage reductions. Avoid routine NVIDIA polling waking sleeping dGPU; identify GPU usage, VRAM, temperature and power only from supported interfaces; distinguish unavailable/asleep.
 
 ## 5. Deployment and acceptance
-Use local notebook access for runtime checks. Backup personal settings, flake.lock, host and manual desktop entry; never commit private data. Build HM before switch, use existing pins and backup suffix; avoid global changes, no reboot/logout without authorization, no merge. Do not modify drivers or GDM. Validate all static tests and report CI, then individually label PASS_REAL, PASS_STATIC, PARTIAL, FAIL, NOT_TESTED. Keep selected wallpaper, Matugen palette, printers, theme and launcher working. Commit small independent changes; report before/after and exact rollback. This document is a task specification; only the native CAVA dependency and broadened native pause mode are implemented at its creation.
+Use local notebook access for runtime checks. Backup personal settings, flake.lock, host and manual desktop entry; never commit private data. Build HM before switch, use existing pins and backup suffix; avoid global changes, no reboot/logout without authorization, no merge. Do not modify drivers or GDM. Validate all static tests and report CI, then individually label PASS_REAL, PASS_STATIC, PARTIAL, FAIL, NOT_TESTED. Keep selected wallpaper, Matugen palette, printers, theme and launcher working. Commit small independent changes; report before/after and exact rollback.
+
+## Implementation status (code on `cursor/debian-full-hardware`)
+
+Shipped in-tree (cloud-verifiable as **PASS_STATIC** only):
+
+1. Launcher — absolute Exec/TryExec, adopt/backup manual desktop, `ryoku-settings-launcher-check`, X-Ryoku-Managed marker.
+2. Smart wallpaper — `pause`/`unload`/`reload`/`watch`/`coverage`; grace by profile; no rematugen on resume; smart systemd unit.
+3. CAVA — APT `cava` + `ryoku-media-cava.patch` on Media Island / Mini Player via shared `CavaService`; `audioVisualizerEnabled=true`.
+4. Firefox — expanded `FIREFOX_MEDIA.md` (safe prefs only).
+5. Dual-monitor — Hyprland `vfr=true`, blur passes capped, dual-monitor comments; DMS bar `showOnLastDisplay`.
+6. GPU sensors — Intel drm sysfs + one-shot `nvidia-smi` (or asleep/unavailable); no bar GPU widgets claimed.
+7. Power — `ryoku-power-policy` + user timer (battery → economy tip).
+
+Notebook/live Hyprland, mpvpaper RSS, Firefox VA-API, launcher search, CAVA frames = **NOT_TESTED** until guest validation.

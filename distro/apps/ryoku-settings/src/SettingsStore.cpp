@@ -86,7 +86,10 @@ const QStringList &videoWallpaperKeys()
 {
     static const QStringList keys{QStringLiteral("file"), QStringLiteral("loop"),
                                   QStringLiteral("audio"), QStringLiteral("profile"),
-                                  QStringLiteral("pauseWhenCovered")};
+                                  QStringLiteral("pauseWhenCovered"),
+                                  QStringLiteral("smartUnload"),
+                                  QStringLiteral("unloadGraceSec"),
+                                  QStringLiteral("mediaPausePolicy")};
     return keys;
 }
 
@@ -353,7 +356,8 @@ bool SettingsStore::validateVideoWallpaper(const QVariant &wallpaperType,
             return fail(QStringLiteral("invalid videoWallpaper.file"));
 
         for (const QString &key : {QStringLiteral("loop"), QStringLiteral("audio"),
-                                   QStringLiteral("pauseWhenCovered")}) {
+                                   QStringLiteral("pauseWhenCovered"),
+                                   QStringLiteral("smartUnload")}) {
             const QVariant v = video.value(key);
             if (isPresent(v) && v.typeId() != QMetaType::Bool)
                 return fail(QStringLiteral("videoWallpaper.%1 must be null or bool").arg(key));
@@ -366,6 +370,23 @@ bool SettingsStore::validateVideoWallpaper(const QVariant &wallpaperType,
                 || (p != QStringLiteral("economy") && p != QStringLiteral("balanced")
                     && p != QStringLiteral("quality")))
                 return fail(QStringLiteral("videoWallpaper.profile must be null, economy, balanced or quality"));
+        }
+
+        const QVariant grace = video.value(QStringLiteral("unloadGraceSec"));
+        if (isPresent(grace)) {
+            bool ok = false;
+            const int g = grace.toInt(&ok);
+            if (!ok || g < 0 || g > 600)
+                return fail(QStringLiteral("videoWallpaper.unloadGraceSec must be null or 0..600"));
+        }
+
+        const QVariant mediaPolicy = video.value(QStringLiteral("mediaPausePolicy"));
+        if (isPresent(mediaPolicy)) {
+            const QString m = mediaPolicy.toString();
+            if (mediaPolicy.typeId() != QMetaType::QString
+                || (m != QStringLiteral("off") && m != QStringLiteral("video")
+                    && m != QStringLiteral("all")))
+                return fail(QStringLiteral("videoWallpaper.mediaPausePolicy must be null, off, video or all"));
         }
     }
 

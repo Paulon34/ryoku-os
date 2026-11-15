@@ -100,3 +100,6 @@ upower
 
 # Audio visualization for Ryoku Media Island (native Debian package).
 cava
+
+# Hyprland socket2 event client for smart video-wallpaper pause/unload.
+socat
