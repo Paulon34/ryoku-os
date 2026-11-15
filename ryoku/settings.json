@@ -1,11 +1,11 @@
 {
     "appearance": {
         "animations": true,
-        "cursorTheme": null,
+        "cursorTheme": "Bibata-Modern-Ice",
         "dynamicColors": true,
         "fontMono": null,
         "fontUi": null,
-        "iconTheme": null,
+        "iconTheme": "Papirus-Dark",
         "loginWallpaper": "ryoku-night.jpg",
         "shellStyle": null,
         "transparency": null,

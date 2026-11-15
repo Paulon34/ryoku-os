@@ -219,21 +219,38 @@ bool WallpaperApplier::applyWallpaperWithTheme(const QString &relativeId, bool d
         } else if (dynamicColors) {
             QProcess mg;
             mg.setProgram(matugen);
-            mg.setArguments({QStringLiteral("image"), abs});
+            // Force dark Material You — wallpaper luminance must not flip GTK light.
+            mg.setArguments({QStringLiteral("image"), abs, QStringLiteral("--mode"), QStringLiteral("dark")});
             mg.setProcessChannelMode(QProcess::MergedChannels);
             mg.start();
-            const bool started = mg.waitForStarted(5000);
-            const bool finished = started && mg.waitForFinished(30000);
+            bool started = mg.waitForStarted(5000);
+            bool finished = started && mg.waitForFinished(30000);
             if (!finished) {
                 mg.kill();
                 mg.waitForFinished(1000);
             }
             if (!finished || mg.exitStatus() != QProcess::NormalExit || mg.exitCode() != 0) {
-                m_lastError = QStringLiteral("Wallpaper applied, but Matugen failed: %1")
-                                  .arg(QString::fromUtf8(mg.readAll()).trimmed());
-                qWarning(lcWallApply) << m_lastError;
+                // Older matugen without --mode: retry plain (still prefer dark templates).
+                QProcess mgFallback;
+                mgFallback.setProgram(matugen);
+                mgFallback.setArguments({QStringLiteral("image"), abs});
+                mgFallback.setProcessChannelMode(QProcess::MergedChannels);
+                mgFallback.start();
+                started = mgFallback.waitForStarted(5000);
+                finished = started && mgFallback.waitForFinished(30000);
+                if (!finished) {
+                    mgFallback.kill();
+                    mgFallback.waitForFinished(1000);
+                }
+                if (!finished || mgFallback.exitStatus() != QProcess::NormalExit || mgFallback.exitCode() != 0) {
+                    m_lastError = QStringLiteral("Wallpaper applied, but Matugen failed: %1")
+                                      .arg(QString::fromUtf8(mgFallback.readAll()).trimmed());
+                    qWarning(lcWallApply) << m_lastError;
+                } else {
+                    qInfo(lcWallApply) << "Matugen generated colors for" << abs << "(no --mode flag)";
+                }
             } else {
-                qInfo(lcWallApply) << "Matugen generated colors for" << abs;
+                qInfo(lcWallApply) << "Matugen generated dark colors for" << abs;
             }
         }
     }

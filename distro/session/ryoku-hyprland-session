@@ -38,10 +38,25 @@ FLATPAK_USER="${HOME}/.local/share/flatpak/exports/share"
 FLATPAK_SYSTEM="/var/lib/flatpak/exports/share"
 export XDG_DATA_DIRS="${HM_SHARE}:${NIX_SHARE}:${USER_SHARE}:${FLATPAK_USER}:${FLATPAK_SYSTEM}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
-# Pointer theme: GDM does not source HM sessionVariables; Hyprland also sets
-# these via env=, but GTK/Qt/Firefox children of the session need them early.
+# Pointer + dark toolkit prefs: GDM does not source HM sessionVariables.
+# Hyprland also sets these via env=; export early so portal helpers and the
+# first exec-once children (DMS, Thunar keybind) inherit a dark stack.
+# GTK_THEME complements (does not replace) dconf prefer-dark for GTK4/libadwaita.
 export XCURSOR_THEME="${XCURSOR_THEME:-Bibata-Modern-Ice}"
 export XCURSOR_SIZE="${XCURSOR_SIZE:-24}"
+export GTK_THEME="${GTK_THEME:-Adwaita:dark}"
+export QT_STYLE_OVERRIDE="${QT_STYLE_OVERRIDE:-adwaita-dark}"
+export XDG_ICON_THEME="${XDG_ICON_THEME:-Papirus-Dark}"
+
+# Push the same vars into systemd --user / D-Bus activation (Thunar via
+# gio/dbus, Flatpak portals). Best-effort; never abort the session.
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+  dbus-update-activation-environment --systemd \
+    GTK_THEME QT_STYLE_OVERRIDE XCURSOR_THEME XCURSOR_SIZE XDG_ICON_THEME \
+    XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP \
+    NIXOS_OZONE_WL MOZ_ENABLE_WAYLAND QT_QPA_PLATFORM \
+    PATH XDG_DATA_DIRS 2>/dev/null || true
+fi
 
 # Hyprland >=0.53 recommends start-hyprland (safe mode/crash recovery).
 # Prefer the Debian system wrapper; keep fallbacks for older installations.

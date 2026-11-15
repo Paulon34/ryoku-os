@@ -58,8 +58,13 @@ in
   };
 
   home.file.".config/matugen/config.toml".text = ''
+    # Ryoku Dark identity: always regenerate in dark mode so Material You
+    # accents never flip GTK/Qt/Kitty back to light after a wallpaper change.
     [config]
     reload_apps = true
+
+    [config.wallpaper]
+    # matugen ≥2 uses --mode; keep explicit dark in change-wallpaper as well.
 
     [templates.ryoku_palette_json]
     input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-palette.json"
@@ -68,6 +73,27 @@ in
     [templates.ryoku_palette_css]
     input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-palette.css"
     output_path = "${config.home.homeDirectory}/.config/ryoku/palette.css"
+
+    [templates.ryoku_gtk3]
+    input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-gtk-colors.css"
+    output_path = "${config.home.homeDirectory}/.config/gtk-3.0/ryoku-colors.css"
+
+    [templates.ryoku_gtk4]
+    input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-gtk-colors.css"
+    output_path = "${config.home.homeDirectory}/.config/gtk-4.0/ryoku-colors.css"
+
+    [templates.ryoku_qtct]
+    input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-qtct-colors.conf"
+    output_path = "${config.home.homeDirectory}/.config/qt5ct/colors/ryoku-dark.conf"
+
+    [templates.ryoku_qt6ct]
+    input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-qtct-colors.conf"
+    output_path = "${config.home.homeDirectory}/.config/qt6ct/colors/ryoku-dark.conf"
+
+    [templates.ryoku_kitty]
+    input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-kitty-colors.conf"
+    output_path = "${config.home.homeDirectory}/.config/kitty/ryoku-colors.conf"
+    post_hook = "kill -SIGUSR1 $(pidof kitty) 2>/dev/null || true"
 
     [templates.ryoku_niri]
     input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-niri-colors.kdl"
@@ -82,6 +108,9 @@ in
 
   home.file.".config/matugen/templates/ryoku-palette.json".source = ./matugen/templates/ryoku-palette.json;
   home.file.".config/matugen/templates/ryoku-palette.css".source = ./matugen/templates/ryoku-palette.css;
+  home.file.".config/matugen/templates/ryoku-gtk-colors.css".source = ./matugen/templates/ryoku-gtk-colors.css;
+  home.file.".config/matugen/templates/ryoku-qtct-colors.conf".source = ./matugen/templates/ryoku-qtct-colors.conf;
+  home.file.".config/matugen/templates/ryoku-kitty-colors.conf".source = ./matugen/templates/ryoku-kitty-colors.conf;
   home.file.".config/matugen/templates/ryoku-niri-colors.kdl".source = ./matugen/templates/ryoku-niri-colors.kdl;
   # Style-selected Hyprland border template (Islands solid / Quattro gradient).
   home.file.".config/matugen/templates/ryoku-hyprland.conf".source = hyprlandTemplate;
@@ -167,7 +196,8 @@ in
 
       if [[ "$dynamic" == true ]]; then
         if command -v matugen >/dev/null 2>&1; then
-          matugen image "$pick" || echo "WARN: matugen image failed" >&2
+          # Force dark mode so wallpaper luminance never regenerates a light GTK stack.
+          matugen image "$pick" --mode dark || matugen image "$pick" || echo "WARN: matugen image failed" >&2
         else
           echo "WARN: matugen missing; colors not regenerated" >&2
         fi

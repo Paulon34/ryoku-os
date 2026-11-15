@@ -71,11 +71,18 @@ let
     $fileManager = thunar
 
     # Home Manager session variables may not be sourced by GDM.
+    # Propagate dark + cursor into every compositor child (Thunar, Kitty, DMS).
     env = XCURSOR_THEME,${cursor.name}
     env = XCURSOR_SIZE,${toString cursor.size}
+    env = GTK_THEME,Adwaita:dark
+    env = QT_STYLE_OVERRIDE,adwaita-dark
+    env = XDG_ICON_THEME,Papirus-Dark
 
     monitor=,preferred,auto,1
 
+    # Re-import toolkit theme into systemd --user after WAYLAND is up
+    # (covers late D-Bus activation of file managers / portals).
+    exec-once = dbus-update-activation-environment --systemd GTK_THEME QT_STYLE_OVERRIDE XCURSOR_THEME XCURSOR_SIZE XDG_ICON_THEME WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
     exec-once = ${home}/.local/bin/ryoku-nm-applet
     exec-once = ${home}/.local/bin/ryoku-polkit-agent
     exec-once = ${home}/.local/bin/ryoku-cliphist-text

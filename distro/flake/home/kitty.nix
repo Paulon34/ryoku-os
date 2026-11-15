@@ -29,8 +29,10 @@
     };
 
     # DMS may drop dank-theme.conf after Matugen; include is optional at runtime.
+    # ryoku-colors.conf is Matugen --mode dark (never light after wallpaper regen).
     extraConfig = ''
       include dank-theme.conf
+      include ryoku-colors.conf
     '';
 
     keybindings = {

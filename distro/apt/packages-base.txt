@@ -84,6 +84,9 @@ mate-polkit
 # Fonts / themes (minimal)
 fonts-dejavu-core
 adwaita-icon-theme
+# Host Adwaita-dark for APT Thunar/GTK3 (Nix gnome-themes-extra alone is not
+# always on the theme search path for /usr/bin apps).
+gnome-themes-extra
 
 # Hardware discovery and desktop diagnostics (both editions)
 pciutils

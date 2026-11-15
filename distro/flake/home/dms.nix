@@ -179,6 +179,12 @@ let
         showCpuUsage = true;
         showMemUsage = true;
         showCpuTemp = true;
+        # Ryoku Dark + Papirus: DMS icon apply hooks (SettingsSpec).
+        iconThemeDark = "Papirus-Dark";
+        iconThemeLight = "Papirus-Dark";
+        iconThemePerMode = false;
+        # Keep portal color-scheme in sync with forced dark session.
+        syncModeWithPortal = true;
         showClipboard = false;
         showLauncherButton = true;
         showWorkspaceSwitcher = true;
@@ -329,6 +335,19 @@ let
       exit 0
     fi
 
+    # Force Ryoku Dark: never leave isLightMode/themeModeAuto flipping GTK
+    # back to light after Matugen/wallpaper automation (SessionData keys).
+    before_session=$(${pkgs.coreutils}/bin/sha256sum < "$session")
+    "$jq" '
+      .isLightMode = false
+      | .themeModeAutoEnabled = false
+    ' "$session" > "$session.tmp"
+    mv "$session.tmp" "$session"
+    if [ "$(${pkgs.coreutils}/bin/sha256sum < "$session")" != "$before_session" ]; then
+      dms_ipc settings set currentThemeName dynamic >/dev/null 2>&1 || true
+      echo "Ryoku DMS: forced dark session (isLightMode=false)"
+    fi
+
     if [ -n "$wallpaper" ] && [ -f "$wallpaper" ] \
       && [ -z "$("$jq" -r '.wallpaperPath // ""' "$session")" ]; then
       "$jq" --arg w "$wallpaper" '. + {wallpaperPath: $w}' "$session" > "$session.tmp"
@@ -344,6 +363,19 @@ in
     pkgs.matugen
     pkgs.jq
   ] ++ statsPackages;
+
+  # DgopService probes `command -v dgop` from Quickshell. Put a stable
+  # ~/.local/bin/dgop early on PATH (session wrappers prepend LOCAL_BIN) so
+  # native cpuUsage/memUsage/cpuTemp stay visible even if HM profile PATH
+  # is trimmed for a child. No fake metrics — real dgop binary only.
+  home.file.".local/bin/dgop" = lib.mkIf (dgopPackage != null) {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      exec ${lib.getExe dgopPackage} "$@"
+    '';
+  };
 
   # Managed Ryoku prefs (not the mutable DMS settings.json).
   xdg.configFile."ryoku/settings.json".text = builtins.toJSON {

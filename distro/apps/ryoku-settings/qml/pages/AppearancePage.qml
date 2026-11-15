@@ -1466,7 +1466,7 @@ Flickable {
             }
         }
 
-        // ── Future / read-only ────────────────────────────────────────────
+        // ── Themes & fonts (defaults projected by HM theme.nix) ───────────
         RyokuCard {
             Layout.fillWidth: true
             title: qsTr("Themes & fonts")
@@ -1477,12 +1477,19 @@ Flickable {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: qsTr("Read-only for now — editable in a later phase.")
+                    text: qsTr("Ryoku Dark is the session default (prefer-dark + Adwaita:dark). Material You accents follow the wallpaper when Dynamic Colors is on. Icon/cursor values persist in settings.json; Home Manager applies them.")
                     color: RyokuTheme.on_surface_muted
                     font.pixelSize: RyokuTheme.font_caption
                 }
-                RyokuSettingRow { label: qsTr("Icons"); value: settingsStore.iconTheme }
-                RyokuSettingRow { label: qsTr("Cursor"); value: settingsStore.cursorTheme }
+                RyokuSettingRow { label: qsTr("Color scheme"); value: qsTr("Dark (forced)") }
+                RyokuSettingRow {
+                    label: qsTr("Icons")
+                    value: settingsStore.iconTheme.length ? settingsStore.iconTheme : "Papirus-Dark"
+                }
+                RyokuSettingRow {
+                    label: qsTr("Cursor")
+                    value: settingsStore.cursorTheme.length ? settingsStore.cursorTheme : "Bibata-Modern-Ice"
+                }
                 RyokuSettingRow { label: qsTr("UI Font"); value: settingsStore.fontUi }
                 RyokuSettingRow { label: qsTr("Mono Font"); value: settingsStore.fontMono }
             }

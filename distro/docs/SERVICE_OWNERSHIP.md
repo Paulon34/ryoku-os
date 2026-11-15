@@ -29,3 +29,15 @@ Clear owners avoid duplicate trays, notification daemons, and polkit agents.
 - Redundant DMS path units (`ryoku-dms-bar` / `ryoku-dms-session`) are oneshots and
   idempotent; they are not a second shell.
 - Do not add a second screenshot stack (grim/slurp/swappy is the only Ryoku path).
+
+## Secondary warning triage (Hyprland primary)
+
+| Symptom | Likely class | Action |
+|---------|--------------|--------|
+| `niri msg` / Niri socket errors while on Hyprland | Harmless (recovery compositor still installed) | Ignore unless intentionally in Niri session |
+| Duplicate polkit agent logs | Real if two agents prompt | Keep skip-if-alive; disable extra Autostart |
+| Tray / StatusNotifier D-Bus name taken | Often harmless race at login | One NM applet owner only (`ryoku-nm-applet`) |
+| Power profiles daemon missing | Harmless on desktops without it | Optional APT later; do not block session |
+| Thunar thumbnailer warnings | Harmless unless previews broken | Install `tumbler` only if user wants thumbs |
+| a11y / AT-SPI registration noise | Do **not** disable | Keep accessibility bus intact |
+| Portal Settings backend registration | Real if apps stay light | `org.freedesktop.impl.portal.Settings=gtk` + session `GTK_THEME` |
