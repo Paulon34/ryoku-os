@@ -54,6 +54,7 @@ require distro/scripts/ryoku-doctor
 require distro/scripts/ryoku-flatpak-sync
 require distro/scripts/ryoku-pkg-helper
 require distro/scripts/ryoku-import-wallpaper
+require distro/scripts/ryoku-screenshot
 require distro/scripts/make-wallpapers.sh
 require distro/flatpak/apps-minimal.txt
 require distro/flatpak/apps-full.txt
@@ -128,6 +129,10 @@ bash -n "$ROOT/distro/scripts/ryoku-doctor"
 bash -n "$ROOT/distro/scripts/ryoku-flatpak-sync"
 bash -n "$ROOT/distro/scripts/ryoku-pkg-helper"
 bash -n "$ROOT/distro/scripts/ryoku-import-wallpaper"
+bash -n "$ROOT/distro/scripts/ryoku-screenshot"
+grep -Fxq swappy "$ROOT/distro/apt/packages-base.txt"
+grep -Fq '$terminal = /usr/bin/kitty' "$ROOT/distro/flake/home/hyprland.nix"
+grep -Fq 'KP_Enter, exec, $terminal' "$ROOT/distro/flake/home/hyprland.nix"
 bash -n "$ROOT/distro/tests/test-flatpak-apps.sh"
 bash -n "$ROOT/distro/tests/test-wallpapers.sh"
 bash -n "$ROOT/distro/session/ryoku-niri-session"
