@@ -202,8 +202,9 @@ let
     bind = $mod, C, exec, ${home}/.local/bin/ryoku-clipboard
     bind = , Print, exec, ${home}/.local/bin/ryoku-screenshot region
     bind = $mod, Print, exec, ${home}/.local/bin/ryoku-screenshot full
-    # SUPER+I opens Ryoku Settings (free on Debian Quattro; comma stays DMS shell settings).
-    bind = $mod, I, exec, ryoku-settings
+    # SUPER+I opens Ryoku Settings (absolute local nixGL wrapper).
+    # SUPER+, stays native DMS shell settings (Control Center gear / IPC).
+    bind = $mod, I, exec, ${home}/.local/bin/ryoku-settings
     bind = $mod, N, exec, ${ipc} notifications toggle
     bind = $mod, comma, exec, ${ipc} settings toggle
     bind = $mod, X, exec, ${ipc} powermenu toggle

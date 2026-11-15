@@ -21,7 +21,7 @@ for pkg in "${need_base[@]}"; do
     || fail_msg "packages-base missing $pkg"
 done
 
-need_full=(mpv vlc gimp libreoffice-gtk3 blueman pavucontrol cliphist)
+need_full=(mpv vlc gimp libreoffice-gtk3 blueman pavucontrol cliphist gdebi gdebi-core)
 for pkg in "${need_full[@]}"; do
   grep -Eq "^${pkg}$" "$ROOT/distro/apt/packages-full.txt" \
     && pass "full has $pkg" \

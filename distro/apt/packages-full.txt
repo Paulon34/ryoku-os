@@ -11,6 +11,11 @@
 mpv
 vlc
 cliphist
+# Video wallpaper deps when using APT mpvpaper (Nix also ships mpvpaper via HM).
+# ffmpeg already listed below for workstation tools.
+# .deb double-click in Thunar (MIME → gdebi.desktop)
+gdebi
+gdebi-core
 
 # Creative / office (APT; Flatpak IDs also exist on Flathub if needed later)
 gimp

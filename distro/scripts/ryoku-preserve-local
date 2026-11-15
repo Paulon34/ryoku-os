@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Mark or show skip-worktree for personal/guest files that pulls should not fight.
+# Never deletes, stashes, or resets the worktree.
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+  echo "ryoku-preserve-local: not inside a git worktree" >&2
+  exit 1
+}
+cd "$ROOT"
+
+FILES=(
+  ryoku/settings.json
+  distro/flake/flake.lock
+)
+
+usage() {
+  cat <<'EOF'
+Usage: ryoku-preserve-local {mark|unmark|status}
+  mark    — git update-index --skip-worktree on personal/guest files
+  unmark  — clear skip-worktree (files rejoin normal git status)
+  status  — show skip-worktree / assume-unchanged bits
+EOF
+  exit 2
+}
+
+[[ $# -eq 1 ]] || usage
+cmd=$1
+
+case "$cmd" in
+  mark)
+    for f in "${FILES[@]}"; do
+      if [[ -e "$f" ]]; then
+        git update-index --skip-worktree -- "$f"
+        echo "skip-worktree: $f"
+      else
+        echo "skip (missing): $f"
+      fi
+    done
+    ;;
+  unmark)
+    for f in "${FILES[@]}"; do
+      if [[ -e "$f" ]]; then
+        git update-index --no-skip-worktree -- "$f"
+        echo "cleared skip-worktree: $f"
+      fi
+    done
+    ;;
+  status)
+    git ls-files -v -- "${FILES[@]}" 2>/dev/null || true
+    echo "Legend: S=skip-worktree, H=assume-unchanged, lowercase=normal tracked"
+    ;;
+  *) usage ;;
+esac

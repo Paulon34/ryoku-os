@@ -11,6 +11,6 @@ TryExec=ryoku-settings
 Icon=org.ryoku.Settings
 Terminal=false
 Categories=Settings;DesktopSettings;System;
-Keywords=Ryoku;Settings;System;Configurações;Preferências;
+Keywords=Ryoku;Settings;System;Configurações;Preferências;Control Center;Painel;
 StartupNotify=true
 StartupWMClass=org.ryoku.Settings

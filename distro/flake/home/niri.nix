@@ -112,7 +112,7 @@ let
         Mod+Print { spawn "${config.home.homeDirectory}/.local/bin/ryoku-screenshot" "full"; }
 
         # SUPER+I opens Ryoku Settings; Mod+Comma stays DMS shell settings.
-        Mod+I { spawn "ryoku-settings"; }
+        Mod+I { spawn "${config.home.homeDirectory}/.local/bin/ryoku-settings"; }
         Mod+N { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "notifications" "toggle"; }
         Mod+Comma { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "settings" "toggle"; }
         Mod+X { spawn "${config.home.homeDirectory}/.local/bin/ryoku-dms-ipc" "powermenu" "toggle"; }

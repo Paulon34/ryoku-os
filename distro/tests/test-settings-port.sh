@@ -104,6 +104,22 @@ grep -Fq 'hiPrio settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings.nix must hiPrio nixGL launcher over package bin"
 grep -Fq 'settingsGui' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings.nix must install settingsGui for icons/desktop share"
+grep -Fq 'home.file.".local/bin/ryoku-settings"' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must install ~/.local/bin/ryoku-settings nixGL wrapper"
+grep -Fq 'xdg.mimeApps.defaultApplications' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must wire .deb/.AppImage/.flatpakref MIME defaults"
+grep -Fq 'gdebi.desktop' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "MIME defaults must prefer gdebi for .deb"
+grep -Fq 'DmsShell' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "desktop actions must keep a DMS shell settings entry"
+grep -Fq 'pinnedApps' "$ROOT/distro/flake/home/dms.nix" \
+  || fail_msg "DMS must pin org.ryoku.Settings in launcher"
+grep -Fq '.local/bin/ryoku-settings' "$ROOT/distro/flake/home/hyprland.nix" \
+  || fail_msg "SUPER+I must exec absolute ~/.local/bin/ryoku-settings"
+grep -Fq '.local/bin/ryoku-settings' "$ROOT/distro/flake/home/niri.nix" \
+  || fail_msg "Niri Mod+I must spawn absolute ryoku-settings"
+grep -Fq 'settings toggle' "$ROOT/distro/flake/home/hyprland.nix" \
+  || fail_msg "SUPER+, must remain native DMS settings toggle"
 # Flake dir resolution for Debian layout
 grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/RepoPath.cpp" \
   || fail_msg "RepoPath must resolve distro/flake"

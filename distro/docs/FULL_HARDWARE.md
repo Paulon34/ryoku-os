@@ -113,3 +113,8 @@ bash distro/scripts/ryoku-hardware --sensors
 Reports only readable `/proc`, hwmon, thermal_zone, power_supply and optional
 UPower nodes. `nvidia-smi` runs once only if the proprietary stack is already
 installed — it is not enabled as a continuous poller (hybrid dGPU stay asleep).
+
+Bar GPU/VRAM widgets are **not** claimed yet: keep native CPU/RAM/temp via dgop;
+watch any upstream dgop→dux-gop rename before swapping backends. See
+`SERVICE_OWNERSHIP.md`, `VIDEO_WALLPAPER.md`, `FIREFOX_MEDIA.md`,
+`NVIDIA_GDM_RECOVERY.md`, and `PERSONAL_VS_SHIPPED.md`.

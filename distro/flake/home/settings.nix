@@ -60,6 +60,18 @@ let
     exec ${nixGLIntel}/bin/nixGLIntel ${settingsBin} "$@"
   '';
 
+  # Stable ~/.local/bin entry (session PATH puts LOCAL_BIN first) so SUPER+I /
+  # Control Center / trimmed-PATH children resolve the nixGL wrapper.
+  settingsLocalBin = ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export QT_QPA_PLATFORM="''${QT_QPA_PLATFORM:-wayland}"
+    if [[ -n "''${RYOKU_SETTINGS_NO_NIXGL:-}" ]]; then
+      exec ${settingsBin} "$@"
+    fi
+    exec ${nixGLIntel}/bin/nixGLIntel ${settingsBin} "$@"
+  '';
+
   polkitPolicy = pkgs.writeTextFile {
     name = "org.ryoku.settings.apply.policy";
     text = ''
@@ -161,6 +173,11 @@ in
         '';
       };
 
+      home.file.".local/bin/ryoku-settings" = {
+        executable = true;
+        text = settingsLocalBin;
+      };
+
       # Canonical FreeDesktop id for portals (matches Qt appId org.ryoku.Settings).
       # Do not emit ryoku-settings.desktop — that breaks portal app lookup.
       # Absolute Exec/TryExec so DMS DesktopEntries indexing works even when the
@@ -176,6 +193,7 @@ in
           "Settings"
           "DesktopSettings"
           "System"
+          "X-GNOME-Settings-Panel"
         ];
         startupNotify = true;
         settings = {
@@ -184,8 +202,31 @@ in
           "Comment[pt_BR]" = "Configurar a aparência e o sistema Ryoku";
           TryExec = "${lib.getExe settingsLauncher}";
           StartupWMClass = "org.ryoku.Settings";
-          Keywords = "Ryoku;Settings;System;Configurações;Preferências;";
+          Keywords = "Ryoku;Settings;System;Configurações;Preferências;Control Center;Painel;";
         };
+        # Desktop actions: open Ryoku Settings, or native DMS shell settings
+        # (does not remove Control Center / SUPER+,).
+        actions = {
+          Open = {
+            name = "Open Ryoku Settings";
+            exec = "${lib.getExe settingsLauncher}";
+          };
+          DmsShell = {
+            name = "Open DMS shell settings";
+            exec = "${homeDir}/.local/bin/ryoku-dms-ipc settings toggle";
+          };
+        };
+      };
+
+      # MIME comfort for local packages (Thunar double-click). Debian-native
+      # handlers only — never replace Flatpak/apt policy beyond defaults.
+      xdg.mimeApps.defaultApplications = {
+        "application/vnd.debian.binary-package" = [ "gdebi.desktop" ];
+        "application/x-deb" = [ "gdebi.desktop" ];
+        "application/vnd.flatpak" = [ "org.gnome.Software.desktop" "org.kde.discover.desktop" ];
+        "application/vnd.flatpak.ref" = [ "org.gnome.Software.desktop" "org.kde.discover.desktop" ];
+        "application/vnd.appimage" = [ "appimagelauncher.desktop" "appimagekit.desktop" ];
+        "application/x-iso9660-appimage" = [ "appimagelauncher.desktop" "appimagekit.desktop" ];
       };
     })
   ];
