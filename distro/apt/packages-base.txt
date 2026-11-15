@@ -97,3 +97,6 @@ mesa-utils
 vulkan-tools
 vainfo
 upower
+
+# Audio visualization for Ryoku Media Island (native Debian package).
+cava
