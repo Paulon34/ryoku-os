@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Run as desktop user, from Ryoku OS. Private checkout remains private.
+# Imports still images and only their saved selection; no credentials or host config.
+set -euo pipefail
+[[ $EUID != 0 ]] || { echo "Run as desktop user, not sudo" >&2; exit 1; }
+[[ $# == 1 ]] || { echo "usage: bash ryoku-import-personal /path/to/private/ryoku-nixos" >&2; exit 2; }
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+python3 - "$repo" "$1" <<'PY'
+import json, pathlib, re, shutil, sys, os, tempfile
+repo, source = map(pathlib.Path, sys.argv[1:])
+home = pathlib.Path.home()
+dest = home / ".local/share/ryoku/wallpapers-private"
+state = home / ".config/ryoku"
+src = source / "assets/wallpapers"
+if not src.is_dir():
+    sys.exit("Private wallpaper directory missing: " + str(src))
+original = json.loads((source / "ryoku/settings.json").read_text())
+target = repo / "ryoku/settings.json"
+data = json.loads(target.read_text())
+dest.mkdir(parents=True, exist_ok=True)
+state.mkdir(parents=True, exist_ok=True)
+valid = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.(jpg|jpeg|png|webp)")
+ids = set()
+for path in sorted(src.iterdir()):
+    if path.is_symlink() or not path.is_file() or not valid.fullmatch(path.name) or ".." in path.name:
+        continue
+    out = dest / path.name
+    if out.is_symlink():
+        raise SystemExit("Refusing symlink destination: " + str(out))
+    shutil.copyfile(path, out)
+    out.chmod(0o644)
+    ids.add(path.name)
+print(f"Imported {len(ids)} private wallpapers (outside Git)")
+if not ids:
+    sys.exit("No compatible wallpapers imported")
+appearance = data.setdefault("appearance", {})
+old = original.get("appearance", {})
+selected = old.get("wallpaper")
+if selected in ids:
+    appearance["wallpaper"] = selected
+    appearance["wallpaperType"] = "image"
+    appearance["dynamicColors"] = True
+    (state / "pending-imported-wallpaper").write_text(selected + "\n")
+else:
+    print("WARN: saved desktop wallpaper not found; choose in Settings")
+login = old.get("loginWallpaper")
+if login in ids:
+    appearance["loginWallpaper"] = login
+# File stays writable by desktop user; preserve all unrelated local settings.
+with tempfile.NamedTemporaryFile(mode="w", dir=target.parent, delete=False) as f:
+    json.dump(data, f, ensure_ascii=False, indent=4)
+    f.write("\n")
+    temp = f.name
+os.replace(temp, target)
+print("Personal preferences saved locally; NEVER commit this settings.json to public Git.")
+PY
