@@ -88,3 +88,28 @@ Cursor Debian download, npm @openai/codex in the desktop user's prefix,
 and Tailscale's signed Trixie repository. It does not import credentials,
 log into your accounts, or connect Tailscale automatically. Verify Cursor
 launches, codex --version, and tailscale --version.
+
+## Printers validation path (private drivers stay private)
+
+Proprietary 4BARCODE filter/PPD files must never be committed to the public
+tree. Validation on a Full host after personal import:
+
+```sh
+# From the public checkout, as root only with a trusted private path:
+sudo bash distro/scripts/ryoku-printers "$HOME/ryoku-nixos"
+lpstat -p -d
+# Physical gate (NOT_TESTED from cloud agents): print one thermal label + one A4 page.
+```
+
+If queues were not auto-created (ambiguous USB matches), pick the model in
+`system-config-printer`. Staging success ≠ print success.
+
+## Sensors / Quattro monitor
+
+```sh
+bash distro/scripts/ryoku-hardware --sensors
+```
+
+Reports only readable `/proc`, hwmon, thermal_zone, power_supply and optional
+UPower nodes. `nvidia-smi` runs once only if the proprietary stack is already
+installed — it is not enabled as a continuous poller (hybrid dGPU stay asleep).

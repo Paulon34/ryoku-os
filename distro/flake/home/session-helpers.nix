@@ -22,6 +22,15 @@
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
+      # Single agent only. If another GUI polkit agent is already alive for this
+      # uid (e.g. xdg autostart + exec-once), skip to avoid duplicate prompts.
+      uid=$(id -u)
+      if pgrep -u "$uid" -x polkit-mate-authentic >/dev/null 2>&1 \
+        || pgrep -u "$uid" -x polkit-gnome-authentication-agent-1 >/dev/null 2>&1 \
+        || pgrep -u "$uid" -f 'polkit-.*authentication-agent' >/dev/null 2>&1; then
+        echo "ryoku-polkit-agent: existing agent detected; skipping duplicate" >&2
+        exit 0
+      fi
       for cand in \
         /usr/libexec/polkit-mate-authentication-agent-1 \
         /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 \
