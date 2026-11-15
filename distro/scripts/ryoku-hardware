@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Read-only hardware detection. --sysroot is a fixture, never a driver install.
+set -euo pipefail
+root=/; mode=report
+while (($#)); do
+  case "$1" in
+    --sysroot) root=${2:?}; shift 2 ;;
+    --packages) mode=packages; shift ;;
+    --visual) mode=visual; shift ;;
+    --gpu) mode=gpu; shift ;;
+    *) echo "unknown hardware option: $1" >&2; exit 2 ;;
+  esac
+done
+root=${root%/}
+readval() { if [[ -r "$1" ]]; then cat "$1"; fi; }
+intel=0; amd=0; nvidia=0; virtual=0; network=(); packages=()
+for d in "$root"/sys/bus/pci/devices/*; do
+  [[ -d "$d" ]] || continue
+  vendor=$(readval "$d/vendor"); class=$(readval "$d/class")
+  case "$class:$vendor" in
+    0x03*:0x8086) intel=1 ;;
+    0x03*:0x1002) amd=1 ;;
+    0x03*:0x10de) nvidia=1 ;;
+    0x03*:0x1af4|0x03*:0x1234|0x03*:0x15ad|0x03*:0x80ee) virtual=1 ;;
+    0x02*:0x8086) [[ "$class" != 0x0280* ]] || packages+=(firmware-iwlwifi) ;;
+    0x02*:0x10ec) packages+=(firmware-realtek) ;;
+    0x02*:0x168c|0x02*:0x17cb) packages+=(firmware-atheros) ;;
+    0x02*:0x14c3|0x02*:0x1814) packages+=(firmware-mediatek) ;;
+    0x02*:0x14e4) packages+=(firmware-brcm80211) ;;
+  esac
+done
+# USB Bluetooth/Wi-Fi vendor families (heuristic, no out-of-tree driver).
+for d in "$root"/sys/bus/usb/devices/*; do
+  [[ -r "$d/idVendor" ]] || continue
+  case "$(readval "$d/idVendor")" in
+    0bda) packages+=(firmware-realtek) ;;
+    0e8d) packages+=(firmware-mediatek) ;;
+    8087) packages+=(firmware-iwlwifi) ;;
+    0cf3) packages+=(firmware-atheros) ;;
+  esac
+done
+cpu=$(awk '/^vendor_id[[:space:]]*:/ {print $3; exit}' "$root/proc/cpuinfo" 2>/dev/null || true)
+mem=$(awk '/^MemTotal:/ {print $2; exit}' "$root/proc/meminfo" 2>/dev/null || true)
+mem=${mem:-0}
+if [[ -z "$root" ]] && command -v systemd-detect-virt >/dev/null; then
+  if systemd-detect-virt --quiet --vm; then virtual=1; fi
+fi
+if (( !virtual )); then
+  case "$cpu" in
+    GenuineIntel) packages+=(intel-microcode) ;;
+    AuthenticAMD) packages+=(amd64-microcode) ;;
+  esac
+fi
+if ((intel)); then packages+=(firmware-intel-graphics intel-media-va-driver); fi
+if ((amd)); then packages+=(firmware-amd-graphics mesa-va-drivers); fi
+if ((nvidia)); then packages+=(firmware-nvidia-graphics); fi
+if (( !virtual )); then packages+=(firmware-sof-signed); fi
+gpu=unknown
+if ((virtual)); then gpu=virtual
+elif ((nvidia && (intel || amd))); then gpu=hybrid-nvidia
+elif ((nvidia)); then gpu=nvidia
+elif ((intel)); then gpu=intel
+elif ((amd)); then gpu=amd
+fi
+visual=balanced
+if ((virtual || (mem > 0 && mem < 6000000))); then visual=lite; fi
+case "$mode" in
+  packages) if ((${#packages[@]})); then printf '%s\n' "${packages[@]}" | sort -u; fi ;;
+  visual) echo "$visual" ;;
+  gpu) echo "$gpu" ;;
+  report)
+    echo "GPU: $gpu (Intel=$intel AMD=$amd NVIDIA=$nvidia virtual=$virtual)"
+    echo "CPU: ${cpu:-unknown}; RAM KiB: $mem; visual: $visual"
+    echo "Firmware/acceleration candidates: ${packages[*]:-none}"
+    if ((nvidia)); then
+      echo "NVIDIA: use Debian nvidia-detect and check Secure Boot/kernel headers before proprietary driver activation."
+      echo "Nix graphics wrapper remains Mesa; NVIDIA-only/offload rendering requires real-host verification."
+    fi ;;
+esac
