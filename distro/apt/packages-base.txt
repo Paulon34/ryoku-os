@@ -55,6 +55,7 @@ xdg-desktop-portal-wlr
 grim
 slurp
 wl-clipboard
+swappy
 
 # Flatpak plumbing (Flathub + declared apps: bootstrap / Settings)
 flatpak
