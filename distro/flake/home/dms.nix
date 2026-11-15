@@ -286,6 +286,29 @@ let
     jq=${jq}
     wallpaper=${lib.escapeShellArg defaultWallpaper}
 
+    # One-shot personal migration, resolved only at runtime (never put private
+    # image data into the Nix store or public checkout). Retry on the next
+    # login if IPC fails; never reset the user's later wallpaper changes.
+    pending="$HOME/.config/ryoku/pending-imported-wallpaper"
+    if [[ -f "$pending" ]]; then
+      IFS= read -r id < "$pending" || true
+      if [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.(jpg|jpeg|png|webp)$ && "$id" != *..* ]]; then
+        private="$HOME/.local/share/ryoku/wallpapers-private/$id"
+        if [[ -f "$private" && ! -L "$private" ]]; then
+          if dms_ipc wallpaper set "$private"; then
+            ln -sfn "$private" "$HOME/.config/ryoku/current-wallpaper"
+            printf '%s\n' "$id" > "$HOME/.config/ryoku/current-wallpaper-id"
+            rm -f "$pending"
+            echo "Ryoku DMS: imported wallpaper applied"
+            return 0
+          fi
+          echo "WARN: imported wallpaper IPC failed; will retry" >&2
+          return 0
+        fi
+      fi
+      echo "WARN: pending imported wallpaper invalid or missing" >&2
+    fi
+
     if [ ! -f "$session" ]; then
       echo "Ryoku DMS: session.json missing; skipping wallpaper seed" >&2
       exit 0
