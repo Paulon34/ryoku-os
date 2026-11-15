@@ -1,8 +1,20 @@
-{ pkgs, config, ... }:
+{ pkgs, config, lib, ... }:
 
 # GTK/Qt theme parity with ryoku-desktop home/theme.nix (Niri/Debian).
-# Wallpapers + Matugen live in matugen.nix; SDDM astronaut QML is not ported.
+# Wallpapers + Matugen live in matugen.nix.
+let
+  cursor = (import ../../ryoku/lib.nix { inherit lib; }).pointerCursor;
+in
 {
+  # Same pointer theme as the original Ryoku NixOS desktop.
+  home.pointerCursor = {
+    enable = true;
+    inherit (cursor) name size;
+    package = pkgs.${cursor.package};
+    gtk.enable = true;
+    x11.enable = false;
+  };
+
   gtk = {
     enable = true;
     theme = {
