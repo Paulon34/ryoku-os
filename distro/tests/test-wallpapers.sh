@@ -103,6 +103,15 @@ else
   pass "no hyprpaper/swww in hyprland.nix"
 fi
 
+# Matugen 4 rejects an empty wallpaper command table; DMS is the renderer.
+if grep -Eq "^[[:space:]]*\\[config\\.wallpaper\\]" "$ROOT/distro/flake/home/matugen.nix"; then
+  fail_msg "Matugen must not own the wallpaper command"
+fi
+grep -Fq 'exec nixGLIntel mpvpaper' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "video renderer uses Mesa nixGL" || fail_msg "mpvpaper lacks nixGL wrapper"
+grep -Fq 'nixGLIntel = nixGL.packages.' "$ROOT/distro/flake/home/video-wallpaper.nix" \
+  && pass "HM provides nixGLIntel" || fail_msg "video runtime missing nixGLIntel"
+
 # Live video wallpaper (mpvpaper backend)
 [[ -x "$ROOT/distro/scripts/ryoku-video-wallpaper" ]] && pass "ryoku-video-wallpaper exec" \
   || fail_msg "ryoku-video-wallpaper missing/executable"
