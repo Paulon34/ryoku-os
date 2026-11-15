@@ -47,6 +47,12 @@ grep -Fq 'ryoku-start-dms' "$HYPR" ||
   fail "Hyprland must not start Niri"
 ! grep -Fq 'spawn-at-startup' "$HYPR" ||
   fail "Hyprland must not use Niri spawn-at-startup"
+# Guest FAIL: misc:vfr does not exist on 0.55.2 (VFR is debug:vfr, default true).
+if code_lines | grep -Eq '(^|[[:space:]])vfr[[:space:]]*='; then
+  fail "misc:vfr is invalid on Hyprland 0.55.2 — omit it (debug:vfr is the real key)"
+fi
+code_lines | grep -Eq '(^|[[:space:]])vrr[[:space:]]*=' ||
+  fail "expected misc:vrr (proven on 0.55.2)"
 
 # Mini parser: extract rule RHS from Nix '' strings and validate fields.
 python3 - "$HYPR" <<'PY'
@@ -121,6 +127,115 @@ if errors:
         print(f"  - {e}", file=sys.stderr)
     sys.exit(1)
 print("PASS: windowrule/layerrule fields parse as 0.55.2 key+value")
+PY
+
+# Semantic option validation against pinned Hyprland 0.55.2 ConfigValues keys.
+# Parses nested category { key = value } from the conf ''…'' block.
+KEYS_FIXTURE="$ROOT/distro/tests/fixtures/hyprland-0.55.2-config-keys.txt"
+[[ -f "$KEYS_FIXTURE" ]] || fail "missing $KEYS_FIXTURE"
+python3 - "$HYPR" "$KEYS_FIXTURE" <<'PY'
+import re, sys
+from pathlib import Path
+
+hypr = Path(sys.argv[1]).read_text(encoding="utf-8")
+allowed = {
+    ln.strip()
+    for ln in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()
+    if ln.strip() and not ln.strip().startswith("#")
+}
+m = re.search(r"conf = ''(.*?)'';", hypr, re.S)
+if not m:
+    sys.exit("FAIL: conf ''…'' block not found")
+body = m.group(1)
+# Strip comments
+lines = []
+for ln in body.splitlines():
+    s = ln.split("#", 1)[0].rstrip()
+    if s.strip():
+        lines.append(s)
+
+stack: list[str] = []
+seen: list[str] = []
+errors: list[str] = []
+# Keys that are hyprlang directives / not ConfigValues entries
+SKIP_TOP = {
+    "source", "env", "exec-once", "bind", "bindm", "bindel", "bindl",
+    "windowrule", "layerrule", "monitor", "bezier", "animation",
+    "$mod", "$terminal", "$menu", "$fileManager",
+}
+# Inside animations { }, bezier/animation are keyword commands, not MS<> keys.
+SKIP_IN_CATEGORY = {
+    "animations": {"bezier", "animation"},
+}
+
+for raw in lines:
+    s = raw.strip()
+    if s.endswith("{"):
+        name = s[:-1].strip()
+        if name:
+            stack.append(name)
+        continue
+    if s == "}":
+        if stack:
+            stack.pop()
+        continue
+    if "=" not in s:
+        continue
+    key, _, _ = s.partition("=")
+    key = key.strip()
+    if not stack:
+        # top-level non-config directives
+        first = key.split()[0] if key else ""
+        if first in SKIP_TOP or key.startswith("$"):
+            continue
+        # bare top-level config rare; skip unknowns that look like directives
+        continue
+    cat = stack[0]
+    if key in SKIP_IN_CATEGORY.get(cat, set()) or key in SKIP_IN_CATEGORY.get(stack[-1], set()):
+        continue
+    path = ":".join(stack + [key])
+    seen.append(path)
+    if path not in allowed:
+        errors.append(path)
+
+# Required Performance & Polish / dual-monitor proven set
+required = [
+    "decoration:blur:passes",
+    "misc:vrr",
+    "misc:disable_hyprland_logo",
+    "misc:disable_splash_rendering",
+]
+for r in required:
+    if r not in seen:
+        errors.append(f"missing required option {r}")
+
+# Explicit ban (even if somehow nested wrong)
+if any(k.endswith(":vfr") and not k.startswith("debug:") for k in seen):
+    errors.append("banned non-debug vfr key present")
+if "misc:vfr" in seen:
+    errors.append("misc:vfr present (invalid on 0.55.2)")
+
+if errors:
+    print("FAIL: semantic config vs Hyprland 0.55.2 keys:", file=sys.stderr)
+    for e in errors:
+        print(f"  - {e}", file=sys.stderr)
+    sys.exit(1)
+print(f"PASS: semantic options ok ({len(seen)} keys checked against {len(allowed)} allowed)")
+# Optional live binary check when Hyprland is on PATH (guest/CI with APT).
+import shutil, subprocess
+bin_path = shutil.which("Hyprland") or shutil.which("hyprland")
+if bin_path:
+    try:
+        out = subprocess.check_output([bin_path, "--version"], text=True, stderr=subprocess.STDOUT, timeout=5)
+    except Exception as exc:
+        print(f"PASS_STATIC: Hyprland binary present but --version failed ({exc})")
+    else:
+        if "0.55" in out or "Hyprland" in out:
+            print(f"PASS_STATIC: live Hyprland binary reports: {out.splitlines()[0][:80]}")
+        else:
+            print(f"PASS_STATIC: Hyprland binary version string: {out[:80]!r}")
+else:
+    print("PASS_STATIC: no Hyprland binary in PATH (fixture-only semantic check)")
 PY
 
 # Niri recovery must remain packaged even when hyprland is primary.

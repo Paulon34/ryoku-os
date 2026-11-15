@@ -88,12 +88,20 @@ grep -Fq 'audioVisualizerEnabled = true' "$ROOT/distro/flake/home/dms.nix" \
   && pass "cava patch has no fake spectrum" || fail_msg "cava patch must not invent spectrum"
 
 # --- Dual monitor / Hyprland ---
-grep -Fq 'vfr = true' "$ROOT/distro/flake/home/hyprland.nix" \
-  && pass "Hyprland vfr" || fail_msg "missing vfr"
+# misc:vfr does not exist on Hyprland 0.55.2 (guest configerrors). VFR is debug:vfr.
+if grep -vE '^\s*#' "$ROOT/distro/flake/home/hyprland.nix" | grep -Eq '(^|[[:space:]])vfr[[:space:]]*='; then
+  fail_msg "hyprland.nix must not set misc:vfr (invalid on 0.55.2)"
+else
+  pass "no invalid misc:vfr"
+fi
+grep -Fq 'vrr = 0' "$ROOT/distro/flake/home/hyprland.nix" \
+  && pass "Hyprland misc:vrr kept conservative" || fail_msg "missing misc:vrr"
 grep -Fq 'Dual-monitor' "$ROOT/distro/flake/home/hyprland.nix" \
   && pass "dual-monitor comments" || fail_msg "missing dual-monitor notes"
 grep -Fq 'passes = 2' "$ROOT/distro/flake/home/hyprland.nix" \
   && pass "blur passes capped" || fail_msg "blur passes"
+grep -Fq 'debug:vfr' "$ROOT/distro/flake/home/hyprland.nix" \
+  && pass "documents debug:vfr (not misc:vfr)" || fail_msg "missing debug:vfr note"
 
 # --- GPU sensors honesty ---
 grep -Fq 'Intel iGPU' "$ROOT/distro/scripts/ryoku-hardware" \

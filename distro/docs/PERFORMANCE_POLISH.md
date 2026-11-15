@@ -28,7 +28,7 @@ Shipped in-tree (cloud-verifiable as **PASS_STATIC** only — **no PASS_REAL**):
 2. Smart wallpaper — `.want` arm (PathExists cannot revive mpvpaper while unloaded); HIS in user env + `PassEnvironment`; `coverage` scale/geometry/side-by-side/independent monitors; `pause`/`unload`/`reload`/`watch`; no rematugen on resume.
 3. CAVA — APT `cava` + `ryoku-media-cava.patch` (Island/Mini) + `ryoku-media-cava-expanded.patch` (MediaPlayerTab); Quattro/Islands share tree; shared `CavaService`.
 4. Firefox — expanded `FIREFOX_MEDIA.md` (safe prefs only).
-5. Dual-monitor — Hyprland `vfr=true`, blur passes capped; DMS bar `showOnLastDisplay`.
+5. Dual-monitor — Hyprland blur passes capped (`passes=2`); `misc:vrr=0` (no `misc:vfr` — invalid on 0.55.2; VFR defaults via `debug:vfr`); DMS bar `showOnLastDisplay`.
 6. GPU sensors — Intel drm sysfs + one-shot `nvidia-smi` (or asleep/unavailable); no bar GPU widgets claimed.
 7. Power — `ryoku-power-policy` tips economy + 20s grace; **restore** returns original profile **and** unload grace; tip stamp once.
 8. Tests — `test-performance-polish.sh` + **behavioral** `test-performance-behavior.sh` (fixtures); both in CI.

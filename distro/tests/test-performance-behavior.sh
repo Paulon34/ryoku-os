@@ -157,6 +157,26 @@ grep -Fq 'video-wallpaper.want' "$ROOT/distro/flake/home/video-wallpaper.nix" \
   && pass "path unit watches .want" || fail_msg "path still on .env only"
 grep -Fq 'HYPRLAND_INSTANCE_SIGNATURE' "$ROOT/distro/flake/home/hyprland.nix" \
   && pass "Hyprland exports HIS to systemd" || fail_msg "HIS export missing"
+# DMS visual regression audit (code-level; live UI = NOT_TESTED / no PASS_REAL).
+# CAVA patches must not rewrite Quattro/Islands spacing or barConfigs — only media widgets.
+! grep -Eq 'spacing[[:space:]]*=' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch" \
+  && pass "CAVA patches do not retune spacing" || fail_msg "CAVA patches touch spacing"
+! grep -Eq 'fontScale|showOnLastDisplay|barConfigs' \
+  "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch" \
+  && pass "CAVA patches do not retune bar layout keys" || fail_msg "CAVA patches touch bar layout"
+grep -Fq 'showOnLastDisplay = true' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "multi-monitor bar showOnLastDisplay preserved" || fail_msg "showOnLastDisplay missing"
+grep -Fq 'artSize' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  && pass "MediaIsland keeps artSize-bound viz (no hard-coded scale break)" \
+  || fail_msg "MediaIsland viz not bound to artSize"
+# Invalid Hyprland option regression
+if grep -vE '^\s*#' "$ROOT/distro/flake/home/hyprland.nix" | grep -Eq '(^|[[:space:]])vfr[[:space:]]*='; then
+  fail_msg "hyprland still sets invalid vfr"
+else
+  pass "hyprland has no invalid vfr assignment"
+fi
 grep -Fq 'PassEnvironment' "$ROOT/distro/flake/home/video-wallpaper.nix" \
   && pass "smart/renderer PassEnvironment HIS" || fail_msg "PassEnvironment missing"
 

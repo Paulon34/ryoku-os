@@ -148,9 +148,9 @@ let
     misc {
         disable_hyprland_logo = true
         disable_splash_rendering = true
-        # Variable refresh pacing reduces compositor wakeups on idle dual-monitor.
-        vfr = true
         # Do not force VRR on unknown panels (guest may enable per-output).
+        # Proven on Debian Hyprland 0.55.2 (misc:vrr exists; misc:vfr does NOT —
+        # VFR defaults on via debug:vfr; never set misc:vfr).
         vrr = 0
     }
 

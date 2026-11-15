@@ -77,6 +77,9 @@ NIRI_SOCKET="$NIRI_SOCKET" niri msg layers
 - Bootstrap installs **both** GDM `.desktop` files; APT Hyprland failure **aborts**.
 - Hyprland conf targets Debian **~0.55.2** (`match:*` + valued effects; no
   deprecated `windowrulev2`; no bare `float,` / `noanim,`).
+- Do **not** set `misc:vfr` — that key does not exist on 0.55.2
+  (`config option <misc:vfr> does not exist`). VFR defaults via `debug:vfr`.
+  `misc:vrr` is valid; keep `vrr = 0` unless the guest enables Adaptive Sync.
 - Preserve guest `flake.lock` — no `nix flake update` on apply.
 - Agent must not restart GDM/session/VM or delete Niri from the guest.
 - HM switch uses Debian `dbus-run-session` as the desktop user; do not restart

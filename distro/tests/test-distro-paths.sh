@@ -52,6 +52,7 @@ require distro/tests/test-performance-polish.sh
 require distro/tests/test-performance-behavior.sh
 require distro/tests/test-dms-patches.sh
 require distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch
+require distro/tests/fixtures/hyprland-0.55.2-config-keys.txt
 require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
 require distro/assets/wallpapers/ryoku-night.jpg
 require distro/LICENSES/MIT-DankMaterialShell.txt
