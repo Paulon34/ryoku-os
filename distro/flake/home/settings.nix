@@ -186,21 +186,21 @@ in
         name = "Ryoku Settings";
         genericName = "Settings";
         comment = "Configure Ryoku desktop appearance and system";
-        exec = "${lib.getExe settingsLauncher}";
+        exec = "${homeDir}/.local/bin/ryoku-settings";
         icon = "org.ryoku.Settings";
         terminal = false;
         categories = [
           "Settings"
           "DesktopSettings"
           "System"
-          "X-GNOME-Settings-Panel"
         ];
         startupNotify = true;
         settings = {
           "Name[pt_BR]" = "Configurações Ryoku";
           "GenericName[pt_BR]" = "Configurações do sistema";
           "Comment[pt_BR]" = "Configurar a aparência e o sistema Ryoku";
-          TryExec = "${lib.getExe settingsLauncher}";
+          TryExec = "${homeDir}/.local/bin/ryoku-settings";
+          NoDisplay = "false";
           StartupWMClass = "org.ryoku.Settings";
           Keywords = "Ryoku;Settings;System;Configurações;Preferências;Control Center;Painel;";
         };
@@ -209,7 +209,7 @@ in
         actions = {
           Open = {
             name = "Open Ryoku Settings";
-            exec = "${lib.getExe settingsLauncher}";
+            exec = "${homeDir}/.local/bin/ryoku-settings";
           };
           DmsShell = {
             name = "Open DMS shell settings";
