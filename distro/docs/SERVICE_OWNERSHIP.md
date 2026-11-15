@@ -6,7 +6,9 @@ Clear owners avoid duplicate trays, notification daemons, and polkit agents.
 |---------|-------|-----|--------|
 | Compositor | Hyprland (primary) / Niri (recovery) | `ryoku-*-session` wrappers | Second compositor |
 | Shell / notifications / OSD / MPRIS island | DMS Quattro | `exec-once` / `spawn-at-startup ryoku-start-dms` | mako / dunst / swaync / stock Media.qml |
-| Bar CPU/RAM | DMS native `cpuUsage` / `memUsage` (DgopService) | Quattro `rightWidgets` | Fake percentages or continuous `nvidia-smi` |
+| Bar CPU/RAM/temp | DMS native `cpuUsage` / `memUsage` / `cpuTemp` (DgopService) | Quattro `rightWidgets` + `~/.local/bin/dgop` | Fake percentages or continuous `nvidia-smi` |
+| Bar GPU / VRAM | **Not claimed** until DgopService exposes honest GPU IDs on this DMS pin | `ryoku-hardware --sensors` one-shot | Blind dgop→dux-gop swap; waking hybrid NVIDIA for wallpaper/metrics |
+| Video wallpaper | `ryoku-video-wallpaper` + mpvpaper user unit | Settings Appearance → Video; VA-API iGPU | Second wallpaper daemon (hyprpaper/swww); `hwdec=auto` (wakes dGPU) |
 | NM tray | compositor spawn | `ryoku-nm-applet` → `nm-applet` | systemd user nm-applet + spawn both |
 | Polkit GUI prompts | compositor spawn | `ryoku-polkit-agent` (mate-polkit; skips if agent already alive) | Two agents (xdg autostart + exec-once) |
 | Clipboard history DB | compositor spawn | `wl-paste --watch cliphist store` | Expect cliphist UI with empty DB |

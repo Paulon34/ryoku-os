@@ -26,8 +26,8 @@ Install legend: **APT** | **Nix/HM** | **Flatpak** | **N/A**
 | Ryoku Settings Qt | Nix app + polkit apply | **Nix/HM** `ryoku-settings` + Debian `ryoku-settings-apply` (HM switch) + Polkit `/usr/local/libexec/…` | GUI + apply helpers | Qt6, pkexec | Code ready | Guest Apply/polkit TBD |
 | Wallpaper persist | Settings + DMS + matugen | **Settings WallpaperApplier** + `change-wallpaper` → DMS + matugen + `~/.config/ryoku/current-wallpaper` | same | — | Code ready | Guest palette TBD |
 | ryoku-doctor / build-info | (NixOS generations UI) | **`distro/scripts/ryoku-doctor`** + HM `build-info.json` | — | read-only | Code ready | Guest stale-HM check TBD |
-| Video wallpaper | ryoku-video-wallpaper | **N/A** (static only on Debian) | — | — | — | Helper optional no-op |
-| dgop | optional monitor | **optional Nix** later | — | — | — | Does not hide bar |
+| Video wallpaper | ryoku-video-wallpaper + mpvpaper | **Nix/HM** `video-wallpaper.nix` + `distro/scripts/ryoku-video-wallpaper` (VA-API, profiles, poster→matugen dark) | settings `wallpaperType`/`videoWallpaper` | mpvpaper, ffmpeg, jq | Code ready | Guest live mpvpaper **NOT_TESTED** |
+| dgop | optional monitor | **Nix** via DMS package + `~/.local/bin/dgop` | Quattro widgets | watch dgop→dux-gop rename; do not blind-replace | Wired (CPU/RAM/temp) | GPU widgets guest TBD |
 | Flatpaks | settings.json list | **APT** `flatpak` + Flathub via `ryoku-flatpak-sync`; Full IDs in `distro/flatpak/apps-full.txt`; Settings Apps + `apps.flatpakDeclared` | seed/merge settings.json | flatpak | Wired (static) | Guest Flathub install TBD |
 | Firefox / FM / terminal / archive / imv | mixed | **APT** firefox-esr, thunar, file-roller, kitty, imv | — | — | Wired | Guest launch TBD |
 | Full media/office | Nix multimedia | **APT** mpv/vlc/gimp/libreoffice-gtk3; Flatpak LocalSend/Telegram/Flatseal | packages-full + apps-full | — | Wired | Guest Full TBD |

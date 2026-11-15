@@ -19,6 +19,7 @@
     ./nixgl.nix
     ./dms.nix
     ./matugen.nix
+    ./video-wallpaper.nix
     ./build-info.nix
     ./settings.nix
   ];

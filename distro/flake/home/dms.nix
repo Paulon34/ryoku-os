@@ -67,10 +67,11 @@ let
         noBackground = false;
         transparency = 0.96;
         widgetTransparency = 0;
+        # Quattro polish vs NixOS reference: tight strip, slightly larger type.
         spacing = 0;
-        innerPadding = 1;
+        innerPadding = 2;
         widgetPadding = 6;
-        fontScale = 1.1;
+        fontScale = 1.12;
         squareCorners = true;
         gothCornersEnabled = false;
         borderEnabled = false;
@@ -200,6 +201,9 @@ let
         waveProgressEnabled = false;
         weatherEnabled = false;
         useAutoLocation = false;
+        # Pin Ryoku Settings in the DMS launcher catalogue without removing
+        # native Control Center / SUPER+, DMS shell settings.
+        pinnedApps = [ "org.ryoku.Settings" ];
       }
     )
   );
@@ -536,6 +540,12 @@ in
         ${pkgs.coreutils}/bin/sleep 2
         ${applyRyokuBar} || true
         ${applyRyokuSession} || true
+        # Resume video wallpaper after DMS is up (GDM may skip graphical-session).
+        if [[ -f "''${XDG_STATE_HOME:-$HOME/.local/state}/ryoku/video-wallpaper.env" ]]; then
+          ${pkgs.systemd}/bin/systemctl --user start ryoku-video-wallpaper.service \
+            && echo "ryoku-start-dms: video wallpaper unit started" \
+            || echo "WARN: video wallpaper unit start failed (static wallpaper remains)"
+        fi
       ) 9>&- &
 
       # If startup fails immediately due to an early graphics/DBus race,

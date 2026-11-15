@@ -103,6 +103,30 @@ else
   pass "no hyprpaper/swww in hyprland.nix"
 fi
 
+# Live video wallpaper (mpvpaper backend)
+[[ -x "$ROOT/distro/scripts/ryoku-video-wallpaper" ]] && pass "ryoku-video-wallpaper exec" \
+  || fail_msg "ryoku-video-wallpaper missing/executable"
+bash -n "$ROOT/distro/scripts/ryoku-video-wallpaper" && pass "ryoku-video-wallpaper bash -n" \
+  || fail_msg "ryoku-video-wallpaper syntax"
+grep -Fq 'hwdec=vaapi' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "VA-API preferred decode" || fail_msg "must prefer hwdec=vaapi"
+grep -Fq 'gpu-hwdec-interop=vaapi' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "vaapi interop (no NVIDIA wake)" || fail_msg "missing gpu-hwdec-interop=vaapi"
+grep -Fq 'matugen image "$poster" --mode dark' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "video poster forces matugen dark" || fail_msg "video matugen missing --mode dark"
+grep -Fq './video-wallpaper.nix' "$ROOT/distro/flake/home/home.nix" \
+  && pass "home imports video-wallpaper" || fail_msg "home.nix missing video-wallpaper.nix"
+grep -Fq 'mpvpaper' "$ROOT/distro/flake/pkgs/ryoku-video-wallpaper.nix" \
+  && pass "nix package pulls mpvpaper" || fail_msg "ryoku-video-wallpaper.nix missing mpvpaper"
+grep -Fq 'ryoku-video-wallpaper stop' "$ROOT/distro/flake/home/matugen.nix" \
+  && pass "change-wallpaper stops video" || fail_msg "hotkey must stop mpvpaper"
+grep -Fq 'video-wallpaper.env' "$ROOT/distro/flake/home/dms.nix" \
+  && pass "DMS start resumes video unit" || fail_msg "ryoku-start-dms must start video unit"
+grep -Fq '"wallpaperType"' "$ROOT/ryoku/schema/settings.schema.json" \
+  && pass "schema wallpaperType" || fail_msg "schema missing wallpaperType"
+grep -Fq 'applyVideoWallpaper' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  && pass "Settings applyVideoWallpaper" || fail_msg "WallpaperApplier missing video apply"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "ALL PASS_STATIC (wallpapers)"
   exit 0

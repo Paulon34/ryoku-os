@@ -164,6 +164,13 @@ in
         "${config.home.homeDirectory}/.config/niri/dms"
       ln -sfn "$pick" "${config.home.homeDirectory}/.config/ryoku/current-wallpaper"
 
+      # Restore static DMS wallpaper over any running video, then stop mpvpaper.
+      if command -v ryoku-video-wallpaper >/dev/null 2>&1; then
+        ryoku-video-wallpaper stop >/dev/null 2>&1 || true
+      elif [[ -x "${config.home.homeDirectory}/.local/bin/ryoku-video-wallpaper" ]]; then
+        "${config.home.homeDirectory}/.local/bin/ryoku-video-wallpaper" stop >/dev/null 2>&1 || true
+      fi
+
       # Persist selection for Settings + next login.
       printf '%s\n' "$(basename "$pick")" > "${config.home.homeDirectory}/.config/ryoku/current-wallpaper-id" || true
 

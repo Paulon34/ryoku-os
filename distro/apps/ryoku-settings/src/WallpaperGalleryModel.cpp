@@ -69,6 +69,9 @@ QString WallpaperGalleryModel::findVideoHelper()
     // Home Manager user profile when PATH is minimal (e.g. nix run).
     const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
     const QStringList candidates{
+        QDir(home).filePath(QStringLiteral(".local/bin/%1").arg(name)),
+        QDir(home).filePath(
+            QStringLiteral(".local/state/nix/profiles/home-manager/home-path/bin/%1").arg(name)),
         QStringLiteral("/etc/profiles/per-user/%1/bin/%2").arg(qEnvironmentVariable("USER"), name),
         QDir(home).filePath(QStringLiteral(".nix-profile/bin/%1").arg(name)),
     };
