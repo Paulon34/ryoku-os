@@ -10,33 +10,39 @@ Pulls must not fight your live desktop prefs or guest Nix lock.
 | `distro/flake/flake.lock` | Guest-tested pin | **Preserve** — bootstrap already refuses unnecessary updates |
 | Host overlays / `hosts/paulo` | Machine-local | Never overwritten by public seed |
 
-## Safe pull around dirty `settings.json`
+## Safe pull / apply (backup, not skip-worktree)
+
+`git update-index --skip-worktree` is **not** personal-config protection — it
+hides dirty state and surprises later pulls. Use a real backup first:
 
 ```sh
 cd ~/ryoku-os   # or your worktree
-# Option A — keep local prefs across pull (recommended on the daily driver):
-git update-index --skip-worktree ryoku/settings.json
-git update-index --skip-worktree distro/flake/flake.lock  # if you maintain a guest lock
+bash distro/scripts/ryoku-preserve-local backup
+bash distro/scripts/ryoku-preserve-local status
 
 git fetch origin cursor/debian-full-hardware
+git checkout cursor/debian-full-hardware
 git pull --ff-only origin cursor/debian-full-hardware
+git rev-parse HEAD
 
-# Inspect what Settings still has:
+# Inspect prefs after pull (restore from stamp if a pull overwrote them):
 jq '.appearance|{wallpaper,wallpaperType,videoWallpaper,shellStyle}' ryoku/settings.json
+# bash distro/scripts/ryoku-preserve-local list
+# bash distro/scripts/ryoku-preserve-local restore <stamp>
 
-# HM as desktop user (never root):
+# Always build before switch (desktop user — never root):
+home-manager build --flake "$PWD/distro/flake#$USER"
 home-manager switch --flake "$PWD/distro/flake#$USER"
+
+# Or one helper that backups + build + switch:
+# bash distro/scripts/ryoku-preserve-local hm-apply
 ```
 
-Helper (same skip-worktree marks):
-
-```sh
-bash distro/scripts/ryoku-preserve-local mark
-bash distro/scripts/ryoku-preserve-local status
-```
+Backups land under `~/.local/state/ryoku/prefs-backup/<UTC-stamp>/`.
 
 ## What Ryoku will not do
 
 - Overwrite an existing `~/.config/ryoku/settings.json` on HM activation
 - Commit private wallpapers, videos, drivers, or credentials
 - Force `nix flake update` during bootstrap when a lock already exists
+- Recommend skip-worktree as a substitute for backups

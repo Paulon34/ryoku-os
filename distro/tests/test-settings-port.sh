@@ -120,6 +120,17 @@ grep -Fq '.local/bin/ryoku-settings' "$ROOT/distro/flake/home/niri.nix" \
   || fail_msg "Niri Mod+I must spawn absolute ryoku-settings"
 grep -Fq 'settings toggle' "$ROOT/distro/flake/home/hyprland.nix" \
   || fail_msg "SUPER+, must remain native DMS settings toggle"
+# Personal prefs: backup helper, not skip-worktree
+grep -Fq 'prefs-backup' "$ROOT/distro/scripts/ryoku-preserve-local" \
+  || fail_msg "ryoku-preserve-local must backup to prefs-backup"
+grep -Fq 'home-manager build' "$ROOT/distro/scripts/ryoku-preserve-local" \
+  || fail_msg "ryoku-preserve-local hm-apply must build before switch"
+grep -Fq 'skip-worktree is not supported' "$ROOT/distro/scripts/ryoku-preserve-local" \
+  || fail_msg "preserve-local must reject skip-worktree as protection"
+grep -Fq 'home-manager build --flake' "$ROOT/distro/docs/PERSONAL_VS_SHIPPED.md" \
+  || fail_msg "PERSONAL_VS_SHIPPED must document build before switch"
+grep -Fq 'home-manager build --flake' "$ROOT/distro/docs/VM_APPLY.md" \
+  || fail_msg "VM_APPLY must document build before switch"
 # Flake dir resolution for Debian layout
 grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/RepoPath.cpp" \
   || fail_msg "RepoPath must resolve distro/flake"

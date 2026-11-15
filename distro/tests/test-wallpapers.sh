@@ -127,6 +127,42 @@ grep -Fq '"wallpaperType"' "$ROOT/ryoku/schema/settings.schema.json" \
 grep -Fq 'applyVideoWallpaper' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
   && pass "Settings applyVideoWallpaper" || fail_msg "WallpaperApplier missing video apply"
 
+# systemd: no After=default.target + WantedBy=default.target cycle on the service
+VW="$ROOT/distro/flake/home/video-wallpaper.nix"
+! grep -Fq 'After = [ "default.target"' "$VW" \
+  && pass "video service does not After=default.target" \
+  || fail_msg "video service After=default.target cycles with WantedBy"
+# Service Install.WantedBy must be absent (path unit owns autostart).
+# Restrict to the service attrset only (stop before paths.*).
+if awk '
+  /systemd\.user\.services\.ryoku-video-wallpaper/ {in_svc=1}
+  /systemd\.user\.paths\.ryoku-video-wallpaper/ {in_svc=0}
+  in_svc && /Install\.WantedBy[[:space:]]*=/ {found=1}
+  END {exit found?0:1}
+' "$VW"; then
+  fail_msg "video service must not Install.WantedBy (path unit starts it)"
+else
+  pass "video service has no Install.WantedBy"
+fi
+# Path unit (not the service) is WantedBy default.target.
+awk '
+  /systemd\.user\.paths\.ryoku-video-wallpaper/ {in_path=1}
+  in_path && /Install\.WantedBy = \[ "default\.target" \]/ {found=1}
+  END {exit found?0:1}
+' "$VW" \
+  && pass "video path unit WantedBy=default.target" \
+  || fail_msg "path unit must WantedBy default.target for GDM login"
+grep -Fq 'KillMode = "control-group"' "$VW" \
+  && pass "KillMode control-group" || fail_msg "missing KillMode control-group"
+grep -Fq 'stop-orphans' "$VW" \
+  && pass "ExecStop stop-orphans" || fail_msg "missing ExecStop stop-orphans"
+grep -Fq 'stop_orphans' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "helper stop_orphans" || fail_msg "helper missing stop_orphans"
+grep -Fq 'systemctl --user start "$unit"' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "apply uses start after stop" || fail_msg "apply must stop then start (not only restart)"
+grep -Fq 'mpvpaper.marker' "$ROOT/distro/scripts/ryoku-video-wallpaper" \
+  && pass "mpvpaper marker for orphan tracking" || fail_msg "missing mpvpaper.marker"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "ALL PASS_STATIC (wallpapers)"
   exit 0

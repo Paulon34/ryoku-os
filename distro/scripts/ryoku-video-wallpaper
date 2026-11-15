@@ -25,6 +25,7 @@ env_file="$state_dir/video-wallpaper.env"
 screens_backup="$state_dir/dms-wallpaper-screens.json"
 poster_dir="${XDG_CACHE_HOME:-$HOME/.cache}/ryoku/video-posters"
 dms_settings="${XDG_CONFIG_HOME:-$HOME/.config}/DankMaterialShell/settings.json"
+marker_file="$state_dir/mpvpaper.marker"
 
 log() { printf 'ryoku-video-wallpaper: %s\n' "$*" >&2; }
 die() { log "$*"; exit 1; }
@@ -38,7 +39,7 @@ Usage:
   ryoku-video-wallpaper stop
   ryoku-video-wallpaper poster <video>
   ryoku-video-wallpaper status
-Unit internals: check | run | dms-hide | dms-restore
+Unit internals: check | run | dms-hide | dms-restore | stop-orphans
 EOF
   exit 2
 }
@@ -56,6 +57,52 @@ is_safe_path() {
 }
 
 is_bool() { [[ "$1" == 0 || "$1" == 1 ]]; }
+
+read_tracked_video() {
+  local v=${1:-}
+  if [[ -n "$v" ]]; then
+    printf '%s\n' "$v"
+    return 0
+  fi
+  if [[ -n "${RYOKU_VIDEO_WALLPAPER:-}" ]]; then
+    printf '%s\n' "$RYOKU_VIDEO_WALLPAPER"
+    return 0
+  fi
+  if [[ -f "$env_file" ]]; then
+    v=$(awk -F= '/^RYOKU_VIDEO_WALLPAPER=/{gsub(/"/,"",$2); print $2; exit}' "$env_file" || true)
+    [[ -n "$v" ]] && { printf '%s\n' "$v"; return 0; }
+  fi
+  if [[ -f "$marker_file" ]]; then
+    head -n1 "$marker_file"
+    return 0
+  fi
+  return 1
+}
+
+# Kill leftover mpvpaper for this uid whose cmdline still references the tracked
+# video path. Never touches other users. Safe no-op when nothing matches.
+stop_orphans() {
+  local video uid pid cmdline
+  video=$(read_tracked_video "${1:-}" || true)
+  uid=$(id -u)
+  [[ -n "$video" ]] || { rm -f "$marker_file"; return 0; }
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    cmdline=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
+    if [[ "$cmdline" == *"$video"* ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  done < <(pgrep -u "$uid" -x mpvpaper || true)
+  sleep 0.4
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    cmdline=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
+    if [[ "$cmdline" == *"$video"* ]]; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  done < <(pgrep -u "$uid" -x mpvpaper || true)
+  rm -f "$marker_file"
+}
 
 poster_path() {
   local real size mtime key stem
@@ -174,6 +221,8 @@ cmd_run() {
   fi
 
   # One mpvpaper instance; ALL outputs (multi-monitor).
+  mkdir -p "$state_dir"
+  printf '%s\n' "$video" >"$marker_file"
   exec mpvpaper "${flags[@]}" --mpv-options "${opts[*]}" \
     "${RYOKU_VIDEO_WALLPAPER_OUTPUTS:-ALL}" "$video"
 }
@@ -232,23 +281,35 @@ cmd_apply() {
 
   write_env "$video" "$loop" "$audio" "$profile" "$pause"
 
-  if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+  # Stop → orphan sweep → start (avoid restart races / duplicate mpvpaper).
+  if systemctl --user is-active --quiet "$unit" 2>/dev/null \
+    || systemctl --user is-failed --quiet "$unit" 2>/dev/null; then
     cmd_dms_restore
-    sleep 1
+    systemctl --user stop "$unit" 2>/dev/null || true
+    sleep 0.5
   fi
+  stop_orphans "$video"
   systemctl --user reset-failed "$unit" 2>/dev/null || true
-  systemctl --user restart "$unit"
+  systemctl --user start "$unit"
   printf '%s\n' "$poster"
 }
 
 cmd_stop() {
+  local video
+  video=$(read_tracked_video || true)
   cmd_dms_restore
-  rm -f "$env_file"
-  if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
-    sleep 1
-    systemctl --user stop "$unit"
+  if systemctl --user is-active --quiet "$unit" 2>/dev/null \
+    || systemctl --user is-failed --quiet "$unit" 2>/dev/null; then
+    systemctl --user stop "$unit" 2>/dev/null || true
+    sleep 0.5
   fi
+  rm -f "$env_file"
+  stop_orphans "$video"
   systemctl --user reset-failed "$unit" 2>/dev/null || true
+}
+
+cmd_stop_orphans() {
+  stop_orphans "$@"
 }
 
 cmd_status() {
@@ -273,5 +334,6 @@ case "$sub" in
   run) cmd_run ;;
   dms-hide) cmd_dms_hide ;;
   dms-restore) cmd_dms_restore ;;
+  stop-orphans) cmd_stop_orphans "$@" ;;
   *) usage ;;
 esac

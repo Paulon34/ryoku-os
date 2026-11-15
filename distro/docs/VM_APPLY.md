@@ -8,8 +8,13 @@ session unless Paulo authorizes it. Preserve `flake.lock` and `hosts/paulo`.
 1. Isolated worktree on the **exact tip** you intend to apply (PR #31 tip stacked on #29).
 2. Preserve guest `flake.lock` and `hosts/paulo` (copy aside if the worktree is fresh).
 3. Prefer: `nix build` / `home-manager build` for `.#paulo` when Nix is available.
-4. `ryoku-bootstrap --dry-run` must pass (APT + Flatpak plan).
-5. Proxmox snapshot **before** `--apply`.
+   **Always** run `home-manager build --flake …#$USER` and confirm success
+   **before** `home-manager switch` (or use `ryoku-preserve-local hm-apply`,
+   which backups prefs then build→switch).
+4. Backup personal prefs first: `bash distro/scripts/ryoku-preserve-local backup`
+   (do **not** rely on `skip-worktree`).
+5. `ryoku-bootstrap --dry-run` must pass (APT + Flatpak plan).
+6. Proxmox snapshot **before** `--apply`.
 
 CI `PASS_STATIC` does **not** prove Qt/Nix build, graphical session, Flathub install, or Apply helper.
 
@@ -96,12 +101,23 @@ ryoku-settings &
 ./distro/scripts/ryoku-doctor
 ```
 
-## 6. Rollback
+## 6. HM build-then-switch (desktop user)
+
+```bash
+bash distro/scripts/ryoku-preserve-local backup
+home-manager build --flake "$PWD/distro/flake#$USER"
+# only after build exits 0:
+home-manager switch --flake "$PWD/distro/flake#$USER"
+# or: bash distro/scripts/ryoku-preserve-local hm-apply
+```
+
+## 7. Rollback
 
 ```bash
 home-manager generations
 home-manager switch --rollback
 # Generation switch in Settings uses profile activate (not flake rebuild).
+# Prefs stamps: bash distro/scripts/ryoku-preserve-local list
 ```
 
 ## Status vocabulary

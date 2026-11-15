@@ -12,9 +12,10 @@
 # (same live model as static wallpapers via DMS IPC — no rebuild per change).
 # Without that file the unit does not start.
 #
-# Debian GDM → Hyprland may not reach graphical-session.target, so we also:
-#   - WantedBy default.target via a path unit on the env file
-#   - restart from ryoku-start-dms after DMS is up (see dms.nix)
+# GDM → Hyprland often never reaches graphical-session.target. Autostart is:
+#   - path unit WantedBy=default.target (watches the env file)
+#   - explicit start from ryoku-start-dms after DMS is up
+# The service itself must NOT WantedBy+After default.target (dependency cycle).
 
 let
   videoWallpaper = pkgs.callPackage ../pkgs/ryoku-video-wallpaper.nix {
@@ -38,11 +39,9 @@ in
   systemd.user.services.ryoku-video-wallpaper = {
     Unit = {
       Description = "Ryoku video wallpaper (mpvpaper)";
-      # Prefer graphical-session when present; do not hard-require it (GDM).
-      After = [
-        "default.target"
-        "graphical-session.target"
-      ];
+      # Ordering hint only when a graphical session exists — never After=default.target
+      # (that cycles with path/service WantedBy=default.target under user systemd).
+      After = [ "graphical-session.target" ];
       ConditionPathExists = "%S/ryoku/video-wallpaper.env";
       StartLimitIntervalSec = 60;
       StartLimitBurst = 3;
@@ -57,18 +56,22 @@ in
         "${pkgs.coreutils}/bin/sleep 1.5"
         "${helper} dms-hide"
       ];
+      # Stop orphans even when the main PID already died.
+      ExecStop = "${helper} stop-orphans";
       ExecStopPost = "${helper} dms-restore";
+      KillMode = "control-group";
+      KillSignal = "SIGTERM";
+      TimeoutStopSec = 8;
       Restart = "on-failure";
-      RestartSec = 3;
-      TimeoutStopSec = 5;
+      RestartSec = 5;
+      # After StartLimitBurst, stay failed; DMS static wallpaper remains via ExecStopPost.
+      RemainAfterExit = false;
     };
 
-    # Path unit is the reliable Debian autostart; this WantedBy is best-effort.
-    Install.WantedBy = [ "default.target" ];
+    # Not installed into a target — the path unit (and ryoku-start-dms) start it.
   };
 
-  # GDM/Hyprland: start when the env file appears (apply) or already exists
-  # at login, without depending on graphical-session.target.
+  # Start when the env file appears (apply) or already exists at login.
   systemd.user.paths.ryoku-video-wallpaper = {
     Unit.Description = "Watch Ryoku video wallpaper env for mpvpaper";
     Path = {

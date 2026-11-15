@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Mark or show skip-worktree for personal/guest files that pulls should not fight.
-# Never deletes, stashes, or resets the worktree.
+# Backup / restore helpers for personal Ryoku prefs before pull or HM apply.
+# Does NOT use git skip-worktree (that hides dirty state and is not protection).
+# Never deletes the live worktree, never stashes, never resets.
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
@@ -9,46 +10,125 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
 }
 cd "$ROOT"
 
-FILES=(
-  ryoku/settings.json
-  distro/flake/flake.lock
+BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/ryoku/prefs-backup"
+
+# Live personal / guest files we care about (copy if present).
+CANDIDATES=(
+  "ryoku/settings.json"
+  "distro/flake/flake.lock"
+  "distro/flake/hosts/${USER:-paulo}/default.nix"
 )
 
 usage() {
   cat <<'EOF'
-Usage: ryoku-preserve-local {mark|unmark|status}
-  mark    — git update-index --skip-worktree on personal/guest files
-  unmark  — clear skip-worktree (files rejoin normal git status)
-  status  — show skip-worktree / assume-unchanged bits
+Usage: ryoku-preserve-local {backup|list|restore <stamp>|status|hm-apply}
+
+  backup     — copy live prefs/lock/host into a timestamped backup dir
+  list       — list backup stamps (newest first)
+  restore <stamp> — copy files from that stamp back over the worktree
+                    (does not touch ~/.config; never deletes extras)
+  status     — show which candidate files exist and latest backup
+  hm-apply   — backup, then home-manager build, then switch (desktop user)
+
+skip-worktree is intentionally unsupported — use backup before pull/apply.
 EOF
   exit 2
 }
 
-[[ $# -eq 1 ]] || usage
+[[ $# -ge 1 ]] || usage
 cmd=$1
+shift || true
+
+stamp_now() { date -u +%Y%m%dT%H%M%SZ; }
+
+do_backup() {
+  local stamp dest rel
+  stamp=$(stamp_now)
+  dest="$BACKUP_ROOT/$stamp"
+  mkdir -p "$dest"
+  for rel in "${CANDIDATES[@]}"; do
+    if [[ -f "$ROOT/$rel" ]]; then
+      mkdir -p "$dest/$(dirname "$rel")"
+      cp -a -- "$ROOT/$rel" "$dest/$rel"
+      echo "backed up: $rel"
+    else
+      echo "skip (missing): $rel"
+    fi
+  done
+  # Also snapshot the HM-seeded config if present (never required).
+  if [[ -f "$HOME/.config/ryoku/settings.json" ]]; then
+    mkdir -p "$dest/dot-config-ryoku"
+    cp -a -- "$HOME/.config/ryoku/settings.json" "$dest/dot-config-ryoku/settings.json"
+    echo "backed up: ~/.config/ryoku/settings.json"
+  fi
+  printf '%s\n' "$stamp" >"$BACKUP_ROOT/LATEST"
+  echo "backup stamp: $stamp"
+  echo "path: $dest"
+}
+
+do_list() {
+  [[ -d "$BACKUP_ROOT" ]] || { echo "(no backups yet)"; return 0; }
+  find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r
+}
+
+do_restore() {
+  local stamp=$1 dest rel
+  [[ -n "$stamp" ]] || usage
+  dest="$BACKUP_ROOT/$stamp"
+  [[ -d "$dest" ]] || { echo "unknown stamp: $stamp" >&2; exit 1; }
+  for rel in "${CANDIDATES[@]}"; do
+    if [[ -f "$dest/$rel" ]]; then
+      mkdir -p "$ROOT/$(dirname "$rel")"
+      cp -a -- "$dest/$rel" "$ROOT/$rel"
+      echo "restored: $rel"
+    fi
+  done
+  if [[ -f "$dest/dot-config-ryoku/settings.json" ]]; then
+    mkdir -p "$HOME/.config/ryoku"
+    cp -a -- "$dest/dot-config-ryoku/settings.json" "$HOME/.config/ryoku/settings.json"
+    echo "restored: ~/.config/ryoku/settings.json"
+  fi
+}
+
+do_status() {
+  local rel latest
+  for rel in "${CANDIDATES[@]}"; do
+    if [[ -f "$ROOT/$rel" ]]; then
+      echo "present: $rel"
+    else
+      echo "missing: $rel"
+    fi
+  done
+  if [[ -f "$HOME/.config/ryoku/settings.json" ]]; then
+    echo "present: ~/.config/ryoku/settings.json"
+  fi
+  if [[ -f "$BACKUP_ROOT/LATEST" ]]; then
+    latest=$(cat "$BACKUP_ROOT/LATEST")
+    echo "latest backup: $latest ($BACKUP_ROOT/$latest)"
+  else
+    echo "latest backup: (none)"
+  fi
+}
+
+do_hm_apply() {
+  local host=${RYOKU_HM_HOST:-$USER}
+  local flake="$ROOT/distro/flake#$host"
+  do_backup
+  echo "home-manager build --flake $flake"
+  home-manager build --flake "$flake"
+  echo "home-manager build OK; switching"
+  home-manager switch --flake "$flake"
+}
 
 case "$cmd" in
-  mark)
-    for f in "${FILES[@]}"; do
-      if [[ -e "$f" ]]; then
-        git update-index --skip-worktree -- "$f"
-        echo "skip-worktree: $f"
-      else
-        echo "skip (missing): $f"
-      fi
-    done
-    ;;
-  unmark)
-    for f in "${FILES[@]}"; do
-      if [[ -e "$f" ]]; then
-        git update-index --no-skip-worktree -- "$f"
-        echo "cleared skip-worktree: $f"
-      fi
-    done
-    ;;
-  status)
-    git ls-files -v -- "${FILES[@]}" 2>/dev/null || true
-    echo "Legend: S=skip-worktree, H=assume-unchanged, lowercase=normal tracked"
+  backup) do_backup ;;
+  list) do_list ;;
+  restore) [[ $# -eq 1 ]] || usage; do_restore "$1" ;;
+  status) do_status ;;
+  hm-apply) do_hm_apply ;;
+  mark|unmark)
+    echo "ryoku-preserve-local: skip-worktree is not supported; use 'backup' before pull" >&2
+    exit 2
     ;;
   *) usage ;;
 esac
