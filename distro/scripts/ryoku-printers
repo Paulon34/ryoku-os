@@ -2,6 +2,8 @@
 # Install the explicitly supplied private vendor driver, never download or
 # redistribute it. Run as administrator only with a trusted local checkout.
 set -euo pipefail
+# readelf, ldd and CUPS output are parsed below; use a stable locale.
+export LC_ALL=C
 die() { echo "ERROR: $*" >&2; exit 1; }
 [[ $# == 1 ]] || die "usage: sudo bash ryoku-printers /path/to/private/ryoku-nixos"
 [[ $EUID == 0 ]] || die "sudo required"
@@ -17,7 +19,11 @@ trap 'rm -rf -- "$tmp"' EXIT
 install -m 0644 "$ppd" "$tmp/model.ppd"
 install -m 0755 "$filter" "$tmp/filter"
 command -v readelf >/dev/null || die "binutils missing"
-readelf -h "$tmp/filter" | grep -E 'Machine:.*Advanced Micro Devices X86-64' >/dev/null || die "vendor binary is not x86-64"
+header=$(readelf -h "$tmp/filter") || die "vendor filter is not a readable ELF"
+if ! grep -Eq 'Class:[[:space:]]+ELF64' <<<"$header" || ! grep -Eq 'Machine:.*Advanced Micro Devices X86-64' <<<"$header"; then
+  printf '%s\n' "$header" >&2
+  die "vendor binary is not x86-64"
+fi
 grep -Fq 'application/vnd.cups-raster 0 rastertosnailtspl-4barcode' "$tmp/model.ppd" || die "PPD filter mismatch"
 cupstestppd -q "$tmp/model.ppd" || die "vendor PPD validation failed"
 # Native vendor ELF, not Nix-patched file; dependencies must resolve on Debian.
