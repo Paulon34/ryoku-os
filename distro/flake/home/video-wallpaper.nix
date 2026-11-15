@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  nixGL,
   ...
 }:
 
@@ -20,6 +21,7 @@
 let
   videoWallpaper = pkgs.callPackage ../pkgs/ryoku-video-wallpaper.nix {
     inherit (pkgs) matugen;
+    nixGLIntel = nixGL.packages.${pkgs.stdenv.hostPlatform.system}.nixGLIntel;
   };
   helper = lib.getExe videoWallpaper;
 in
