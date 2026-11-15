@@ -6,6 +6,8 @@
   jq,
   ffmpeg,
   mpvpaper,
+  nixGLIntel,
+  procps,
   systemd,
   matugen ? null,
 }:
@@ -22,6 +24,8 @@ writeShellApplication {
     jq
     ffmpeg
     mpvpaper
+    nixGLIntel
+    procps
     systemd
   ]
   ++ lib.optional (matugen != null) matugen;
