@@ -37,7 +37,23 @@ in
 
   home.sessionVariables = {
     GTK_THEME = "Adwaita:dark";
+    # Mirror pointerCursor for shells/apps that only read env (Firefox, Kitty,
+    # Flatpak hosts). Session wrappers also export these for GDM.
+    XCURSOR_THEME = cursor.name;
+    XCURSOR_SIZE = toString cursor.size;
   };
+
+  # Flatpak sandboxes do not inherit host cursor themes unless overridden.
+  # Idempotent user override — never publishes proprietary themes or host paths
+  # beyond the shared Bibata package name/size.
+  home.activation.ryokuFlatpakCursor = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if command -v flatpak >/dev/null 2>&1; then
+      run flatpak override --user \
+        --env=XCURSOR_THEME=${lib.escapeShellArg cursor.name} \
+        --env=XCURSOR_SIZE=${lib.escapeShellArg (toString cursor.size)} \
+        || echo "WARN: flatpak cursor override failed (non-fatal)" >&2
+    fi
+  '';
 
   home.packages = with pkgs; [
     adwaita-icon-theme

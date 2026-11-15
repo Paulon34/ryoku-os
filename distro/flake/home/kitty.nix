@@ -22,6 +22,9 @@
       scrollback_lines = 10000;
       cursor_shape = "beam";
       cursor_blink_interval = 0;
+      # Match Ryoku pointerCursor (Bibata-Modern-Ice / 24) when XCursor is available.
+      # Kitty still follows XCURSOR_* from the session; these are explicit fallbacks.
+      linux_display_server = "wayland";
       wayland_titlebar_color = "background";
     };
 
