@@ -24,7 +24,7 @@ pass "object-map barConfigs rejected"
 # Correct merge (mirrors distro/flake/home/dms.nix apply-ryoku-dms-bar).
 printf '%s\n' '{"cornerRadius":16,"barConfigs":[{"id":"default","transparency":0.5}]}' >"$TMP/settings.json"
 printf '%s\n' '{"cornerRadius":8,"popupTransparency":0.97}' >"$TMP/patch.json"
-printf '%s\n' '{"id":"default","transparency":0.96,"squareCorners":true,"leftWidgets":["launcherButton","workspaceSwitcher"],"centerWidgets":["clock"],"rightWidgets":["systemTray","notificationButton","controlCenterButton","battery"]}' >"$TMP/bar.json"
+printf '%s\n' '{"id":"default","transparency":0.96,"squareCorners":true,"leftWidgets":["launcherButton","workspaceSwitcher"],"centerWidgets":["clock"],"rightWidgets":["cpuUsage","memUsage","systemTray","notificationButton","controlCenterButton","battery"]}' >"$TMP/bar.json"
 
 jq -s '
   .[0] as $s | .[1] as $p | .[2] as $bar |
@@ -45,6 +45,10 @@ jq -e '.barConfigs[] | select(.id=="default") | .transparency == 0.96' "$TMP/out
   fail "default bar transparency not applied"
 jq -e '.barConfigs[] | select(.id=="default") | .leftWidgets | index("workspaceSwitcher")' "$TMP/out.json" >/dev/null ||
   fail "workspaceSwitcher missing from Quattro leftWidgets"
+jq -e '.barConfigs[] | select(.id=="default") | .rightWidgets | index("cpuUsage")' "$TMP/out.json" >/dev/null ||
+  fail "cpuUsage missing from Quattro rightWidgets"
+jq -e '.barConfigs[] | select(.id=="default") | .rightWidgets | index("memUsage")' "$TMP/out.json" >/dev/null ||
+  fail "memUsage missing from Quattro rightWidgets"
 jq -e '.barConfigs[] | select(.id=="default") | .squareCorners == true' "$TMP/out.json" >/dev/null ||
   fail "Quattro squareCorners missing"
 pass "Quattro barConfigs array merge"

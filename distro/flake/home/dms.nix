@@ -79,7 +79,10 @@ let
           "workspaceSwitcher"
         ];
         centerWidgets = [ "clock" ];
+        # Compact native DMS CPU/RAM before tray (DgopService; no fake values).
         rightWidgets = [
+          "cpuUsage"
+          "memUsage"
           "systemTray"
           "notificationButton"
           "controlCenterButton"
@@ -115,6 +118,8 @@ let
         ];
         centerWidgets = [ "clock" ];
         rightWidgets = [
+          "cpuUsage"
+          "memUsage"
           "systemTray"
           "notificationButton"
           "battery"
@@ -160,10 +165,14 @@ let
         showWorkspaceApps = false;
         showWorkspaceName = false;
         barElevationEnabled = false;
+        # Stock Media.qml stays off — Ryoku Media Island (MPRIS) owns the clock
+        # overlay and hides when idle. Native CpuMonitor/RamMonitor widgets are
+        # enabled; visibility can still be toggled in DMS Settings.
         showMusic = false;
         showWeather = false;
-        showCpuUsage = false;
-        showMemUsage = false;
+        showCpuUsage = true;
+        showMemUsage = true;
+        showCpuTemp = true;
         showClipboard = false;
         showLauncherButton = true;
         showWorkspaceSwitcher = true;
