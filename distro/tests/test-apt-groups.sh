@@ -41,6 +41,7 @@ grep -Eq '^hyprland$' "$ROOT/distro/apt/packages-hyprland.txt" || fail_msg "hypr
 grep -Eq '^hyprland-guiutils$' "$ROOT/distro/apt/packages-hyprland.txt" || fail_msg "hyprland-guiutils"
 
 bash "$ROOT/distro/tests/test-hardware.sh" || fail_msg "hardware detection fixtures failed"
+bash "$ROOT/distro/tests/test-migration-assets.sh" || fail_msg "migration asset tests failed"
 for p in obs-studio audacity neovim git-lfs openjdk-21-jdk nodejs cargo virt-manager podman; do
   grep -Fxq "$p" "$ROOT/distro/apt/packages-full.txt" || fail_msg "full missing $p"
 done
