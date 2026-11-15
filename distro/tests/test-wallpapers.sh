@@ -70,6 +70,10 @@ grep -Fq 'if [[ "$dynamic" == true ]]; then' "$ROOT/distro/flake/home/matugen.ni
   && pass "Wallpaper hotkey respects disabled Dynamic Colors" || fail_msg "hotkey ignores color preference"
 grep -Fq 'WARN: matugen image failed' "$ROOT/distro/flake/home/matugen.nix" \
   && pass "Wallpaper hotkey reports Matugen failure" || fail_msg "hotkey hides Matugen errors"
+grep -Fq 'matugen image "$pick" --mode dark' "$ROOT/distro/flake/home/matugen.nix" \
+  && pass "Wallpaper hotkey forces matugen dark mode" || fail_msg "hotkey matugen can flip light"
+grep -Fq '"--mode"' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  && pass "Settings wallpaper forces matugen dark mode" || fail_msg "Settings matugen missing --mode dark"
 
 # DMS single-instance flock (Hyprland exec-once reuse)
 grep -Fq 'flock' "$ROOT/distro/flake/home/dms.nix" \

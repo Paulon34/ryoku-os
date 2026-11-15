@@ -184,14 +184,29 @@ grep -Fq 'workspaceSwitcher' "$DMS_MODULE" ||
   fail "Quattro bar missing workspaceSwitcher widget"
 grep -Fq 'color-scheme = "prefer-dark";' "$ROOT/distro/flake/home/theme.nix" ||
   fail "global dark color scheme missing"
+grep -Fq 'GTK_THEME' "$ROOT/distro/flake/home/theme.nix" ||
+  fail "GTK_THEME session variable missing (Thunar inheritance)"
+grep -Fq 'environment.d/90-ryoku-dark.conf' "$ROOT/distro/flake/home/theme.nix" ||
+  fail "systemd user environment.d dark conf missing (D-Bus activation)"
+grep -Fq 'Papirus-Dark' "$ROOT/distro/flake/home/theme.nix" ||
+  fail "Papirus-Dark icon theme missing"
 grep -Fq 'org.freedesktop.impl.portal.Settings=gtk;' "$ROOT/distro/flake/home/home.nix" ||
   fail "GTK Settings portal missing"
+# DMS 1.5.3 WidgetHost maps these ids; visibility still requires dgopAvailable.
 grep -Fq '"cpuTemp"' "$DMS_MODULE" ||
   fail "CPU temperature widget missing"
 grep -Fq 'cpuUsage' "$DMS_MODULE" ||
   fail "Quattro bar missing native cpuUsage widget"
 grep -Fq 'showCpuUsage = true' "$DMS_MODULE" ||
   fail "Quattro must enable DMS showCpuUsage (native CpuMonitor)"
+grep -Fq 'isLightMode = false' "$DMS_MODULE" ||
+  fail "DMS session must force isLightMode=false (Ryoku Dark)"
+grep -Fq 'home.file.".local/bin/dgop"' "$DMS_MODULE" ||
+  fail "dgop must be on ~/.local/bin for DgopService discovery"
+grep -Fq 'matugen image "$pick" --mode dark' "$MATUGEN_MODULE" ||
+  fail "matugen must force --mode dark so wallpaper regen cannot flip light"
+grep -Fq 'ryoku-gtk-colors.css' "$MATUGEN_MODULE" ||
+  fail "Matugen GTK color templates missing"
 grep -Fq 'showMusic = false' "$DMS_MODULE" ||
   fail "stock Media.qml must stay off (Media Island owns MPRIS)"
 grep -Fq 'id = "default"' "$DMS_MODULE" ||
@@ -245,7 +260,17 @@ for session in "$HYPR_SESSION" "$SESSION"; do
     fail "Flatpak export shares missing in $(basename "$session")"
   grep -Fq 'XCURSOR_THEME' "$session" ||
     fail "XCURSOR_THEME export missing in $(basename "$session")"
+  grep -Fq 'GTK_THEME' "$session" ||
+    fail "GTK_THEME export missing in $(basename "$session") (Thunar white root cause)"
+  grep -Fq 'QT_STYLE_OVERRIDE' "$session" ||
+    fail "QT_STYLE_OVERRIDE export missing in $(basename "$session")"
+  grep -Fq 'dbus-update-activation-environment' "$session" ||
+    fail "dbus-update-activation-environment missing in $(basename "$session")"
 done
+grep -Fq 'env = GTK_THEME,Adwaita:dark' "$ROOT/distro/flake/home/hyprland.nix" ||
+  fail "Hyprland must env= GTK_THEME for compositor children"
+grep -Fq 'dbus-update-activation-environment --systemd GTK_THEME' "$ROOT/distro/flake/home/hyprland.nix" ||
+  fail "Hyprland exec-once must re-import GTK_THEME into systemd/D-Bus"
 pass "DMS discovers Nix/Home Manager desktop entries after GDM login"
 
 # Matugen must eventually write ~/.config/niri/colors.kdl (VM observed missing).
@@ -337,6 +362,10 @@ grep -Fq 'nerd-fonts.jetbrains-mono' "$KITTY" ||
   fail "JetBrainsMono Nerd Font package missing"
 grep -Fq 'platformTheme.name = "adwaita"' "$THEME" ||
   fail "Qt Adwaita platform theme missing"
+grep -Fq 'style.name = "adwaita-dark"' "$THEME" ||
+  fail "Qt adwaita-dark style missing"
+grep -Fq 'Adwaita:dark' "$THEME" ||
+  fail "GTK_THEME Adwaita:dark (GTK3 Thunar) missing"
 pass "theme and font parity seeds"
 
 # Master stabilize: no hardcoded seat sockets / uids; clear service ownership.

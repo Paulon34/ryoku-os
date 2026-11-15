@@ -66,6 +66,8 @@ grep -Fq '/usr/local/libexec/ryoku-settings-apply' "$ROOT/distro/polkit/org.ryok
   || fail_msg "polkit policy must use stable libexec path"
 grep -Fq 'matugen' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
   || fail_msg "WallpaperApplier must trigger matugen persistence"
+grep -Fq '"--mode"' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  || fail_msg "WallpaperApplier must force matugen --mode dark"
 grep -Fq 'current-wallpaper' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
   || fail_msg "WallpaperApplier must persist current-wallpaper symlink"
 
