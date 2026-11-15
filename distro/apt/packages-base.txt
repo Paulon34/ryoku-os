@@ -83,3 +83,13 @@ mate-polkit
 # Fonts / themes (minimal)
 fonts-dejavu-core
 adwaita-icon-theme
+
+# Hardware discovery and desktop diagnostics (both editions)
+pciutils
+usbutils
+python3
+jq
+mesa-utils
+vulkan-tools
+vainfo
+upower
