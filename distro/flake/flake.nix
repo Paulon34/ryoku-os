@@ -106,11 +106,17 @@
         nixGLDefault = nixGL.packages.${system}.nixGLIntel;
         dms-shell = dankMaterialShell.packages.${system}.dms-shell;
         quickshell = pkgs.quickshell; # Expose qs for CI and runtime diagnosis.
-        # Buildable reference variant to verify all Ryoku 1.5.3 patches in CI.
+        # Buildable reference variants to verify all Ryoku 1.5.3 patches in CI
+        # (Quattro + Islands share the patched tree; style is substituted in).
         dms-shell-ryoku = pkgs.callPackage ./pkgs/dms-shell-ryoku.nix {
           dms-shell = dankMaterialShell.packages.${system}.dms-shell;
           ryokuSettingsJson = "/home/ryoku/.config/ryoku/settings.json";
           ryokuShellStyle = "quattro";
+        };
+        dms-shell-ryoku-islands = pkgs.callPackage ./pkgs/dms-shell-ryoku.nix {
+          dms-shell = dankMaterialShell.packages.${system}.dms-shell;
+          ryokuSettingsJson = "/home/ryoku/.config/ryoku/settings.json";
+          ryokuShellStyle = "islands";
         };
         ryoku-settings = pkgs.callPackage ./pkgs/ryoku-settings.nix {
           ryokuRepoPathDefault = "/home/ryoku/ryoku-os";

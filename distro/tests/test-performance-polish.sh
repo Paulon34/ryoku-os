@@ -46,6 +46,10 @@ grep -Fq 'HYPRLAND_INSTANCE_SIGNATURE' "$ROOT/distro/flake/home/hyprland.nix" \
   && pass "HIS exported to systemd" || fail_msg "HIS export missing"
 grep -Fq 'ryoku-media-cava-expanded.patch' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
   && pass "expanded player cava patch" || fail_msg "expanded cava missing"
+grep -Fq -- '--fuzz=0' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
+  && pass "dms-shell patch apply rejects fuzz" || fail_msg "fuzz=0 missing in dms-shell"
+grep -Fq 'dms-shell-ryoku-islands' "$ROOT/distro/flake/flake.nix" \
+  && pass "islands DMS package exposed for CI" || fail_msg "islands package missing"
 grep -Fq 'smartUnload' "$ROOT/ryoku/schema/settings.schema.json" \
   && pass "schema smartUnload" || fail_msg "schema missing smartUnload"
 grep -Fq 'mediaPausePolicy' "$ROOT/ryoku/schema/settings.schema.json" \

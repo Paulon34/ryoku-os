@@ -50,6 +50,7 @@ require distro/scripts/ryoku-power-policy
 require distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch
 require distro/tests/test-performance-polish.sh
 require distro/tests/test-performance-behavior.sh
+require distro/tests/test-dms-patches.sh
 require distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch
 require distro/flake/patches/dms/1.5.3/ryoku-quattro-foundation.patch
 require distro/assets/wallpapers/ryoku-night.jpg
@@ -174,6 +175,7 @@ bash -n "$ROOT/distro/tests/test-settings-port.sh"
 bash -n "$ROOT/distro/tests/test-apt-groups.sh"
 bash -n "$ROOT/distro/tests/test-performance-polish.sh"
 bash -n "$ROOT/distro/tests/test-performance-behavior.sh"
+bash -n "$ROOT/distro/tests/test-dms-patches.sh"
 bash -n "$ROOT/distro/scripts/ryoku-sddm"
 bash -n "$ROOT/distro/scripts/ryoku-sddm-wallpaper"
 bash -n "$ROOT/distro/scripts/ryoku-power-policy"

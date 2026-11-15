@@ -52,7 +52,8 @@ dms-shell.overrideAttrs (old: {
         ryoku-media-cava.patch \
         ryoku-media-cava-expanded.patch
       do
-        ${patch}/bin/patch -p1 -d "$out/share/quickshell/dms" < "$patch_dir/$p"
+        echo "APPLY: $p"
+        ${patch}/bin/patch -p1 --fuzz=0 --forward --batch -d "$out/share/quickshell/dms" < "$patch_dir/$p"
       done
       if [ -f "$out/share/quickshell/dms/Common/RyokuVisual.qml" ]; then
         substituteInPlace "$out/share/quickshell/dms/Common/RyokuVisual.qml" \

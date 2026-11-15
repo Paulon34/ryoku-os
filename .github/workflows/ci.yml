@@ -216,5 +216,8 @@ jobs:
       - name: Performance & Polish behavioral fixtures
         run: bash ./distro/tests/test-performance-behavior.sh
 
+      - name: DMS patches structural + sequential apply (pinned v1.5.3)
+        run: bash ./distro/tests/test-dms-patches.sh
+
       - name: Bootstrap dry-run on CI host (plan only)
         run: ./distro/scripts/ryoku-bootstrap --dry-run --user runner --yes

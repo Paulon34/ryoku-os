@@ -1,15 +1,11 @@
-# Evaluate the complete DMS Home Manager module against pinned Nix inputs.
-# No VM, no patch build, no claims about Quattro rendering or guest login.
+# Evaluate HM + build Ryoku-patched DMS (Quattro + Islands) against pinned Nix inputs.
+# Catches malformed patches that shallow greps miss. No VM / no PASS_REAL claims.
 name: ryoku-dms-nix-eval
 
 on:
   push:
     branches:
-      - cursor/debian-niri-desktop-port-88e9
-      - cursor/debian-dms-visual-fidelity-81bd
-      - cursor/debian-master-stabilize-81bd
-      - cursor/debian-dms-bar-diag-81bd
-      - cursor/debian-dms-bar-surface-81bd
+      - cursor/**
     paths:
       - "distro/flake/**"
       - "distro/session/**"
@@ -17,11 +13,8 @@ on:
       - ".github/workflows/ryoku-dms-eval.yml"
   pull_request:
     branches:
-      - cursor/debian-niri-desktop-port-88e9
-      - cursor/debian-foundation-distro-88e9
-      - cursor/debian-dms-visual-fidelity-81bd
-      - cursor/debian-master-stabilize-81bd
-      - cursor/debian-dms-bar-diag-81bd
+      - main
+      - cursor/**
     paths:
       - "distro/flake/**"
       - "distro/session/**"
@@ -36,7 +29,7 @@ jobs:
   home-manager-eval:
     name: pure-dms-home-manager-evaluation
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,6 +44,11 @@ jobs:
         run: |
           set -euo pipefail
           nix eval --raw --show-trace ./distro/flake#homeConfigurations.ryoku.activationPackage.drvPath
+
+      - name: Evaluate ryoku-islands host Home Manager activation (pure)
+        run: |
+          set -euo pipefail
+          nix eval --raw --show-trace ./distro/flake#homeConfigurations.ryoku-islands.activationPackage.drvPath
 
       - name: Check generated desktop user appears in pure Git flake
         run: |
@@ -74,3 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           nix build --no-link --show-trace ./distro/flake#dms-shell-ryoku
+          echo "PASS_BUILD: dms-shell-ryoku (quattro)"
+
+      - name: Build Ryoku-patched DMS Islands package
+        run: |
+          set -euo pipefail
+          nix build --no-link --show-trace ./distro/flake#dms-shell-ryoku-islands
+          echo "PASS_BUILD: dms-shell-ryoku-islands"

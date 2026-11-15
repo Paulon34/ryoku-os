@@ -127,16 +127,29 @@ printf 'RYOKU_VIDEO_WALLPAPER="/tmp/x.mp4"\nRYOKU_VIDEO_WALLPAPER_PROFILE=econom
 prev=$(jq -r .previousProfile "$XDG_STATE_HOME/ryoku/power-policy-tip.json")
 [[ "$prev" == balanced ]] && pass "existing tip preserves previousProfile" || fail_msg "tip mutated"
 
-# --- CAVA expanded player + styles ---
+# --- CAVA expanded player + styles (API contracts in regenerated patches) ---
 grep -Fq 'ryoku-media-cava-expanded.patch' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
   && pass "expanded MediaPlayerTab cava patch wired" || fail_msg "expanded cava not wired"
 grep -Fq 'AudioVisualization' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch" \
   && pass "expanded player uses AudioVisualization" || fail_msg "expanded missing viz"
+grep -Fq 'import qs.Modules.DankBar.Widgets' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch" \
+  && pass "expanded imports DankBar.Widgets for AudioVisualization" || fail_msg "expanded import missing"
+grep -Fq 'MprisPlaybackState.Playing' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch" \
+  && pass "expanded gates on MprisPlaying" || fail_msg "expanded MPRIS gate missing"
+grep -Fq 'import qs.Modules.DankBar.Widgets' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  && pass "popout imports DankBar.Widgets" || fail_msg "island cava popout import missing"
+grep -Fq 'CavaService.cavaAvailable' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  && pass "island/popout gates on cavaAvailable" || fail_msg "cavaAvailable gate missing"
+grep -Fq 'audioVisualizerEnabled' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  && pass "island/popout respects audioVisualizerEnabled" || fail_msg "visualizer setting missing"
 grep -Fq 'MediaIsland' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-bar-media-island.patch" \
   && pass "Media Island present for Quattro/Islands" || fail_msg "Media Island missing"
 # Both styles share the patched DMS tree (style only swaps bar chrome).
 grep -Fq 'ryokuShellStyle' "$ROOT/distro/flake/pkgs/dms-shell-ryoku.nix" \
   && pass "shell style injected into shared DMS tree" || fail_msg "style injection missing"
+! grep -Eq 'Math\.random' "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava.patch" \
+  "$ROOT/distro/flake/patches/dms/1.5.3/ryoku-media-cava-expanded.patch" \
+  && pass "cava patches have no fake spectrum" || fail_msg "fake spectrum in cava patches"
 grep -Fq 'checkLinkTargets' "$ROOT/distro/flake/home/settings.nix" \
   && grep -Fq 'entryBefore' "$ROOT/distro/flake/home/settings.nix" \
   && pass "desktop adopt before checkLinkTargets" || fail_msg "adopt order wrong"
