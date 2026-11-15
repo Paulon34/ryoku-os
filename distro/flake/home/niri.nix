@@ -18,6 +18,8 @@ let
     input {
         keyboard {
             xkb {
+                layout "br"
+                model "abnt2"
             }
             numlock
         }
