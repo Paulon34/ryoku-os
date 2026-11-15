@@ -24,6 +24,10 @@ warn() { echo "WARN: $*" >&2; }
 ok() { echo "OK: $*"; }
 
 resolve_flatpak_dir() {
+  if [[ -d "$SCRIPT_DIR/../flatpak" ]]; then
+    echo "$(cd "$SCRIPT_DIR/../flatpak" && pwd)"
+    return 0
+  fi
   if [[ -n "${RYOKU_DISTRO_DIR:-}" && -d "${RYOKU_DISTRO_DIR}/flatpak" ]]; then
     echo "${RYOKU_DISTRO_DIR}/flatpak"
     return 0
@@ -104,6 +108,31 @@ declared_ids() {
       read_ids "$FLATPAK_DIR/apps-full.txt"
     fi
   } | awk 'NF && !seen[$0]++'
+}
+
+optional_ids() {
+  if [[ "$PROFILE" == full ]]; then read_ids "$FLATPAK_DIR/apps-full-optional.txt"; fi
+}
+
+install_optional() {
+  local id
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    validate_id "$id"
+    if [[ "$MODE" == dry-run ]]; then
+      info "[dry-run] optional Flatpak: $id"
+    elif [[ "$SYSROOT" != / ]]; then
+      info "fixture: optional Flatpak $id"
+    elif is_installed "$id"; then
+      ok "already installed: $id"
+    elif flatpak remote-info --arch=x86_64 "$FLATHUB_REMOTE" "$id" >/dev/null 2>&1 &&
+         flatpak install -y --noninteractive "$FLATHUB_REMOTE" "$id" &&
+         is_installed "$id"; then
+      ok "installed: $id"
+    else
+      warn "optional Flatpak not installed: $id (availability/network/licensing)"
+    fi
+  done < <(optional_ids)
 }
 
 validate_id() {
@@ -194,12 +223,13 @@ main() {
   [[ -d "$FLATPAK_DIR" ]] || die "missing $FLATPAK_DIR"
 
   if [[ "$MODE" == "list" ]]; then
-    declared_ids
+    { declared_ids; optional_ids; } | awk 'NF && !seen[$0]++'
     exit 0
   fi
 
   ensure_flathub
   install_declared
+  install_optional
   info "flatpak-sync done ($MODE profile=$PROFILE)"
 }
 
