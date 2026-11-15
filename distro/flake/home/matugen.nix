@@ -63,8 +63,8 @@ in
     [config]
     reload_apps = true
 
-    [config.wallpaper]
-    # matugen ≥2 uses --mode; keep explicit dark in change-wallpaper as well.
+    # No config.wallpaper table: Matugen 4 requires command in that table.
+    # DMS owns wallpaper rendering; Matugen only generates colors.
 
     [templates.ryoku_palette_json]
     input_path = "${config.home.homeDirectory}/.config/matugen/templates/ryoku-palette.json"
