@@ -24,18 +24,22 @@ let
   };
 
   dmsBin = "${dmsPackage}/bin/dms";
+  # Make the native stats helper visible to QML subprocesses, where the
+  # pinned package set exports it; retain upstream bundled fallback otherwise.
+  dgopPackage = dmsPkgs.dgop or (pkgs.dgop or null);
+  statsPackages = lib.optional (dgopPackage != null) dgopPackage;
   jq = lib.getExe pkgs.jq;
 
   # DMS Go always exec.Command("qs", …) for ipc/list/help (shell.go).
   # Session children get this via ryoku-start-dms; SSH/systemd oneshots do not
   # unless every dms entrypoint prepends Quickshell. Keep declarative — never
   # patch /nix/store.
-  dmsRuntimePath = lib.makeBinPath [
+  dmsRuntimePath = lib.makeBinPath ([
     pkgs.quickshell
     dmsPackage
     pkgs.matugen
     pkgs.jq
-  ];
+  ] ++ statsPackages);
 
   # User-facing `dms` so SSH `dms ipc …` and HM profile lookups find qs.
   dmsCli = pkgs.writeShellScriptBin "dms" ''
@@ -83,6 +87,7 @@ let
         rightWidgets = [
           "cpuUsage"
           "memUsage"
+          "cpuTemp"
           "systemTray"
           "notificationButton"
           "controlCenterButton"
@@ -120,6 +125,7 @@ let
         rightWidgets = [
           "cpuUsage"
           "memUsage"
+          "cpuTemp"
           "systemTray"
           "notificationButton"
           "battery"
@@ -337,7 +343,7 @@ in
     pkgs.quickshell # `qs` on HM profile for diagnostics; also in dmsRuntimePath
     pkgs.matugen
     pkgs.jq
-  ];
+  ] ++ statsPackages;
 
   # Managed Ryoku prefs (not the mutable DMS settings.json).
   xdg.configFile."ryoku/settings.json".text = builtins.toJSON {
@@ -430,6 +436,7 @@ in
       ${pkgs.coreutils}/bin/mkdir -p "$state_dir"
       exec >>"$state_dir/dms-startup.log" 2>&1
       echo "=== ryoku-start-dms $(${pkgs.coreutils}/bin/date -Is) ==="
+      command -v dgop || echo "WARN: dgop not on session PATH; check DMS native monitors"
       echo "WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-unset}; XDG_RUNTIME_DIR=''${XDG_RUNTIME_DIR:-unset}"
 
       # GDM must supply the compositor session environment; never invent it.
