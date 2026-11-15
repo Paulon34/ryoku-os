@@ -14,6 +14,7 @@ let
   enabled = cfg.compositor == "hyprland";
   quattro = cfg.shellStyle == "quattro";
   home = config.home.homeDirectory;
+  cursor = (import ../../ryoku/lib.nix { inherit lib; }).pointerCursor;
   ipc = "${home}/.local/bin/ryoku-dms-ipc";
 
   rounding = if quattro then 8 else 12;
@@ -68,6 +69,10 @@ let
     $terminal = /usr/bin/kitty
     $menu = ${ipc} spotlight toggle
     $fileManager = thunar
+
+    # Home Manager session variables may not be sourced by GDM.
+    env = XCURSOR_THEME,${cursor.name}
+    env = XCURSOR_SIZE,${toString cursor.size}
 
     monitor=,preferred,auto,1
 
