@@ -96,7 +96,7 @@ grep -Fq 'xdg.desktopEntries."org.ryoku.Settings"' "$ROOT/distro/flake/home/sett
   || fail_msg "settings.nix must expose canonical org.ryoku.Settings desktop id"
 ! grep -Fq 'xdg.desktopEntries.ryoku-settings' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "must not emit ryoku-settings.desktop (portal appId mismatch)"
-grep -Fq 'lib.getExe settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
+grep -Fq 'exec = "${homeDir}/.local/bin/ryoku-settings";' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings desktop Exec must use absolute nixGL launcher path"
 grep -Fq 'Name[pt_BR]' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings desktop entry must expose Name[pt_BR]"
