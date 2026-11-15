@@ -891,6 +891,10 @@ enable_services() {
     return 0
   fi
   run_cmd systemctl enable --now NetworkManager.service || warn "NetworkManager enable failed"
+  if [[ "$PROFILE" == full ]]; then
+    run_cmd systemctl enable --now cups.service || die "CUPS failed to start (Full printing support)"
+    run_cmd systemctl enable --now avahi-daemon.service || warn "Avahi printer discovery unavailable"
+  fi
   # A non-login sudo -u session lacks XDG_RUNTIME_DIR and a user D-Bus bus.
   # PipeWire/WirePlumber use the systemd user session; do not try to start
   # them as root via sudo -u during a headless SSH bootstrap.
