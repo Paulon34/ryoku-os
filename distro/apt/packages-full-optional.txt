@@ -37,3 +37,14 @@ nikto
 feroxbuster
 hplip
 printer-driver-gutenprint
+
+# Additional parity with NixOS (do not grant privileged groups automatically)
+docker.io
+libvirt-daemon-system
+libvirt-clients
+swtpm
+spice-vdagent
+zram-tools
+earlyoom
+avahi-daemon
+libnss-mdns
