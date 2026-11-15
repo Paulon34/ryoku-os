@@ -15,6 +15,13 @@ in
     x11.enable = false;
   };
 
+  # GTK4/libadwaita and the XDG Settings portal use the desktop color
+  # scheme preference, not just the GTK3 theme name.
+  dconf.enable = true;
+  dconf.settings."org/gnome/desktop/interface" = {
+    color-scheme = "prefer-dark";
+  };
+
   gtk = {
     enable = true;
     theme = {
@@ -27,6 +34,8 @@ in
     };
     # Preserve GTK4 theme explicitly for Home Manager stateVersion 25.11.
     gtk4.theme = config.gtk.theme;
+    gtk3.extraConfig.gtk-application-prefer-dark-theme = true;
+    gtk4.extraConfig.gtk-application-prefer-dark-theme = true;
   };
 
   qt = {
