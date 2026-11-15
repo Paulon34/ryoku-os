@@ -96,21 +96,21 @@
 
   home.file.".local/bin/ryoku-screenshot" = {
     executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      set -euo pipefail
-      mode=''${1:-region}
-      dir="$HOME/Pictures/Screenshots"
-      mkdir -p "$dir"
-      out="$dir/ryoku-$(date +%Y%m%d-%H%M%S).png"
-      case "$mode" in
-        region) grim -g "$(slurp)" "$out" ;;
-        full) grim "$out" ;;
-        *) echo "usage: ryoku-screenshot region|full" >&2; exit 2 ;;
-      esac
-      echo "$out"
-    '';
+    source = ../../scripts/ryoku-screenshot;
   };
+
+  xdg.configFile."swappy/config".text = ''
+    [Default]
+    save_dir=$HOME/Pictures/Screenshots
+    save_filename_format=ryoku-edited-%Y%m%d-%H%M%S.png
+    show_panel=true
+    early_exit=true
+    line_size=5
+    text_size=20
+    text_font=sans-serif
+    paint_mode=brush
+    fill_shape=false
+  '';
 
   home.packages = with pkgs; [
     grim
