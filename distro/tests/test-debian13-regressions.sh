@@ -182,6 +182,12 @@ grep -Fq 'leftWidgets' "$DMS_MODULE" ||
   fail "Quattro bar missing leftWidgets from ryoku-desktop"
 grep -Fq 'workspaceSwitcher' "$DMS_MODULE" ||
   fail "Quattro bar missing workspaceSwitcher widget"
+grep -Fq 'color-scheme = "prefer-dark";' "$ROOT/distro/flake/home/theme.nix" ||
+  fail "global dark color scheme missing"
+grep -Fq 'org.freedesktop.impl.portal.Settings=gtk;' "$ROOT/distro/flake/home/home.nix" ||
+  fail "GTK Settings portal missing"
+grep -Fq '"cpuTemp"' "$DMS_MODULE" ||
+  fail "CPU temperature widget missing"
 grep -Fq 'cpuUsage' "$DMS_MODULE" ||
   fail "Quattro bar missing native cpuUsage widget"
 grep -Fq 'showCpuUsage = true' "$DMS_MODULE" ||
