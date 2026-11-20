@@ -8,6 +8,7 @@ on:
       - cursor/**
     paths:
       - "distro/flake/**"
+      - "distro/apps/ryoku-settings/**"
       - "distro/session/**"
       - "distro/tests/**"
       - ".github/workflows/ryoku-dms-eval.yml"
@@ -17,6 +18,7 @@ on:
       - cursor/**
     paths:
       - "distro/flake/**"
+      - "distro/apps/ryoku-settings/**"
       - "distro/session/**"
       - "distro/tests/**"
       - ".github/workflows/ryoku-dms-eval.yml"
@@ -79,3 +81,32 @@ jobs:
           set -euo pipefail
           nix build --no-link --show-trace ./distro/flake#dms-shell-ryoku-islands
           echo "PASS_BUILD: dms-shell-ryoku-islands"
+
+      - name: Build ryoku-settings (unit tests + QML smoke)
+        run: |
+          set -euo pipefail
+          # doCheck runs 72 unit tests; installCheck runs --smoke-test offscreen.
+          nix build --no-link --show-trace ./distro/flake#ryoku-settings
+          echo "PASS_BUILD: ryoku-settings (check + offscreen QML smoke)"
+
+      - name: Validate HM-generated org.ryoku.Settings.desktop
+        run: |
+          set -euo pipefail
+          ACT=$(nix build --no-link --print-out-paths ./distro/flake#homeConfigurations.ryoku.activationPackage)
+          # Canonical contract: xdg.dataFile → home-files/.local/share/applications/
+          desk="$ACT/home-files/.local/share/applications/org.ryoku.Settings.desktop"
+          if [[ ! -e "$desk" ]]; then
+            echo "FAIL: missing dataHome desktop at $desk" >&2
+            ls -la "$ACT/home-files/.local/share/applications/" >&2 || true
+            exit 1
+          fi
+          echo "found: $desk"
+          grep -E '^Exec=/home/ryoku/.local/bin/ryoku-settings' "$desk"
+          grep -E '^TryExec=/home/ryoku/.local/bin/ryoku-settings$' "$desk"
+          grep -Fq 'Icon=org.ryoku.Settings' "$desk"
+          grep -Fq 'X-Ryoku-Managed=1' "$desk"
+          # Profile hiPrio override (xdg.desktopEntries) must also carry absolute Exec.
+          prof="$ACT/home-path/share/applications/org.ryoku.Settings.desktop"
+          test -e "$prof"
+          grep -E '^Exec=/home/ryoku/.local/bin/ryoku-settings' "$prof"
+          echo "PASS_BUILD: HM-generated org.ryoku.Settings.desktop (dataHome + profile)"

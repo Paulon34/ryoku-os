@@ -23,8 +23,10 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QTimer>
 #include <QtGlobal>
 
 namespace {
@@ -59,6 +61,8 @@ int main(int argc, char *argv[])
     app.setApplicationVersion(QStringLiteral(RYOKU_SETTINGS_VERSION));
     // Wayland app_id / portal lookup — basename without ".desktop".
     app.setDesktopFileName(QString::fromUtf8(Ryoku::kAppId));
+
+    const bool smokeTest = app.arguments().contains(QStringLiteral("--smoke-test"));
 
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     loadBrandingAssets(app);
@@ -148,14 +152,71 @@ int main(int argc, char *argv[])
     };
     QObject::connect(&languageManager, &LanguageManager::languageChanged, &app, refreshCppUi);
 
+    int smokeExit = 0;
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
         &app,
-        []() { QCoreApplication::exit(-1); },
+        [&smokeExit, smokeTest]() {
+            qCritical("ryoku.settings: QQmlApplicationEngine failed to load Main");
+            smokeExit = 1;
+            QCoreApplication::exit(smokeTest ? 1 : -1);
+        },
         Qt::QueuedConnection);
 
     engine.loadFromModule("Ryoku.Settings", "Main");
+
+    if (engine.rootObjects().isEmpty()) {
+        qCritical("ryoku.settings: loadFromModule(Ryoku.Settings, Main) produced no rootObjects "
+                  "(check QTP0001 / RESOURCE_PREFIX /qt/qml)");
+        return smokeTest ? 1 : -1;
+    }
+
+    if (smokeTest) {
+        // StackLayout instantiates Appearance + Git e atualizações with Main; also
+        // probe the module types directly so CI fails on page-level QML errors.
+        QQmlComponent appearance(&engine);
+        appearance.loadFromModule(u"Ryoku.Settings", u"AppearancePage");
+        if (appearance.isError() || !appearance.isReady()) {
+            qCritical() << "ryoku.settings smoke: AppearancePage:" << appearance.errors();
+            return 3;
+        }
+        QObject *appearanceObj = appearance.create(engine.rootContext());
+        if (!appearanceObj) {
+            qCritical() << "ryoku.settings smoke: AppearancePage create failed:"
+                        << appearance.errors();
+            return 3;
+        }
+        appearanceObj->deleteLater();
+
+        QQmlComponent gitPage(&engine);
+        gitPage.loadFromModule(u"Ryoku.Settings", u"NixUpdatesPage");
+        if (gitPage.isError() || !gitPage.isReady()) {
+            qCritical() << "ryoku.settings smoke: NixUpdatesPage:" << gitPage.errors();
+            return 4;
+        }
+        QObject *gitObj = gitPage.create(engine.rootContext());
+        if (!gitObj) {
+            qCritical() << "ryoku.settings smoke: NixUpdatesPage create failed:"
+                        << gitPage.errors();
+            return 4;
+        }
+        gitObj->deleteLater();
+
+        QObject *root = engine.rootObjects().constFirst();
+        // indices: home=0 appearance=1 … nix=9 (Git e atualizações)
+        QMetaObject::invokeMethod(root, "goToPage", Q_ARG(QVariant, QVariant(1)),
+                                  Q_ARG(QVariant, QVariant(1)));
+        QMetaObject::invokeMethod(root, "goToPage", Q_ARG(QVariant, QVariant(9)),
+                                  Q_ARG(QVariant, QVariant(1)));
+
+        QTimer::singleShot(0, &app, [&smokeExit]() {
+            if (smokeExit == 0) {
+                qInfo("ryoku.settings smoke: PASS (Main + Appearance + Git pages)");
+                QCoreApplication::exit(0);
+            }
+        });
+    }
 
     return app.exec();
 }
