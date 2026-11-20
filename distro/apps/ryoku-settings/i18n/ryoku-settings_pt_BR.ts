@@ -390,6 +390,10 @@ construída sobre NixOS e Hyprland.</translation>
         <translation>Pastas</translation>
     </message>
     <message>
+        <source>Watched folders</source>
+        <translation>Pastas monitoradas</translation>
+    </message>
+    <message>
         <source>Show images</source>
         <translation>Mostrar imagens</translation>
     </message>

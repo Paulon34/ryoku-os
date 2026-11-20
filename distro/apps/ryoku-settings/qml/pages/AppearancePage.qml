@@ -713,6 +713,13 @@ Flickable {
                     spacing: RyokuTheme.spacing_xs
                     Text {
                         width: parent.width
+                        text: qsTr("Watched folders")
+                        color: RyokuTheme.on_surface
+                        font.pixelSize: RyokuTheme.font_secondary
+                        font.bold: true
+                    }
+                    Text {
+                        width: parent.width
                         wrapMode: Text.WordWrap
                         text: qsTr("Watched folders stay outside the private library. Adding a folder (for example a legacy ryoku-nixos wallpapers directory) shows its files immediately without copying or publishing them.")
                         color: RyokuTheme.on_surface_muted
