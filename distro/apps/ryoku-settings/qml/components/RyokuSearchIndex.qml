@@ -109,7 +109,11 @@ QtObject {
         { page: "nix", text: QT_TRANSLATE_NOOP("NixUpdatesPage", "Working tree") },
         { page: "nix", text: QT_TRANSLATE_NOOP("NixUpdatesPage", "Flake lock") },
         { page: "nix", text: QT_TRANSLATE_NOOP("NixUpdatesPage", "Rebuild hint") },
-        { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Refresh gallery") },
+        { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Refresh") },
+        { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Import…") },
+        { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Add folder…") },
+        { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Folders") },
+        { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Watched folders") },
         { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Include in repository…") },
         { page: "appearance", text: QT_TRANSLATE_NOOP("AppearancePage", "Private") },
 

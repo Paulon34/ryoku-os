@@ -382,8 +382,76 @@ construída sobre NixOS e Hyprland.</translation>
     <message>
         <location filename="../qml/components/RyokuSearchIndex.qml" line="114" />
         <location filename="../qml/pages/AppearancePage.qml" line="580" />
-        <source>Refresh gallery</source>
-        <translation>Atualizar galeria</translation>
+        <source>Refresh</source>
+        <translation>Atualizar</translation>
+    </message>
+    <message>
+        <source>Folders</source>
+        <translation>Pastas</translation>
+    </message>
+    <message>
+        <source>Show images</source>
+        <translation>Mostrar imagens</translation>
+    </message>
+    <message>
+        <source>Show videos</source>
+        <translation>Mostrar vídeos</translation>
+    </message>
+    <message>
+        <source>Importing… %1%</source>
+        <translation>Importando… %1%</translation>
+    </message>
+    <message>
+        <source>Folder added — wallpapers appear immediately.</source>
+        <translation>Pasta adicionada — os wallpapers aparecem imediatamente.</translation>
+    </message>
+    <message>
+        <source>Watched folders stay outside the private library. Adding a folder (for example a legacy ryoku-nixos wallpapers directory) shows its files immediately without copying or publishing them.</source>
+        <translation>Pastas observadas ficam fora da biblioteca privada. Adicionar uma pasta (por exemplo um diretório legado de wallpapers do ryoku-nixos) mostra os arquivos imediatamente, sem copiar ou publicar o conteúdo.</translation>
+    </message>
+    <message>
+        <source>No watched folders yet. Use Add folder… to include an external origin.</source>
+        <translation>Nenhuma pasta observada ainda. Use Adicionar pasta… para incluir uma origem externa.</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Abrir</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Remover</translation>
+    </message>
+    <message>
+        <source>New</source>
+        <translation>Novo</translation>
+    </message>
+    <message>
+        <source>Could not add folder</source>
+        <translation>Não foi possível adicionar a pasta</translation>
+    </message>
+    <message>
+        <source>%1 · %2 · %3 · %4</source>
+        <translation>%1 · %2 · %3 · %4</translation>
+    </message>
+    <message>
+        <source>No video wallpapers found in %1. Import a video or add a watched folder.</source>
+        <translation>Nenhum wallpaper de vídeo em %1. Importe um vídeo ou adicione uma pasta observada.</translation>
+    </message>
+    <message>
+        <source>No wallpapers found in %1. Import an image or add a watched folder.</source>
+        <translation>Nenhum wallpaper em %1. Importe uma imagem ou adicione uma pasta observada.</translation>
+    </message>
+    <message>
+        <source>%1 B</source>
+        <translation>%1 B</translation>
+    </message>
+    <message>
+        <source>%1 KiB</source>
+        <translation>%1 KiB</translation>
+    </message>
+    <message>
+        <source>%1 MiB</source>
+        <translation>%1 MiB</translation>
     </message>
     <message>
         <location filename="../qml/components/RyokuSearchIndex.qml" line="115" />
@@ -3725,8 +3793,8 @@ Kernel %4</translation>
     </message>
     <message>
         <location filename="../src/WallpaperGalleryModel.cpp" line="630" />
-        <source>Imported %1 · skipped %2</source>
-        <translation>Importados %1 · ignorados %2</translation>
+        <source>Imported %1 · ignored %2 · rejected %3</source>
+        <translation>Importados %1 · ignorados %2 · rejeitados %3</translation>
     </message>
     <message>
         <location filename="../src/WallpaperGalleryModel.cpp" line="701" />

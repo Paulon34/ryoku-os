@@ -31,13 +31,14 @@ Flickable {
     property bool draftVideoAudio: false
     property string draftVideoProfile: "balanced"
     property bool draftVideoPauseCovered: true
-    // Which gallery is shown — a view choice, not the active wallpaper.
+    // Which gallery is shown — driven by the unified library filter nav.
     property string galleryMode: "image"
-    // Smart library filter: all | images | videos | private | repository
+    // Unified library filter: all | images | videos | private | repository | folders
     property string libraryFilter: "all"
     property bool showIncludeConfirm: false
     property var includePreview: ({})
     property string includeTargetId: ""
+    property string importStatusNote: ""
     readonly property bool videoActive: draftWallpaperType === "video" && draftVideo.length > 0
     readonly property var videoProfiles: [
         { id: "economy", label: qsTr("Economy") },
@@ -46,16 +47,79 @@ Flickable {
     ]
     readonly property var activeGallery: root.galleryMode === "video"
                                          ? videoWallpaperGallery : wallpaperGallery
+    readonly property bool galleryImportBusy: wallpaperGallery.importBusy
+                                              || videoWallpaperGallery.importBusy
 
     function applyLibraryFilter(filter) {
         root.libraryFilter = filter
+        if (filter === "folders") {
+            // Folders management pane — keep last media filter on models.
+            return
+        }
         wallpaperGallery.filter = filter
         videoWallpaperGallery.filter = filter
-        // Keep image/video tab aligned when filter forces a media kind.
+        // Single nav: Images/Videos chips own galleryMode (no duplicate Image/Video tabs).
         if (filter === "images")
             root.galleryMode = "image"
         else if (filter === "videos")
             root.galleryMode = "video"
+        else if (filter === "all" || filter === "private" || filter === "repository") {
+            // Keep current galleryMode so All/Private/Repository show the active media kind.
+        }
+    }
+
+    // FileDialog accept: convert QUrl in C++ (never QML toLocalFile / file:// strip).
+    function handleImportUrls(urls) {
+        root.errorMessage = ""
+        root.importStatusNote = ""
+        if (!urls || urls.length === 0)
+            return
+        // Single entry — importUrls classifies by extension and copies into private.
+        const result = wallpaperGallery.importUrls(urls)
+        videoWallpaperGallery.refreshGallery()
+        root.importStatusNote = result.summary || ""
+        root.wallpaperPreviewNote = result.summary || ""
+        if (result.rejectedCount > 0 && result.error)
+            root.errorMessage = result.error
+        const imported = result.imported || []
+        if (!imported.length)
+            return
+        // Prefer applying a file that matches the visible gallery mode.
+        let pick = ""
+        for (let i = 0; i < imported.length; ++i) {
+            const id = imported[i]
+            const isVid = /\.(mp4|webm|mkv|mov)$/i.test(id)
+            if (root.galleryMode === "video" ? isVid : !isVid) {
+                pick = id
+                break
+            }
+        }
+        if (!pick.length)
+            pick = imported[0]
+        const isVid = /\.(mp4|webm|mkv|mov)$/i.test(pick)
+        if (isVid) {
+            root.galleryMode = "video"
+            root.libraryFilter = root.libraryFilter === "images" ? "videos" : root.libraryFilter
+            root.selectVideoWallpaper(pick)
+        } else {
+            root.galleryMode = "image"
+            root.libraryFilter = root.libraryFilter === "videos" ? "images" : root.libraryFilter
+            root.selectWallpaper(pick)
+        }
+    }
+
+    function handleAddFolderUrl(folderUrl) {
+        root.errorMessage = ""
+        if (!folderUrl || (typeof folderUrl === "string" && !folderUrl.length))
+            return
+        if (!wallpaperGallery.addExtraFolderUrl(folderUrl)) {
+            root.errorMessage = wallpaperGallery.lastError || qsTr("Could not add folder")
+            return
+        }
+        // Keep video gallery extras in sync (same QSettings list).
+        videoWallpaperGallery.addExtraFolderUrl(folderUrl)
+        root.wallpaperPreviewNote = qsTr("Folder added — wallpapers appear immediately.")
+        root.importStatusNote = root.wallpaperPreviewNote
     }
 
     function askIncludeInRepo(fileName) {
@@ -538,21 +602,8 @@ Flickable {
                 width: parent.width
                 spacing: RyokuTheme.spacing_sm
 
-                // Media tab + smart library filters
-                Row {
-                    spacing: RyokuTheme.spacing_xs
-                    RyokuButton {
-                        text: qsTr("Image")
-                        variant: root.galleryMode === "image" ? "tonal" : "ghost"
-                        onClicked: root.galleryMode = "image"
-                    }
-                    RyokuButton {
-                        text: qsTr("Video")
-                        variant: root.galleryMode === "video" ? "tonal" : "ghost"
-                        onClicked: root.galleryMode = "video"
-                    }
-                }
-
+                // Unified library nav — Images/Videos chips own media mode; All/Private/
+                // Repository keep a compact media switch (no duplicate primary tabs).
                 Flow {
                     width: parent.width
                     spacing: RyokuTheme.spacing_xs
@@ -562,7 +613,8 @@ Flickable {
                             { id: "images", label: qsTr("Images") },
                             { id: "videos", label: qsTr("Videos") },
                             { id: "private", label: qsTr("Private") },
-                            { id: "repository", label: qsTr("Repository") }
+                            { id: "repository", label: qsTr("Repository") },
+                            { id: "folders", label: qsTr("Folders") }
                         ]
                         delegate: RyokuButton {
                             required property var modelData
@@ -572,26 +624,36 @@ Flickable {
                         }
                     }
                 }
+                Row {
+                    spacing: RyokuTheme.spacing_xs
+                    visible: root.libraryFilter === "all"
+                             || root.libraryFilter === "private"
+                             || root.libraryFilter === "repository"
+                    RyokuButton {
+                        text: qsTr("Show images")
+                        variant: root.galleryMode === "image" ? "tonal" : "ghost"
+                        onClicked: root.galleryMode = "image"
+                    }
+                    RyokuButton {
+                        text: qsTr("Show videos")
+                        variant: root.galleryMode === "video" ? "tonal" : "ghost"
+                        onClicked: root.galleryMode = "video"
+                    }
+                }
 
+                // Primary CTA = Import; secondary = folder / open / git / refresh.
                 Flow {
                     width: parent.width
                     spacing: RyokuTheme.spacing_xs
                     RyokuButton {
-                        text: qsTr("Refresh gallery")
-                        variant: "ghost"
-                        onClicked: {
-                            wallpaperGallery.refreshGallery()
-                            videoWallpaperGallery.refreshGallery()
-                        }
-                    }
-                    RyokuButton {
                         text: qsTr("Import…")
-                        variant: "tonal"
+                        variant: "primary"
+                        enabled: !root.galleryImportBusy
                         onClicked: importDialog.open()
                     }
                     RyokuButton {
                         text: qsTr("Add folder…")
-                        variant: "ghost"
+                        variant: "tonal"
                         onClicked: folderDialog.open()
                     }
                     RyokuButton {
@@ -606,15 +668,92 @@ Flickable {
                         variant: "ghost"
                         onClicked: activeGallery.requestManageChanges()
                     }
+                    RyokuButton {
+                        text: qsTr("Refresh")
+                        variant: "ghost"
+                        onClicked: {
+                            wallpaperGallery.refreshGallery()
+                            videoWallpaperGallery.refreshGallery()
+                        }
+                    }
                 }
 
                 Text {
                     width: parent.width
-                    visible: activeGallery.lastImportSummary.length > 0
+                    visible: root.galleryImportBusy
                     wrapMode: Text.WordWrap
-                    text: activeGallery.lastImportSummary
+                    text: qsTr("Importing… %1%").arg(wallpaperGallery.importProgress)
                     color: RyokuTheme.on_surface_muted
                     font.pixelSize: RyokuTheme.font_caption
+                }
+                Text {
+                    width: parent.width
+                    visible: !root.galleryImportBusy && (root.importStatusNote.length > 0
+                             || wallpaperGallery.lastImportSummary.length > 0)
+                    wrapMode: Text.WordWrap
+                    text: root.importStatusNote.length ? root.importStatusNote
+                                                       : wallpaperGallery.lastImportSummary
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Text {
+                    width: parent.width
+                    visible: wallpaperGallery.lastError.length > 0
+                             && wallpaperGallery.lastRejectedCount > 0
+                    wrapMode: Text.WordWrap
+                    text: wallpaperGallery.lastError
+                    color: RyokuTheme.error
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+
+                // Managed watched folders (add/open/remove — never deletes files on disk).
+                Column {
+                    width: parent.width
+                    visible: root.libraryFilter === "folders"
+                    spacing: RyokuTheme.spacing_xs
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("Watched folders stay outside the private library. Adding a folder (for example a legacy ryoku-nixos wallpapers directory) shows its files immediately without copying or publishing them.")
+                        color: RyokuTheme.on_surface_muted
+                        font.pixelSize: RyokuTheme.font_caption
+                    }
+                    Repeater {
+                        model: wallpaperGallery.extraFolders
+                        delegate: RowLayout {
+                            width: parent.width
+                            spacing: RyokuTheme.spacing_xs
+                            required property string modelData
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData
+                                elide: Text.ElideMiddle
+                                color: RyokuTheme.on_surface
+                                font.pixelSize: RyokuTheme.font_caption
+                            }
+                            RyokuButton {
+                                text: qsTr("Open")
+                                variant: "ghost"
+                                onClicked: wallpaperGallery.openGalleryFolder(modelData)
+                            }
+                            RyokuButton {
+                                text: qsTr("Remove")
+                                variant: "ghost"
+                                onClicked: {
+                                    wallpaperGallery.removeExtraFolder(modelData)
+                                    videoWallpaperGallery.removeExtraFolder(modelData)
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        visible: wallpaperGallery.extraFolders.length === 0
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("No watched folders yet. Use Add folder… to include an external origin.")
+                        color: RyokuTheme.on_surface_muted
+                        font.pixelSize: RyokuTheme.font_caption
+                    }
                 }
 
                 // Hero preview — videos show their poster frame (no playback here).
@@ -766,12 +905,13 @@ Flickable {
                     font.bold: true
                 }
 
-                // Responsive gallery — columns from available width
+                // Responsive gallery — larger thumbs; hidden on Folders pane.
                 GridView {
                     id: gallery
                     width: parent.width
-                    readonly property int minCell: 92
-                    readonly property int maxCell: 120
+                    visible: root.libraryFilter !== "folders"
+                    readonly property int minCell: 120
+                    readonly property int maxCell: 168
                     readonly property int cols: Math.max(2, Math.floor(width / minCell))
                     readonly property int cell: Math.min(maxCell, Math.floor(width / cols))
                     readonly property var source: root.galleryMode === "video"
@@ -797,10 +937,14 @@ Flickable {
                         required property string originLabel
                         required property string origin
                         required property bool inRepository
+                        required property real byteSize
 
                         readonly property bool selected: isVideo
                                                          ? (root.videoActive && root.draftVideo === fileName)
                                                          : (!root.videoActive && root.draftWallpaper === fileName)
+                        readonly property bool recentlyImported: wallpaperGallery.isRecentlyImported(fileName)
+                                                                 || videoWallpaperGallery.isRecentlyImported(fileName)
+                        readonly property bool thumbLoading: isVideo && (!posterUrl || String(posterUrl).length === 0)
 
                         Rectangle {
                             id: thumb
@@ -808,12 +952,14 @@ Flickable {
                             anchors.margins: RyokuTheme.spacing_xxs
                             radius: RyokuTheme.radius_md
                             color: RyokuTheme.glass_surface_high
-                            border.width: selected ? 2 : RyokuTheme.border_width
+                            border.width: selected || recentlyImported ? 2 : RyokuTheme.border_width
                             border.color: selected
                                           ? RyokuTheme.primary
-                                          : (thumbHover.hovered
-                                             ? Qt.rgba(RyokuTheme.primary.r, RyokuTheme.primary.g, RyokuTheme.primary.b, 0.45)
-                                             : RyokuTheme.glass_border)
+                                          : (recentlyImported
+                                             ? RyokuTheme.secondary
+                                             : (thumbHover.hovered
+                                                ? Qt.rgba(RyokuTheme.primary.r, RyokuTheme.primary.g, RyokuTheme.primary.b, 0.45)
+                                                : RyokuTheme.glass_border))
                             clip: true
 
                             Behavior on border.color {
@@ -821,17 +967,27 @@ Flickable {
                             }
 
                             Image {
+                                id: thumbImage
                                 anchors.fill: parent
                                 source: isVideo ? posterUrl : url
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 cache: true
-                                sourceSize.width: 160
-                                sourceSize.height: 160
+                                sourceSize.width: 256
+                                sourceSize.height: 256
                                 opacity: thumbHover.hovered || selected ? 1.0 : 0.92
                                 Behavior on opacity {
                                     NumberAnimation { duration: RyokuTheme.animation_fast }
                                 }
+                            }
+
+                            // Poster / thumb progress
+                            Text {
+                                anchors.centerIn: parent
+                                visible: thumbLoading || thumbImage.status === Image.Loading
+                                text: "…"
+                                color: RyokuTheme.on_surface_muted
+                                font.pixelSize: RyokuTheme.font_body
                             }
 
                             // Origin badge (Private / Repository / …)
@@ -840,14 +996,14 @@ Flickable {
                                 anchors.top: parent.top
                                 anchors.margins: 4
                                 height: 16
-                                radius: 4
-                                color: Qt.rgba(0, 0, 0, 0.55)
+                                radius: RyokuTheme.radius_sm / 2
+                                color: Qt.rgba(RyokuTheme.background.r, RyokuTheme.background.g, RyokuTheme.background.b, 0.72)
                                 width: originText.implicitWidth + 8
                                 Text {
                                     id: originText
                                     anchors.centerIn: parent
                                     text: originLabel
-                                    color: "white"
+                                    color: RyokuTheme.on_surface
                                     font.pixelSize: 9
                                 }
                             }
@@ -861,16 +1017,36 @@ Flickable {
                                 width: 22
                                 height: 22
                                 radius: 11
-                                color: Qt.rgba(0, 0, 0, 0.55)
+                                color: Qt.rgba(RyokuTheme.background.r, RyokuTheme.background.g, RyokuTheme.background.b, 0.72)
                                 Text {
                                     anchors.centerIn: parent
                                     text: "▶"
-                                    color: "white"
+                                    color: RyokuTheme.on_surface
                                     font.pixelSize: RyokuTheme.font_caption
                                 }
                             }
 
-                            // Selection check — meaning beyond color alone
+                            // New-import highlight
+                            Rectangle {
+                                visible: recentlyImported && !selected
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 6
+                                height: 16
+                                radius: RyokuTheme.radius_sm / 2
+                                color: RyokuTheme.secondary
+                                width: newLbl.implicitWidth + 8
+                                Text {
+                                    id: newLbl
+                                    anchors.centerIn: parent
+                                    text: qsTr("New")
+                                    color: RyokuTheme.on_secondary
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
+                            }
+
+                            // Active wallpaper check
                             Rectangle {
                                 visible: selected
                                 anchors.right: parent.right
@@ -896,7 +1072,7 @@ Flickable {
                                 anchors.bottom: parent.bottom
                                 anchors.margins: 4
                                 height: 18
-                                radius: 4
+                                radius: RyokuTheme.radius_sm / 2
                                 color: RyokuTheme.primary
                                 width: includeLbl.implicitWidth + 10
                                 Text {
@@ -931,14 +1107,36 @@ Flickable {
                     }
                 }
 
+                // Selection metadata: name / origin / type / size
                 Text {
-                    visible: gallery.source.count === 0
+                    width: parent.width
+                    visible: root.libraryFilter !== "folders" && (root.draftWallpaper.length > 0 || root.draftVideo.length > 0)
+                    wrapMode: Text.WordWrap
+                    text: {
+                        const id = root.videoActive ? root.draftVideo : root.draftWallpaper
+                        if (!id.length)
+                            return ""
+                        const g = root.videoActive ? videoWallpaperGallery : wallpaperGallery
+                        const origin = g.originForId(id) || ""
+                        const size = g.formatByteSize(
+                            // byteSize role via model lookup is awkward; publishPreview carries size.
+                            g.publishPreview(id).byteSize || 0)
+                        const type = root.videoActive ? qsTr("Video") : qsTr("Image")
+                        return qsTr("%1 · %2 · %3 · %4").arg(id).arg(origin).arg(type).arg(size)
+                    }
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+
+                Text {
+                    visible: root.libraryFilter !== "folders" && gallery.source.count === 0
                     width: parent.width
                     wrapMode: Text.WordWrap
                     text: root.galleryMode === "video"
-                          ? qsTr("No video wallpapers found in %1. Add .mp4, .webm, .mkv or .mov files to assets/wallpapers.")
+                          ? qsTr("No video wallpapers found in %1. Import a video or add a watched folder.")
                             .arg(videoWallpaperGallery.galleryPath)
-                          : qsTr("No wallpapers found in %1").arg(wallpaperGallery.galleryPath)
+                          : qsTr("No wallpapers found in %1. Import an image or add a watched folder.")
+                            .arg(wallpaperGallery.galleryPath)
                     color: RyokuTheme.on_surface_muted
                     font.pixelSize: RyokuTheme.font_caption
                 }
@@ -1701,6 +1899,8 @@ Flickable {
         }
     }
 
+    // Qt Quick Dialogs follow ApplicationWindow.palette (Material You / RyokuTheme).
+    // Prefer themed Quick dialogs over native pickers so dark theme stays consistent.
     FileDialog {
         id: importDialog
         title: qsTr("Import wallpapers")
@@ -1710,33 +1910,15 @@ Flickable {
             qsTr("Images (*.jpg *.jpeg *.png *.webp)"),
             qsTr("Videos (*.mp4 *.webm *.mkv *.mov)")
         ]
-        onAccepted: {
-            const paths = selectedFiles.map(function(u) { return u.toLocalFile() })
-            const gallery = root.galleryMode === "video" ? videoWallpaperGallery
-                                                         : wallpaperGallery
-            // Videos go through the video gallery importer; images through image.
-            // Mixed selections: try both.
-            const importedImg = wallpaperGallery.importFiles(paths)
-            const importedVid = videoWallpaperGallery.importFiles(paths)
-            if (importedImg.length + importedVid.length === 0
-                    && (wallpaperGallery.lastError.length || videoWallpaperGallery.lastError.length)) {
-                root.errorMessage = wallpaperGallery.lastError || videoWallpaperGallery.lastError
-            } else {
-                root.wallpaperPreviewNote = gallery.lastImportSummary
-            }
-        }
+        onAccepted: root.handleImportUrls(selectedFiles)
+        onRejected: { /* cancel — no-op */ }
     }
 
     FolderDialog {
         id: folderDialog
         title: qsTr("Add wallpaper folder")
-        onAccepted: {
-            const path = selectedFolder.toLocalFile()
-            if (!wallpaperGallery.addExtraFolder(path))
-                root.errorMessage = wallpaperGallery.lastError
-            else
-                videoWallpaperGallery.addExtraFolder(path)
-        }
+        onAccepted: root.handleAddFolderUrl(selectedFolder)
+        onRejected: { /* cancel — no-op */ }
     }
 
     // Include-in-repository confirmation (public-repo rights + size preview)
