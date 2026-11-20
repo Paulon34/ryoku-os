@@ -500,10 +500,15 @@ void ParserTests::wallpaperIdValidation()
 {
     QVERIFY(SettingsStore::isValidWallpaperId(QStringLiteral("1.jpg")));
     QVERIFY(SettingsStore::isValidWallpaperId(QStringLiteral("foo_bar-2.PNG")));
+    QVERIFY(SettingsStore::isValidWallpaperId(QStringLiteral("my wallpaper.jpg")));
+    QVERIFY(SettingsStore::isValidWallpaperId(QStringLiteral("pôr-do-sol.webp")));
+    QVERIFY(SettingsStore::isValidVideoWallpaperId(QStringLiteral("cidade noite.mp4")));
     QVERIFY(!SettingsStore::isValidWallpaperId(QStringLiteral("../etc/passwd")));
     QVERIFY(!SettingsStore::isValidWallpaperId(QStringLiteral("a/b.jpg")));
     QVERIFY(!SettingsStore::isValidWallpaperId(QStringLiteral("noext")));
     QVERIFY(!SettingsStore::isValidWallpaperId(QStringLiteral("")));
+    QVERIFY(!SettingsStore::isValidWallpaperId(QStringLiteral(" .jpg")));
+    QVERIFY(!SettingsStore::isValidWallpaperId(QStringLiteral(".hidden.jpg")));
 }
 
 void ParserTests::appearanceMergePreservesUnknown()
@@ -767,10 +772,19 @@ void ParserTests::videoGalleryListsOnlyVideos()
     QDir(repo.path()).mkpath(QStringLiteral("assets/wallpapers"));
     const QString wallDir = QDir(repo.path()).filePath(QStringLiteral("assets/wallpapers"));
     for (const QString &name : {QStringLiteral("a.jpg"), QStringLiteral("b.mp4"), QStringLiteral("c.WEBM"),
-                                QStringLiteral("d.gif"), QStringLiteral("bad name.mp4")}) {
+                                QStringLiteral("d.gif"), QStringLiteral("cidade noite.mp4")}) {
         QFile f(QDir(wallDir).filePath(name));
         QVERIFY(f.open(QIODevice::WriteOnly));
         f.write("x");
+    }
+
+    // Private library merges with repo roots.
+    const QString priv = QDir(home.path()).filePath(QStringLiteral(".local/share/ryoku/wallpapers-private"));
+    QVERIFY(QDir().mkpath(priv));
+    {
+        QFile f(QDir(priv).filePath(QStringLiteral("private art.png")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("p");
     }
 
     WallpaperGalleryModel images;
@@ -778,20 +792,38 @@ void ParserTests::videoGalleryListsOnlyVideos()
     WallpaperGalleryModel videos(WallpaperGalleryModel::MediaKind::Videos);
     videos.setRepoPath(repo.path());
 
-    qputenv("HOME", oldHome);
+    // Unified roots: repo + private — never first-only (installed may be absent).
+    const QStringList roots = WallpaperGalleryModel::resolveGalleryRoots(repo.path());
+    QVERIFY(roots.size() >= 2);
+    QVERIFY(roots.contains(QFileInfo(wallDir).absoluteFilePath()));
+    QVERIFY(roots.contains(QFileInfo(priv).absoluteFilePath()));
 
-    QCOMPARE(images.rowCount(), 1);
-    QCOMPARE(images.data(images.index(0), WallpaperGalleryModel::FileNameRole).toString(), QStringLiteral("a.jpg"));
+    QCOMPARE(images.rowCount(), 2); // a.jpg + private art.png
+    QVERIFY(images.absolutePathForId(QStringLiteral("a.jpg")).length() > 0);
+    QVERIFY(images.absolutePathForId(QStringLiteral("private art.png")).length() > 0);
     QCOMPARE(images.data(images.index(0), WallpaperGalleryModel::IsVideoRole).toBool(), false);
     QVERIFY(images.absolutePathForId(QStringLiteral("b.mp4")).isEmpty());
 
-    QCOMPARE(videos.rowCount(), 2);
-    QCOMPARE(videos.data(videos.index(0), WallpaperGalleryModel::FileNameRole).toString(), QStringLiteral("b.mp4"));
-    QCOMPARE(videos.data(videos.index(1), WallpaperGalleryModel::FileNameRole).toString(), QStringLiteral("c.WEBM"));
-    QCOMPARE(videos.data(videos.index(0), WallpaperGalleryModel::IsVideoRole).toBool(), true);
+    QCOMPARE(videos.rowCount(), 3); // b.mp4, c.WEBM, cidade noite.mp4
     QVERIFY(!videos.absolutePathForId(QStringLiteral("b.mp4")).isEmpty());
+    QVERIFY(!videos.absolutePathForId(QStringLiteral("cidade noite.mp4")).isEmpty());
     QVERIFY(videos.absolutePathForId(QStringLiteral("a.jpg")).isEmpty());
     QVERIFY(videos.absolutePathForId(QStringLiteral("../b.mp4")).isEmpty());
+
+    images.setFilter(QStringLiteral("private"));
+    QCOMPARE(images.rowCount(), 1);
+    QCOMPARE(images.data(images.index(0), WallpaperGalleryModel::FileNameRole).toString(),
+             QStringLiteral("private art.png"));
+    QCOMPARE(images.data(images.index(0), WallpaperGalleryModel::OriginRole).toString(),
+             QStringLiteral("private"));
+
+    // Unique dest collision helper
+    QCOMPARE(WallpaperGalleryModel::uniqueDestName(priv, QStringLiteral("private art.png")),
+             QStringLiteral("private art (1).png"));
+    QVERIFY(WallpaperGalleryModel::pathLooksLikeNixStore(QStringLiteral("/nix/store/abcd-pkg/share/x")));
+    QVERIFY(!WallpaperGalleryModel::pathLooksLikeNixStore(priv));
+
+    qputenv("HOME", oldHome);
 }
 
 void ParserTests::videoApplyArgv()
@@ -1697,7 +1729,7 @@ void ParserTests::applyHelperMissingAndUnsavedDraft()
     // Without /etc helper path (typical pre-bootstrap), helperInstalled is false.
     // Unit tests run outside a Ryoku generation — treat as missing unless PATH has it.
     if (!ctrl.helperInstalled()) {
-        QVERIFY(ctrl.bootstrapHint().contains(QStringLiteral("one-time system rebuild"),
+        QVERIFY(ctrl.bootstrapHint().contains(QStringLiteral("ryoku-bootstrap"),
                                               Qt::CaseInsensitive));
         QVERIFY(!ctrl.canApply());
     }

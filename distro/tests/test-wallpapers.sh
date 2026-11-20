@@ -41,6 +41,29 @@ grep -Fq 'resolvePrivateGalleryPath' "$ROOT/distro/apps/ryoku-settings/src/Wallp
   && pass "gallery private merge" || fail_msg "WallpaperGalleryModel missing private merge"
 grep -Fq 'wallpapers-private' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
   && pass "private path string" || fail_msg "missing wallpapers-private string"
+grep -Fq 'resolveGalleryRoots' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "unified gallery roots" || fail_msg "missing resolveGalleryRoots"
+grep -Fq 'QFileSystemWatcher' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "gallery filesystem watcher" || fail_msg "missing QFileSystemWatcher"
+grep -Fq 'includeInRepository' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "include-in-repo API" || fail_msg "missing includeInRepository"
+grep -Fq 'refusing to write into Nix store' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "store-write ban" || fail_msg "must refuse Nix store writes"
+grep -Fq 'Git e atualizações' "$ROOT/distro/apps/ryoku-settings/qml/pages/NixUpdatesPage.qml" \
+  && pass "Git e atualizações title" || fail_msg "NixUpdatesPage not renamed"
+grep -Fq 'Repo & branch' "$ROOT/distro/apps/ryoku-settings/qml/pages/NixUpdatesPage.qml" \
+  && pass "Repo & branch section" || fail_msg "missing Repo & branch"
+grep -Fq 'Nix deps — Advanced' "$ROOT/distro/apps/ryoku-settings/qml/pages/NixUpdatesPage.qml" \
+  && pass "Nix advanced section" || fail_msg "missing Nix deps Advanced"
+grep -Fq 'Refresh gallery' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "gallery refresh UI" || fail_msg "Appearance missing Refresh gallery"
+grep -Fq 'Include in repository' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "include-in-repo UI" || fail_msg "Appearance missing include-in-repo"
+# Import helper allows spaces; never auto-git
+grep -Fq 'wallpapers-private' "$ROOT/distro/scripts/ryoku-import-wallpaper" \
+  && pass "import stays private" || fail_msg "import script path"
+! grep -Eq 'git (add|commit|push)' "$ROOT/distro/scripts/ryoku-import-wallpaper" \
+  && pass "import never touches git" || fail_msg "import script must not git"
 
 # Material You regression: wallpaper must change palette, not just background.
 # On the first Debian VM boot, DMS used fixed stock Purple (#D0BCFF) and
