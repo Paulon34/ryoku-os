@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# Static checks for Ryoku Settings Debian port (no Qt build / no guest).
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+fail=0
+
+pass() { echo "PASS_STATIC: $*"; }
+fail_msg() { echo "FAIL: $*" >&2; fail=$((fail + 1)); }
+
+require() {
+  local p=$1
+  if [[ -e "$ROOT/$p" ]]; then
+    pass "$p"
+  else
+    fail_msg "missing $p"
+  fi
+}
+
+require distro/apps/ryoku-settings/CMakeLists.txt
+require distro/apps/ryoku-settings/src/main.cpp
+require distro/apps/ryoku-settings/resources/org.ryoku.Settings.desktop
+require distro/apps/ryoku-settings-apply/src/main.cpp
+require distro/apps/ryoku-settings-apply/src/ops.c
+require distro/flake/pkgs/ryoku-settings.nix
+require distro/flake/pkgs/ryoku-settings-apply.nix
+require distro/flake/home/settings.nix
+require distro/polkit/org.ryoku.settings.apply.policy
+require distro/ryoku/settings.json
+require distro/ryoku/lib.nix
+require ryoku/settings.json
+
+# Debian adaptations present
+grep -Fq 'distro/flake/flake.nix' "$ROOT/distro/apps/ryoku-settings/src/RepoPath.cpp" \
+  || fail_msg "RepoPath must accept Debian Modular layout"
+grep -Fq '/usr/bin/pkexec' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.h" \
+  || fail_msg "ApplyController must allow Debian pkexec"
+grep -Fq 'home-manager' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  || fail_msg "settings-apply must call home-manager (not only nixos-rebuild)"
+grep -Fq 'home-manager-' "$ROOT/distro/apps/ryoku-settings-apply/src/ops.c" \
+  || fail_msg "ops.c must validate HM generation links"
+# Apply path must call home-manager; nixos-rebuild may appear only in comments.
+grep -Eq 'home-manager' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  || fail_msg "settings-apply must reference home-manager"
+# No executable token for nixos-rebuild (comment-only mention is OK).
+if grep -E '"(nixos-rebuild)"|execv\(.*nixos-rebuild' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" >/dev/null; then
+  fail_msg "Debian settings-apply must not exec nixos-rebuild"
+fi
+# switch-generation must activate the chosen generation — not rebuild via do_apply.
+grep -Fq '/activate' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  || fail_msg "switch-generation must exec generation activate script"
+# Ensure no executable return do_apply inside do_switch_generation body (comments OK).
+if awk '/^static int do_switch_generation/,/^static int |^int main/' \
+     "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+     | grep -E '^[[:space:]]*return do_apply\(' >/dev/null; then
+  fail_msg "switch-generation must not call do_apply (would rebuild from source)"
+fi
+# repoPath must not default-guess ~/ryoku-os
+! grep -Fq 'defaultRepo' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must not invent defaultRepo ~/ryoku-os"
+grep -Fq 'repoPath = "";' "$ROOT/distro/flake/hosts/ryoku/default.nix" \
+  || fail_msg "example host must leave settingsApply.repoPath empty"
+grep -Fq 'repoPath = "$repo_path"' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must bake REPO_ROOT into settingsApply.repoPath"
+grep -Fq '/usr/local/libexec/ryoku-settings-apply' "$ROOT/distro/polkit/org.ryoku.settings.apply.policy" \
+  || fail_msg "polkit policy must use stable libexec path"
+grep -Fq 'matugen' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  || fail_msg "WallpaperApplier must trigger matugen persistence"
+grep -Fq '"--mode"' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  || fail_msg "WallpaperApplier must force matugen --mode dark"
+grep -Fq 'current-wallpaper' "$ROOT/distro/apps/ryoku-settings/src/WallpaperApplier.cpp" \
+  || fail_msg "WallpaperApplier must persist current-wallpaper symlink"
+
+# Desktop entry contract
+desk="$ROOT/distro/apps/ryoku-settings/resources/org.ryoku.Settings.desktop"
+grep -q '^Exec=ryoku-settings$' "$desk" || fail_msg "desktop Exec"
+grep -q '^TryExec=ryoku-settings$' "$desk" || fail_msg "desktop TryExec"
+grep -q '^Name\[pt_BR\]=Configurações Ryoku$' "$desk" || fail_msg "desktop Name[pt_BR]"
+grep -q '^Terminal=false$' "$desk" || fail_msg "desktop Terminal"
+grep -q '^Icon=org.ryoku.Settings$' "$desk" || fail_msg "desktop Icon"
+grep -Fq 'DesktopSettings' "$desk" || fail_msg "desktop Categories must include DesktopSettings"
+! grep -q '^X-GNOME-Autostart' "$desk" || fail_msg "desktop must not autostart"
+
+# HM imports
+grep -Fq './settings.nix' "$ROOT/distro/flake/home/home.nix" || fail_msg "home.nix must import settings.nix"
+grep -Fq './build-info.nix' "$ROOT/distro/flake/home/home.nix" || fail_msg "home.nix must import build-info.nix"
+
+# Debian Qt needs nixGL wrap (guest: EGL/RHI abort without it)
+grep -Fq 'nixGLIntel' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must wrap ryoku-settings with nixGLIntel"
+grep -Fq 'settingsBin' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings launcher must exec absolute store binary (no PATH loop)"
+grep -Fq 'ryoku-settings-unwrapped' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must expose unwrapped debug binary"
+grep -Fq 'xdg.desktopEntries."org.ryoku.Settings"' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must expose canonical org.ryoku.Settings desktop id"
+! grep -Fq 'xdg.desktopEntries.ryoku-settings' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "must not emit ryoku-settings.desktop (portal appId mismatch)"
+grep -Fq 'exec = "${homeDir}/.local/bin/ryoku-settings";' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings desktop Exec must use absolute nixGL launcher path"
+grep -Fq 'config.xdg.dataHome' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must align desktop paths with config.xdg.dataHome"
+grep -Fq 'ryokuSettingsDesktopVerify' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must verify desktop entry after linkGeneration"
+grep -Fq 'xdg.dataFile."applications/org.ryoku.Settings.desktop"' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must xdg.dataFile the canonical desktop into dataHome"
+grep -Fq 'RESOURCE_PREFIX "/qt/qml"' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "CMake must set RESOURCE_PREFIX /qt/qml for loadFromModule"
+grep -Fq 'qt_standard_project_setup(REQUIRES 6.5)' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "CMake must REQUIRES 6.5 (QTP0001 NEW)"
+grep -Fq 'QT_KNOWN_POLICY_QTP0004' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "QTP0004 must be gated with QT_KNOWN_POLICY_QTP0004"
+grep -Fq -- '--smoke-test' "$ROOT/distro/apps/ryoku-settings/src/main.cpp" \
+  || fail_msg "main.cpp must implement --smoke-test for CI QML load"
+grep -Fq 'doCheck = true' "$ROOT/distro/flake/pkgs/ryoku-settings.nix" \
+  || fail_msg "ryoku-settings.nix must run unit tests (doCheck)"
+grep -Fq 'QT_QPA_PLATFORM=offscreen' "$ROOT/distro/flake/pkgs/ryoku-settings.nix" \
+  || fail_msg "ryoku-settings.nix installCheck must run offscreen smoke"
+grep -Fq 'Name[pt_BR]' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings desktop entry must expose Name[pt_BR]"
+grep -Fq 'hiPrio settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must hiPrio nixGL launcher over package bin"
+grep -Fq 'settingsGui' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must install settingsGui for icons/desktop share"
+grep -Fq 'home.file.".local/bin/ryoku-settings"' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must install ~/.local/bin/ryoku-settings nixGL wrapper"
+grep -Fq 'xdg.mimeApps.defaultApplications' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must wire .deb/.AppImage/.flatpakref MIME defaults"
+grep -Fq 'gdebi.desktop' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "MIME defaults must prefer gdebi for .deb"
+grep -Fq 'DmsShell' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "desktop actions must keep a DMS shell settings entry"
+grep -Fq 'ryokuSettingsDesktopAdopt' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must adopt/backup manual desktop entries"
+grep -Fq 'ryoku-settings-launcher-check' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must ship launcher-check helper"
+grep -Fq 'X-Ryoku-Managed' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "managed desktop must mark X-Ryoku-Managed"
+grep -Fq 'pinnedApps' "$ROOT/distro/flake/home/dms.nix" \
+  || fail_msg "DMS must pin org.ryoku.Settings in launcher"
+grep -Fq '.local/bin/ryoku-settings' "$ROOT/distro/flake/home/hyprland.nix" \
+  || fail_msg "SUPER+I must exec absolute ~/.local/bin/ryoku-settings"
+grep -Fq '.local/bin/ryoku-settings' "$ROOT/distro/flake/home/niri.nix" \
+  || fail_msg "Niri Mod+I must spawn absolute ryoku-settings"
+grep -Fq 'settings toggle' "$ROOT/distro/flake/home/hyprland.nix" \
+  || fail_msg "SUPER+, must remain native DMS settings toggle"
+# Personal prefs: backup helper, not skip-worktree
+grep -Fq 'prefs-backup' "$ROOT/distro/scripts/ryoku-preserve-local" \
+  || fail_msg "ryoku-preserve-local must backup to prefs-backup"
+grep -Fq 'home-manager build' "$ROOT/distro/scripts/ryoku-preserve-local" \
+  || fail_msg "ryoku-preserve-local hm-apply must build before switch"
+grep -Fq 'skip-worktree is not supported' "$ROOT/distro/scripts/ryoku-preserve-local" \
+  || fail_msg "preserve-local must reject skip-worktree as protection"
+grep -Fq 'home-manager build --flake' "$ROOT/distro/docs/PERSONAL_VS_SHIPPED.md" \
+  || fail_msg "PERSONAL_VS_SHIPPED must document build before switch"
+grep -Fq 'home-manager build --flake' "$ROOT/distro/docs/VM_APPLY.md" \
+  || fail_msg "VM_APPLY must document build before switch"
+# Flake dir resolution for Debian layout
+grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/RepoPath.cpp" \
+  || fail_msg "RepoPath must resolve distro/flake"
+grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.cpp" \
+  || fail_msg "ApplyController must use resolveFlakeDir"
+grep -Fq 'resolveFlakeDir' "$ROOT/distro/apps/ryoku-settings/src/FlakeMetadataModel.cpp" \
+  || fail_msg "FlakeMetadataModel must use resolveFlakeDir"
+grep -Fq 'RYOKU_ALLOW_FLAKE_UPDATE' "$ROOT/distro/apps/ryoku-settings/src/FlakeUpdateModel.cpp" \
+  || fail_msg "FlakeUpdateModel must disable flake update by default"
+grep -Fq 'unapplied' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.cpp" \
+  || fail_msg "ApplyController must treat unapplied sentinel as not-applied"
+# Bootstrap must not seed invalid applied hash as file contents
+! grep -E "printf .*unapplied" "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must not write invalid applied-settings-hash placeholder"
+
+# Bootstrap wires polkit + libexec
+grep -Fq 'install_settings_helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must install settings helper"
+grep -Fq 'packages-full.txt' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must know packages-full"
+grep -Fq 'DesktopAppsModel' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "CMakeLists must build DesktopAppsModel"
+grep -Fq 'org.ryoku.pkg.policy' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must install pkg polkit policy"
+grep -Fq 'ryoku-pkg-helper' "$ROOT/distro/scripts/ryoku-bootstrap" \
+  || fail_msg "bootstrap must install pkg helper"
+
+# Debian guest regression: Ryoku Settings reported "Apply failed (pkexec
+# NormalExit code=1)" when switching Quattro/Islands from the GUI.
+# Ensure GUI-edited root JSON drives HM options, pinned HM binary is used,
+# and the successful privileged switch persists the hash for GUI verification.
+grep -Fq 'settingsPath = ../../ryoku/settings.json;' "$ROOT/distro/ryoku/lib.nix" \
+  && pass "Nix apply reads GUI-edited root settings" \
+  || fail_msg "Nix reads distro seed rather than live Settings JSON"
+grep -Fq 'ryokuLib.appearance.shellStyle or null' "$ROOT/distro/flake/flake.nix" \
+  && pass "Saved Quattro/Islands style projected into HM" \
+  || fail_msg "GUI shellStyle does not override bootstrap host default"
+grep -Fq 'ryokuSettingsHash = ryokuLib.settingsHash;' "$ROOT/distro/flake/flake.nix" \
+  && pass "Flake hash and HM use same Ryoku settings" \
+  || fail_msg "Nix hash and desktop modules may use different settings"
+grep -Fq '(char *)RYOKU_HOME_MANAGER' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Apply uses pinned absolute Home Manager path" \
+  || fail_msg "pkexec helper attempts home-manager from a sanitized PATH"
+grep -Fq 'write_applied_hash_marker()' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Successful Apply records hash for Settings verification" \
+  || fail_msg "Apply never persists verified hash"
+grep -Fq 'rename(tmp, "/etc/ryoku/applied-settings-hash")' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Applied hash persisted atomically" \
+  || fail_msg "Applied hash marker missing atomic update"
+grep -Fq '(char *)RYOKU_NIX' "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+  && pass "Nix eval uses pinned absolute executable" \
+  || fail_msg "Applied hash eval depends on root PATH"
+grep -Fq 'return fi.exists() && fi.isExecutable() ? candidate' "$ROOT/distro/apps/ryoku-settings/src/ApplyController.cpp" \
+  && pass "Polkit Debian helper keeps policy-matching stable path" \
+  || fail_msg "Settings canonicalizes Debian helper and may mismatch Polkit policy"
+grep -Fq 'RYOKU_NIX=' "$ROOT/distro/flake/pkgs/ryoku-settings-apply.nix" \
+  && pass "Nix package defines pinned hash evaluator" \
+  || fail_msg "Apply helper has no pinned nix CLI for marker verification"
+
+# Validate actual privileged helper C++ source syntax where a compiler exists;
+# static grep alone cannot catch undefined variables and missing includes.
+if command -v c++ >/dev/null 2>&1; then
+  for macro in \
+    RYOKU_REPO_PATH RYOKU_FLAKE_HOST RYOKU_FLAKE_DIR \
+    RYOKU_HOME_MANAGER RYOKU_NIX_ENV RYOKU_NIX \
+    RYOKU_RUNUSER RYOKU_DBUS_RUN_SESSION; do
+    flags+=("-D${macro}=\"/tmp/ryoku-test\"")
+  done
+  if c++ -std=c++17 -fsyntax-only "${flags[@]}" \
+    "$ROOT/distro/apps/ryoku-settings-apply/src/main.cpp" \
+    -I"$ROOT/distro/apps/ryoku-settings-apply/src"; then
+    pass "Privileged apply helper C++ syntax"
+  else
+    fail_msg "Privileged apply helper C++ syntax failed"
+  fi
+fi
+
+# Compile apply helper ops (C only — no Qt needed).
+# A bare gcc package is not sufficient on Debian: libc6-dev provides ctype.h.
+# The Debian Minimal bootstrap installs build-essential so this is reproducible.
+if ! command -v cc >/dev/null 2>&1; then
+  fail_msg "C compiler missing: install build-essential (provides gcc + libc6-dev)"
+elif ! printf '#include <ctype.h>\nint main(void) { return isalpha(65) ? 0 : 1; }\n' \
+       | cc -x c -o /dev/null - >/dev/null 2>&1; then
+  fail_msg "C standard headers/linker missing (ctype.h): install build-essential (includes libc6-dev)"
+else
+  tmpdir=$(mktemp -d)
+  if cc -std=c11 -c "$ROOT/distro/apps/ryoku-settings-apply/src/ops.c" \
+      -I"$ROOT/distro/apps/ryoku-settings-apply/src" -o "$tmpdir/ops.o"; then
+    pass "ops.c compiles"
+  else
+    fail_msg "ops.c compile failed with build-essential available (inspect compiler errors)"
+  fi
+  rm -rf "$tmpdir"
+fi
+
+if [[ "$fail" -eq 0 ]]; then
+  echo "ALL PASS_STATIC (settings-port)"
+  exit 0
+fi
+echo "FAILURES=$fail" >&2
+exit 1

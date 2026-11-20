@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Ryoku (Niri)
+Comment=Ryoku Wayland session on Niri
+Exec=ryoku-niri-session
+TryExec=ryoku-niri-session
+Type=Application
+DesktopNames=niri;Ryoku
+X-GDM-SessionRegisters=true

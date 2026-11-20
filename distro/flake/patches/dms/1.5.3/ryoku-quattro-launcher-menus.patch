@@ -1,0 +1,286 @@
+diff --git a/Modals/Common/DankModalStandalone.qml b/Modals/Common/DankModalStandalone.qml
+index 51d721f..b647e50 100644
+--- a/Modals/Common/DankModalStandalone.qml
++++ b/Modals/Common/DankModalStandalone.qml
+@@ -30,7 +30,8 @@ Item {
+     property bool closeOnEscapeKey: true
+     property bool closeOnBackgroundClick: true
+     property string animationType: "scale"
+-    property int animationDuration: Theme.modalAnimationDuration
++    // Quattro: keystroke-summoned surfaces show and hide at once outside Cinematic.
++    property int animationDuration: RyokuVisual.instantSurfaces ? 0 : Theme.modalAnimationDuration
+     // Ryoku: profile-driven scale/offset and no-overshoot curves (was a fixed 0.96 + spring).
+     property real animationScaleCollapsed: Theme.effectScaleCollapsed
+     property real animationOffset: RyokuVisual.economy ? 0 : Theme.spacingL
+@@ -415,6 +416,7 @@ Item {
+
+                     Rectangle {
+                         anchors.fill: parent
++                        visible: !RyokuVisual.quattro
+                         radius: root.cornerRadius
+                         color: "transparent"
+                         border.color: BlurService.borderColor
+@@ -422,6 +424,13 @@ Item {
+                         z: 100
+                     }
+
++                    RyokuFrame {
++                        anchors.fill: parent
++                        visible: RyokuVisual.quattro
++                        radius: root.cornerRadius
++                        z: 100
++                    }
++
+                     FocusScope {
+                         anchors.fill: parent
+                         focus: root.shouldBeVisible
+diff --git a/Modals/DankLauncherV2/DankLauncherV2ModalStandalone.qml b/Modals/DankLauncherV2/DankLauncherV2ModalStandalone.qml
+index 9a833f0..d2d2710 100644
+--- a/Modals/DankLauncherV2/DankLauncherV2ModalStandalone.qml
++++ b/Modals/DankLauncherV2/DankLauncherV2ModalStandalone.qml
+@@ -99,6 +99,9 @@ Item {
+         "error": true
+     })
+     readonly property real cornerRadius: Theme.cornerRadius
++    // Quattro: summoned by one keystroke many times a day, so it shows and hides at
++    // once outside Cinematic.
++    readonly property int ryokuModalDuration: RyokuVisual.instantSurfaces ? 0 : Theme.modalAnimationDuration
+     readonly property color borderColor: {
+         if (!SettingsData.dankLauncherV2BorderEnabled)
+             return Theme.outlineMedium;
+@@ -260,7 +263,7 @@ Item {
+
+     Timer {
+         id: closeCleanupTimer
+-        interval: Theme.modalAnimationDuration + 50
++        interval: root.ryokuModalDuration + 50
+         repeat: false
+         onTriggered: {
+             isClosing = false;
+@@ -448,7 +451,7 @@ Item {
+             Behavior on opacity {
+                 NumberAnimation {
+                     easing.type: Easing.BezierSpline
+-                    duration: Theme.modalAnimationDuration
++                    duration: root.ryokuModalDuration
+                     easing.bezierCurve: contentVisible ? Theme.expressiveCurves.emphasizedDecel : Theme.expressiveCurves.emphasized
+                 }
+             }
+@@ -486,7 +489,7 @@ Item {
+             Behavior on opacity {
+                 NumberAnimation {
+                     easing.type: Easing.BezierSpline
+-                    duration: Theme.modalAnimationDuration
++                    duration: root.ryokuModalDuration
+                     easing.bezierCurve: contentVisible ? Theme.expressiveCurves.emphasizedDecel : Theme.expressiveCurves.emphasized
+                     onRunningChanged: if (!running && !root.contentVisible)
+                         modalContainer._renderActive = false
+@@ -496,7 +499,7 @@ Item {
+             Behavior on scale {
+                 NumberAnimation {
+                     easing.type: Easing.BezierSpline
+-                    duration: Theme.modalAnimationDuration
++                    duration: root.ryokuModalDuration
+                     easing.bezierCurve: contentVisible ? Theme.expressiveCurves.emphasizedDecel : Theme.expressiveCurves.emphasized
+                 }
+             }
+@@ -504,7 +507,7 @@ Item {
+             Behavior on publishedScale {
+                 NumberAnimation {
+                     easing.type: Easing.BezierSpline
+-                    duration: Theme.modalAnimationDuration
++                    duration: root.ryokuModalDuration
+                     easing.bezierCurve: contentVisible ? Theme.expressiveCurves.emphasizedDecel : Theme.expressiveCurves.emphasized
+                 }
+             }
+@@ -512,7 +515,7 @@ Item {
+             Behavior on publishedOpacity {
+                 NumberAnimation {
+                     easing.type: Easing.BezierSpline
+-                    duration: Theme.modalAnimationDuration
++                    duration: root.ryokuModalDuration
+                     easing.bezierCurve: contentVisible ? Theme.expressiveCurves.emphasizedDecel : Theme.expressiveCurves.emphasized
+                 }
+             }
+@@ -577,11 +580,18 @@ Item {
+
+             Rectangle {
+                 anchors.fill: parent
++                visible: !RyokuVisual.quattro
+                 radius: root.cornerRadius
+                 color: "transparent"
+                 border.color: BlurService.borderColor
+                 border.width: BlurService.borderWidth
+             }
++
++            RyokuFrame {
++                anchors.fill: parent
++                visible: RyokuVisual.quattro
++                radius: root.cornerRadius
++            }
+         }
+     }
+ }
+diff --git a/Modals/DankLauncherV2/GridItem.qml b/Modals/DankLauncherV2/GridItem.qml
+index 8904a00..14d6099 100644
+--- a/Modals/DankLauncherV2/GridItem.qml
++++ b/Modals/DankLauncherV2/GridItem.qml
+@@ -36,9 +36,9 @@ Rectangle {
+     readonly property int computedIconSize: Math.min(48, Math.max(32, width * 0.45))
+
+     radius: Theme.cornerRadius
+-    color: isSelected ? Theme.withAlpha(Theme.primary, isHovered ? 0.13 : 0.10) : Theme.withAlpha(Theme.primary, isHovered ? 0.05 : 0)
++    color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? RyokuVisual.stateHover : (isHovered ? 0.04 : 0)) : (isSelected ? Theme.withAlpha(Theme.primary, isHovered ? 0.13 : 0.10) : Theme.withAlpha(Theme.primary, isHovered ? 0.05 : 0))
+     border.width: 1
+-    border.color: Theme.withAlpha(Theme.primary, isSelected ? 0.28 : 0)
++    border.color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? 0.25 : 0) : Theme.withAlpha(Theme.primary, isSelected ? 0.28 : 0)
+
+     DankRipple {
+         id: rippleLayer
+diff --git a/Modals/DankLauncherV2/LauncherContent.qml b/Modals/DankLauncherV2/LauncherContent.qml
+index 4493fe1..80f00ce 100644
+--- a/Modals/DankLauncherV2/LauncherContent.qml
++++ b/Modals/DankLauncherV2/LauncherContent.qml
+@@ -493,6 +493,7 @@ FocusScope {
+                 showClearButton: true
+                 textColor: Theme.surfaceText
+                 font.pixelSize: Theme.fontSizeMedium + 1
++                font.family: RyokuVisual.quattro ? RyokuVisual.chromeFont : Theme.fontFamily
+                 enabled: root.parentModal ? (root.parentModal.spotlightOpen || root.parentModal.isClosing) : true
+                 placeholderText: ""
+
+@@ -506,6 +507,7 @@ FocusScope {
+                     visible: searchField.text.length === 0
+                     text: I18n.tr("Search...")
+                     font.pixelSize: searchField.font.pixelSize
++                    font.family: searchField.font.family
+                     color: Theme.withAlpha(Theme.surfaceVariantText, 0.55)
+                     elide: Text.ElideRight
+                 }
+diff --git a/Modals/DankLauncherV2/ResultItem.qml b/Modals/DankLauncherV2/ResultItem.qml
+index 2f7018b..746e65b 100644
+--- a/Modals/DankLauncherV2/ResultItem.qml
++++ b/Modals/DankLauncherV2/ResultItem.qml
+@@ -38,10 +38,12 @@ Rectangle {
+     width: parent?.width ?? 200
+     height: 48
+     // Ryoku: tonal selection + hairline ring; a primaryPressed fill reads near-white with high-contrast Matugen.
+-    color: isSelected ? Theme.withAlpha(Theme.primary, isHovered ? 0.13 : 0.10) : Theme.withAlpha(Theme.primary, isHovered ? 0.05 : 0)
++    // Quattro: Omarchy's selected row — foreground wash plus a faint hairline,
++    // the label itself turning accent.
++    color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? RyokuVisual.stateHover : (isHovered ? 0.04 : 0)) : (isSelected ? Theme.withAlpha(Theme.primary, isHovered ? 0.13 : 0.10) : Theme.withAlpha(Theme.primary, isHovered ? 0.05 : 0))
+     border.width: 1
+-    border.color: Theme.withAlpha(Theme.primary, isSelected ? 0.28 : 0)
+-    radius: Theme.cornerRadius
++    border.color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? 0.25 : 0) : Theme.withAlpha(Theme.primary, isSelected ? 0.28 : 0)
++    radius: RyokuVisual.quattro ? Math.min(6, Theme.cornerRadius) : Theme.cornerRadius
+
+     Behavior on color {
+         ColorAnimation {
+@@ -73,7 +75,7 @@ Rectangle {
+         acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+         onPressed: mouse => {
+-            if (mouse.button === Qt.LeftButton)
++            if (mouse.button === Qt.LeftButton && !RyokuVisual.quattro)
+                 rippleLayer.trigger(mouse.x, mouse.y);
+         }
+         onClicked: mouse => {
+@@ -124,7 +126,7 @@ Rectangle {
+             font.pixelSize: Theme.fontSizeMedium
+             font.weight: Font.Medium
+             font.family: Theme.fontFamily
+-            color: Theme.surfaceText
++            color: RyokuVisual.quattro && root.isSelected ? Theme.primary : Theme.surfaceText
+             wrapMode: Text.WordWrap
+             maximumLineCount: 1
+             elide: Text.ElideRight
+diff --git a/Modals/DankLauncherV2/TileItem.qml b/Modals/DankLauncherV2/TileItem.qml
+index 5061435..7a4cd7b 100644
+--- a/Modals/DankLauncherV2/TileItem.qml
++++ b/Modals/DankLauncherV2/TileItem.qml
+@@ -19,9 +19,9 @@ Rectangle {
+     signal rightClicked(real mouseX, real mouseY)
+
+     radius: Theme.cornerRadius
+-    color: isSelected ? Theme.withAlpha(Theme.primary, isHovered ? 0.13 : 0.10) : Theme.withAlpha(Theme.primary, isHovered ? 0.05 : 0)
++    color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? RyokuVisual.stateHover : (isHovered ? 0.04 : 0)) : (isSelected ? Theme.withAlpha(Theme.primary, isHovered ? 0.13 : 0.10) : Theme.withAlpha(Theme.primary, isHovered ? 0.05 : 0))
+     border.width: 1
+-    border.color: Theme.withAlpha(Theme.primary, isSelected ? 0.28 : 0)
++    border.color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? 0.25 : 0) : Theme.withAlpha(Theme.primary, isSelected ? 0.28 : 0)
+
+     readonly property string toplevelId: item?.data?.toplevelId ?? ""
+     readonly property var waylandToplevel: {
+diff --git a/Modals/PowerMenuModal.qml b/Modals/PowerMenuModal.qml
+index b01385c..2029d0f 100644
+--- a/Modals/PowerMenuModal.qml
++++ b/Modals/PowerMenuModal.qml
+@@ -279,7 +279,7 @@ DankModal {
+     }
+
+     shouldBeVisible: false
+-    modalWidth: SettingsData.powerMenuGridLayout ? Math.min(550, gridColumns * 180 + Theme.spacingS * (gridColumns - 1) + Theme.spacingL * 2) : 400
++    modalWidth: SettingsData.powerMenuGridLayout ? Math.min(550, gridColumns * 180 + Theme.spacingS * (gridColumns - 1) + Theme.spacingL * 2) : (RyokuVisual.quattro ? 320 : 400)
+     modalHeight: contentLoader.item ? contentLoader.item.implicitHeight : 300
+     enableShadow: true
+     targetScreen: parentScreen
+@@ -710,7 +710,7 @@ DankModal {
+                     rightMargin: Theme.spacingL
+                     topMargin: Theme.spacingL
+                 }
+-                spacing: Theme.spacingS
++                spacing: RyokuVisual.quattro ? 0 : Theme.spacingS
+
+                 Repeater {
+                     model: root.visibleActions
+@@ -725,18 +725,24 @@ DankModal {
+                         readonly property bool showWarning: modelData === "reboot" || modelData === "poweroff"
+                         readonly property bool isHolding: root.holdActionIndex === index && root.holdProgress > 0
+
++                        // Quattro: Omarchy menu rows — bare until the cursor lands, then a
++                        // foreground wash, a hairline and the accent label.
++                        readonly property color quattroTint: showWarning && (listMouseArea.containsMouse || isHolding) ? (modelData === "poweroff" ? Theme.error : Theme.warning) : (isSelected ? Theme.primary : Theme.surfaceText)
++
+                         width: parent.width
+-                        height: 56
+-                        radius: Theme.cornerRadius
++                        height: RyokuVisual.quattro ? 50 : 56
++                        radius: RyokuVisual.quattro ? Math.min(6, Theme.cornerRadius) : Theme.cornerRadius
+                         color: {
++                            if (RyokuVisual.quattro)
++                                return Theme.withAlpha(Theme.surfaceText, isSelected ? RyokuVisual.stateHover : (listMouseArea.containsMouse ? 0.04 : 0));
+                             if (isSelected)
+                                 return Theme.primaryHover;
+                             if (listMouseArea.containsMouse)
+                                 return Theme.primaryHoverLight;
+                             return Theme.surfaceHover;
+                         }
+-                        border.color: isSelected ? Theme.primary : Theme.withAlpha(Theme.primary, 0)
+-                        border.width: isSelected ? 2 : 0
++                        border.color: RyokuVisual.quattro ? Theme.withAlpha(Theme.surfaceText, isSelected ? 0.25 : 0) : (isSelected ? Theme.primary : Theme.withAlpha(Theme.primary, 0))
++                        border.width: RyokuVisual.quattro ? 1 : (isSelected ? 2 : 0)
+
+                         ClippingRectangle {
+                             anchors.fill: parent
+@@ -773,6 +779,8 @@ DankModal {
+                                 name: listButtonRect.actionData.icon
+                                 size: Theme.iconSize + 4
+                                 color: {
++                                    if (RyokuVisual.quattro)
++                                        return listButtonRect.quattroTint;
+                                     if (listButtonRect.showWarning && (listMouseArea.containsMouse || listButtonRect.isHolding)) {
+                                         return listButtonRect.modelData === "poweroff" ? Theme.error : Theme.warning;
+                                     }
+@@ -783,8 +791,11 @@ DankModal {
+
+                             StyledText {
+                                 text: listButtonRect.actionData.label
+-                                font.pixelSize: Theme.fontSizeMedium
++                                font.pixelSize: RyokuVisual.quattro ? Theme.fontSizeLarge : Theme.fontSizeMedium
++                                font.family: RyokuVisual.quattro ? RyokuVisual.chromeFont : resolvedFontFamily
+                                 color: {
++                                    if (RyokuVisual.quattro)
++                                        return listButtonRect.quattroTint;
+                                     if (listButtonRect.showWarning && (listMouseArea.containsMouse || listButtonRect.isHolding)) {
+                                         return listButtonRect.modelData === "poweroff" ? Theme.error : Theme.warning;
+                                     }

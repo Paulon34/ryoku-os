@@ -1,0 +1,323 @@
+diff --git a/Modules/Notifications/Popup/NotificationPopup.qml b/Modules/Notifications/Popup/NotificationPopup.qml
+index fd55189..c84d86b 100644
+--- a/Modules/Notifications/Popup/NotificationPopup.qml
++++ b/Modules/Notifications/Popup/NotificationPopup.qml
+@@ -698,7 +698,8 @@ PanelWindow {
+             width: Math.max(0, content.width - content.cardInset * 2)
+             height: Math.max(0, content.height - content.cardInset * 2)
+             radius: win.connectedFrameMode ? Theme.connectedSurfaceRadius : Theme.cornerRadius
+-            visible: win.notificationData && win.notificationData.urgency === NotificationUrgency.Critical
++            // Quattro marks a critical card with a red frame instead.
++            visible: win.notificationData && win.notificationData.urgency === NotificationUrgency.Critical && !(RyokuVisual.quattro && !win.connectedFrameMode)
+             opacity: 1
+             clip: true
+             scale: content.chromeScale
+@@ -727,6 +728,7 @@ PanelWindow {
+         Rectangle {
+             anchors.fill: parent
+             anchors.margins: content.cardInset
++            visible: !(RyokuVisual.quattro && !win.connectedFrameMode)
+             radius: win.connectedFrameMode ? Theme.connectedSurfaceRadius : Theme.cornerRadius
+             color: "transparent"
+             border.color: win.connectedFrameMode ? Theme.withAlpha(BlurService.borderColor, 0) : BlurService.borderColor
+@@ -736,6 +738,19 @@ PanelWindow {
+             transformOrigin: Item.Center
+         }
+
++        // Quattro: the card wears the Hyprland active-border gradient, like
++        // every other shell surface; a critical one turns it red.
++        RyokuFrame {
++            readonly property bool critical: win.notificationData && win.notificationData.urgency === NotificationUrgency.Critical
++            anchors.fill: parent
++            anchors.margins: content.cardInset
++            visible: RyokuVisual.quattro && !win.connectedFrameMode
++            radius: Theme.cornerRadius
++            startColor: critical ? Theme.error : (Theme.currentThemeData.surfaceTint ? Theme.surfaceTint : Theme.primary)
++            endColor: critical ? Theme.error : Theme.getMatugenColor("tertiary_fixed_dim", Theme.tertiary)
++            z: 100
++        }
++
+         Item {
+             id: backgroundContainer
+             anchors.fill: parent
+@@ -968,7 +983,7 @@ PanelWindow {
+                         text: notificationData ? (notificationData.summary || "") : ""
+                         color: Theme.surfaceText
+                         font.pixelSize: SettingsData.notificationSummaryFontSize || Theme.fontSizeMedium
+-                        font.weight: Font.DemiBold
++                        font.weight: RyokuVisual.quattro ? Font.Bold : Font.DemiBold
+                         width: parent.width
+                         elide: Text.ElideRight
+                         horizontalAlignment: Text.AlignLeft
+diff --git a/Modules/OSD/BrightnessOSD.qml b/Modules/OSD/BrightnessOSD.qml
+index 5ac62c9..786ee4f 100644
+--- a/Modules/OSD/BrightnessOSD.qml
++++ b/Modules/OSD/BrightnessOSD.qml
+@@ -13,10 +13,12 @@ DankOSD {
+         _displayBrightness = DisplayService.brightnessLevel;
+     }
+
+-    osdWidth: useVertical ? (40 + Theme.spacingS * 2) : Math.min(260, screenWidth - Theme.spacingM * 2)
+-    osdHeight: useVertical ? Math.min(260, screenHeight - Theme.spacingM * 2) : (40 + Theme.spacingS * 2)
++    // Quattro: Omarchy's read-only OSD card (glyph, flat bar, bold readout).
++    readonly property bool quattroMeter: RyokuVisual.quattro && !useVertical
++    osdWidth: useVertical ? (40 + Theme.spacingS * 2) : (quattroMeter ? 272 : Math.min(260, screenWidth - Theme.spacingM * 2))
++    osdHeight: useVertical ? Math.min(260, screenHeight - Theme.spacingM * 2) : (quattroMeter ? 58 : 40 + Theme.spacingS * 2)
+     autoHideInterval: 3000
+-    enableMouseInteraction: true
++    enableMouseInteraction: !quattroMeter
+
+     Connections {
+         target: DisplayService
+@@ -29,7 +31,7 @@ DankOSD {
+
+     content: Loader {
+         anchors.fill: parent
+-        sourceComponent: useVertical ? verticalContent : horizontalContent
++        sourceComponent: useVertical ? verticalContent : (root.quattroMeter ? quattroContent : horizontalContent)
+     }
+
+     Component {
+@@ -271,4 +273,21 @@ DankOSD {
+             }
+         }
+     }
++
++    Component {
++        id: quattroContent
++
++        RyokuOsdMeter {
++            anchors.fill: parent
++            iconName: {
++                const deviceInfo = DisplayService.getCurrentDeviceInfo();
++                if (!deviceInfo || deviceInfo.class === "backlight" || deviceInfo.class === "ddc")
++                    return "brightness_medium";
++                if (deviceInfo.name.includes("kbd"))
++                    return "keyboard";
++                return "lightbulb";
++            }
++            value: root._displayBrightness
++        }
++    }
+ }
+diff --git a/Modules/OSD/MicVolumeOSD.qml b/Modules/OSD/MicVolumeOSD.qml
+index 8939826..6049690 100644
+--- a/Modules/OSD/MicVolumeOSD.qml
++++ b/Modules/OSD/MicVolumeOSD.qml
+@@ -15,10 +15,12 @@ DankOSD {
+         _displayVolume = Math.round(AudioService.source.audio.volume * 100);
+     }
+
+-    osdWidth: useVertical ? (40 + Theme.spacingS * 2) : Math.min(260, screenWidth - Theme.spacingM * 2)
+-    osdHeight: useVertical ? Math.min(260, screenHeight - Theme.spacingM * 2) : (40 + Theme.spacingS * 2)
++    // Quattro: Omarchy's read-only OSD card (glyph, flat bar, bold readout).
++    readonly property bool quattroMeter: RyokuVisual.quattro && !useVertical
++    osdWidth: useVertical ? (40 + Theme.spacingS * 2) : (quattroMeter ? 272 : Math.min(260, screenWidth - Theme.spacingM * 2))
++    osdHeight: useVertical ? Math.min(260, screenHeight - Theme.spacingM * 2) : (quattroMeter ? 58 : 40 + Theme.spacingS * 2)
+     autoHideInterval: 3000
+-    enableMouseInteraction: true
++    enableMouseInteraction: !quattroMeter
+
+     Connections {
+         target: AudioService.source?.audio ?? null
+@@ -52,7 +54,7 @@ DankOSD {
+
+     content: Loader {
+         anchors.fill: parent
+-        sourceComponent: useVertical ? verticalContent : horizontalContent
++        sourceComponent: useVertical ? verticalContent : (root.quattroMeter ? quattroContent : horizontalContent)
+     }
+
+     Component {
+@@ -255,4 +257,15 @@ DankOSD {
+             }
+         }
+     }
++
++    Component {
++        id: quattroContent
++
++        RyokuOsdMeter {
++            anchors.fill: parent
++            iconName: AudioService.source?.audio?.muted ? "mic_off" : "mic"
++            value: root._displayVolume
++            muted: AudioService.source?.audio?.muted ?? false
++        }
++    }
+ }
+diff --git a/Modules/OSD/VolumeOSD.qml b/Modules/OSD/VolumeOSD.qml
+index 9504f3b..51c2ae6 100644
+--- a/Modules/OSD/VolumeOSD.qml
++++ b/Modules/OSD/VolumeOSD.qml
+@@ -15,10 +15,12 @@ DankOSD {
+         _displayVolume = Math.min(AudioService.sinkMaxVolume, Math.round(AudioService.sink.audio.volume * 100));
+     }
+
+-    osdWidth: useVertical ? (40 + Theme.spacingS * 2) : Math.min(260, screenWidth - Theme.spacingM * 2)
+-    osdHeight: useVertical ? Math.min(260, screenHeight - Theme.spacingM * 2) : (40 + Theme.spacingS * 2)
++    // Quattro: Omarchy's read-only OSD card (glyph, flat bar, bold readout).
++    readonly property bool quattroMeter: RyokuVisual.quattro && !useVertical
++    osdWidth: useVertical ? (40 + Theme.spacingS * 2) : (quattroMeter ? 272 : Math.min(260, screenWidth - Theme.spacingM * 2))
++    osdHeight: useVertical ? Math.min(260, screenHeight - Theme.spacingM * 2) : (quattroMeter ? 58 : 40 + Theme.spacingS * 2)
+     autoHideInterval: 3000
+-    enableMouseInteraction: true
++    enableMouseInteraction: !quattroMeter
+
+     Connections {
+         target: AudioService.sink?.audio ?? null
+@@ -47,7 +49,7 @@ DankOSD {
+
+     content: Loader {
+         anchors.fill: parent
+-        sourceComponent: useVertical ? verticalContent : horizontalContent
++        sourceComponent: useVertical ? verticalContent : (root.quattroMeter ? quattroContent : horizontalContent)
+     }
+
+     Component {
+@@ -251,4 +253,16 @@ DankOSD {
+             }
+         }
+     }
++
++    Component {
++        id: quattroContent
++
++        RyokuOsdMeter {
++            anchors.fill: parent
++            iconName: AudioService.sink?.audio?.muted ? "volume_off" : "volume_up"
++            value: root._displayVolume
++            maximum: Math.max(100, AudioService.sinkMaxVolume)
++            muted: AudioService.sink?.audio?.muted ?? false
++        }
++    }
+ }
+diff --git a/Widgets/DankOSD.qml b/Widgets/DankOSD.qml
+index 30a14db..9d91eab 100644
+--- a/Widgets/DankOSD.qml
++++ b/Widgets/DankOSD.qml
+@@ -201,7 +201,8 @@ PanelWindow {
+     }
+
+     readonly property real alignedY: {
+-        const margin = Theme.spacingM;
++        // Quattro: the OSD floats well clear of the bottom edge (Omarchy: 67 px).
++        const margin = RyokuVisual.quattro && (SettingsData.osdPosition === SettingsData.Position.Bottom || SettingsData.osdPosition === SettingsData.Position.BottomCenter || SettingsData.osdPosition === SettingsData.Position.Right) ? 64 : Theme.spacingM;
+         const centerY = (screenHeight - alignedHeight) / 2;
+
+         switch (SettingsData.osdPosition) {
+@@ -269,8 +270,9 @@ PanelWindow {
+         opacity: shouldBeVisible ? 1 : 0
+         scale: shouldBeVisible ? 1 : RyokuVisual.osdScaleCollapsed
+
+-        // Ryoku motion: short enter on the profile curve, shorter exit.
+-        readonly property int _ryokuDuration: shouldBeVisible ? Math.round(RyokuVisual.enterDuration * 0.9) : RyokuVisual.exitDuration
++        // Ryoku motion: short enter on the profile curve, shorter exit. Quattro
++        // shows and hides the OSD at once outside Cinematic, as Omarchy does.
++        readonly property int _ryokuDuration: RyokuVisual.instantSurfaces ? 0 : (shouldBeVisible ? Math.round(RyokuVisual.enterDuration * 0.9) : RyokuVisual.exitDuration)
+         readonly property var _ryokuCurve: shouldBeVisible ? RyokuVisual.enterCurve : RyokuVisual.exitCurve
+
+         property bool childHovered: false
+@@ -279,6 +281,7 @@ PanelWindow {
+         Rectangle {
+             id: background
+             anchors.fill: parent
++            visible: !RyokuVisual.quattro
+             radius: Theme.cornerRadius
+             color: "transparent"
+             border.color: BlurService.borderColor
+@@ -286,6 +289,13 @@ PanelWindow {
+             z: -1
+         }
+
++        RyokuFrame {
++            anchors.fill: parent
++            visible: RyokuVisual.quattro
++            radius: Theme.cornerRadius
++            z: 1
++        }
++
+         ElevationShadow {
+             id: bgShadowLayer
+             anchors.fill: parent
+diff --git a/Widgets/RyokuOsdMeter.qml b/Widgets/RyokuOsdMeter.qml
+new file mode 100644
+index 0000000..662954e
+--- /dev/null
++++ b/Widgets/RyokuOsdMeter.qml
+@@ -0,0 +1,76 @@
++import QtQuick
++import qs.Common
++
++// Quattro OSD row, after Omarchy's OSD card: glyph, a flat progress bar
++// (accent on a muted track) and a bold readout as wide as "100%", so the
++// digits never shift the bar. Visual only.
++Item {
++    id: root
++
++    property string iconName: ""
++    property real value: 0
++    property real maximum: 100
++    property bool muted: false
++    property string readout: Math.round(value) + "%"
++
++    readonly property int pad: 16
++    readonly property int gap: 14
++    readonly property int iconSize: 26
++    readonly property int barWidth: 142
++    readonly property int readoutWidth: Math.ceil(widest.advanceWidth)
++
++    implicitWidth: pad * 2 + iconSize + gap + barWidth + gap + readoutWidth
++    implicitHeight: pad * 2 + iconSize
++
++    TextMetrics {
++        id: widest
++        font.family: RyokuVisual.chromeFont
++        font.pixelSize: Theme.fontSizeMedium
++        font.weight: Font.Bold
++        text: "100%"
++    }
++
++    Row {
++        anchors.centerIn: parent
++        spacing: root.gap
++
++        DankIcon {
++            anchors.verticalCenter: parent.verticalCenter
++            name: root.iconName
++            size: root.iconSize
++            color: root.muted ? Theme.surfaceVariantText : Theme.surfaceText
++        }
++
++        Rectangle {
++            anchors.verticalCenter: parent.verticalCenter
++            width: root.barWidth
++            height: 6
++            radius: 1
++            color: Theme.withAlpha(Theme.surfaceText, 0.25)
++
++            Rectangle {
++                height: parent.height
++                radius: parent.radius
++                width: parent.width * Math.max(0, Math.min(1, root.maximum > 0 ? root.value / root.maximum : 0))
++                color: root.muted ? Theme.surfaceVariantText : Theme.primary
++
++                Behavior on width {
++                    NumberAnimation {
++                        duration: Theme.currentAnimationBaseDuration === 0 ? 0 : 140
++                        easing.type: Easing.OutCubic
++                    }
++                }
++            }
++        }
++
++        Text {
++            anchors.verticalCenter: parent.verticalCenter
++            width: root.readoutWidth
++            horizontalAlignment: Text.AlignRight
++            text: root.readout
++            font: widest.font
++            color: Theme.surfaceText
++            renderType: Text.NativeRendering
++        }
++    }
++}

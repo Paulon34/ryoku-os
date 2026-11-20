@@ -1,0 +1,4 @@
+# Flatpak application IDs for --profile minimal (Debian amd64 / x86_64).
+# One reverse-DNS ID per line. Comments and blank lines ignored.
+# Minimal keeps Flatpak + Flathub ready; no apps declared by default.
+# Optional Flatpak GUI is Full-only (Flatseal) to keep Minimal lean.

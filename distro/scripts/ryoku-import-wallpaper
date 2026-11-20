@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Import a local wallpaper into the private gallery (never touches git).
+#
+#   ryoku-import-wallpaper /path/to/image.jpg [name.jpg]
+#   ryoku-import-wallpaper /path/to/video.mp4
+#
+# Destination: ~/.local/share/ryoku/wallpapers-private/
+# Public CC0 set stays in ~/.local/share/wallpapers (HM-managed).
+# Names may include spaces and accents; path separators and ".." are rejected.
+#
+set -euo pipefail
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+src=${1:-}
+[[ -n "$src" ]] || die "usage: ryoku-import-wallpaper <image|video> [dest-name]"
+[[ -f "$src" ]] || die "not a file: $src"
+
+ext=${src##*.}
+ext_lc=$(printf '%s' "$ext" | tr 'A-Z' 'a-z')
+case "$ext_lc" in
+  jpg|jpeg|png|webp|mp4|webm|mkv|mov) ;;
+  *) die "unsupported extension: .$ext (use jpg/jpeg/png/webp/mp4/webm/mkv/mov)" ;;
+esac
+
+dest_name=${2:-$(basename -- "$src")}
+# Sanitize dest basename — allow spaces/Unicode, reject traversal.
+dest_name=$(basename -- "$dest_name")
+case "$dest_name" in
+  ""|*/*|*\\*|*..*|.*|' '*|*' ') die "invalid destination name: $dest_name" ;;
+esac
+
+priv="${XDG_DATA_HOME:-$HOME/.local/share}/ryoku/wallpapers-private"
+mkdir -p "$priv"
+
+# Collision: "name.jpg" → "name (1).jpg", …
+final="$dest_name"
+if [[ -e "$priv/$final" ]]; then
+  stem=${dest_name%.*}
+  extension=${dest_name##*.}
+  i=1
+  while [[ -e "$priv/${stem} (${i}).${extension}" ]]; do
+    i=$((i + 1))
+    [[ $i -lt 10000 ]] || die "could not allocate unique name"
+  done
+  final="${stem} (${i}).${extension}"
+fi
+
+dest="$priv/$final"
+# Copy out of store/symlink sources into a real private file.
+cp -fL -- "$src" "$dest"
+chmod 0644 "$dest"
+echo "imported: $dest"
+echo "Open Ryoku Settings → Appearance to select it (gallery merges private + public)."

@@ -1,0 +1,130 @@
+# VM apply procedure (Debian Modular / Hyprland)
+
+Safe guest apply for Paulo's VM. **Do not** restart GDM/VM from an agent
+session unless Paulo authorizes it. Preserve `flake.lock` and `hosts/paulo`.
+
+## 0. Preconditions (before sudo apply)
+
+1. Isolated worktree on the **exact tip** you intend to apply (PR #31 tip stacked on #29).
+2. Preserve guest `flake.lock` and `hosts/paulo` (copy aside if the worktree is fresh).
+3. Prefer: `nix build` / `home-manager build` for `.#paulo` when Nix is available.
+   **Always** run `home-manager build --flake …#$USER` and confirm success
+   **before** `home-manager switch` (or use `ryoku-preserve-local hm-apply`,
+   which backups prefs then build→switch).
+4. Backup personal prefs first: `bash distro/scripts/ryoku-preserve-local backup`
+   (do **not** rely on `skip-worktree`).
+5. `ryoku-bootstrap --dry-run` must pass (APT + Flatpak plan).
+6. Proxmox snapshot **before** `--apply`.
+
+CI `PASS_STATIC` does **not** prove Qt/Nix build, graphical session, Flathub install, or Apply helper.
+
+Debian 13 guest prerequisite: `build-essential` (not just `gcc`) provides
+`libc6-dev` headers such as `ctype.h` for
+`distro/tests/test-settings-port.sh`. It is now declared in Minimal's APT
+manifest and installed by future `ryoku-bootstrap --apply` runs. On an
+already-installed guest, install it once before source-level tests:
+`sudo apt-get install -y --no-install-recommends build-essential`.
+Do not repeat bootstrap merely to repair test headers. For low-space guests,
+run `apt-get -s install build-essential` and check `df -h /` first.
+
+## 1. Correct worktree
+
+```bash
+# Example: dedicated worktree for this tip (adjust path to your layout)
+cd ~
+git fetch https://github.com/Paulon34/ryoku-os.git cursor/debian-apps-wallpapers
+# Or inside an existing clone:
+cd /path/to/approved-checkout
+git fetch origin
+git checkout --detach origin/cursor/debian-apps-wallpapers
+git rev-parse HEAD   # expect the published tip SHA from PR #31
+
+# Preserve lock + host from the live guest tree if this worktree is new:
+test -f distro/flake/flake.lock && echo "KEEP flake.lock" || echo "NEED lock from guest"
+test -f distro/flake/hosts/paulo/default.nix && echo "KEEP hosts/paulo" || echo "bootstrap will write hosts/paulo"
+```
+
+Bootstrap records **`settingsApply.repoPath = <this REPO_ROOT>`** into `hosts/paulo`
+so Settings Apply never targets a guessed `~/ryoku-os`. Also writes
+`/etc/ryoku/repo-path` + `distro-dir` for `ryoku-pkg-helper`.
+
+## 2. Detect stale HM (red overlay root cause)
+
+```bash
+./distro/scripts/ryoku-doctor
+# Reads ~/.local/state/ryoku/build-info.json first (mutable stamp; not an HM symlink).
+# FAIL "STALE HM" → active generation commit ≠ worktree tip.
+readlink -f ~/.config/hypr/hyprland.conf
+```
+
+## 3. Dry-run then apply
+
+```bash
+# Minimal (default) — APT essentials + Flathub ready, no declared Flatpaks
+sudo ./distro/scripts/ryoku-bootstrap --dry-run --user paulo \
+  --profile minimal --visual balanced --shell-style islands --compositor hyprland
+
+# Full — APT media/office + Flatseal/LocalSend/Telegram from Flathub
+sudo ./distro/scripts/ryoku-bootstrap --dry-run --user paulo \
+  --profile full --visual balanced --shell-style islands --compositor hyprland
+
+# After Proxmox snapshot + dry-run OK:
+sudo ./distro/scripts/ryoku-bootstrap --apply --user paulo \
+  --profile minimal --visual balanced --shell-style islands --compositor hyprland
+# or --profile full
+
+# Never: nix flake update, discard hosts/paulo, uninstall Niri, force-push, merge main.
+# Local .deb (safe): sudo /usr/local/libexec/ryoku-pkg-helper apt-install-deb /abs/path.deb
+# Private wallpaper (no GitHub): ryoku-import-wallpaper ~/Pictures/foo.jpg
+```
+
+## 4. Verify
+
+```bash
+./distro/scripts/ryoku-doctor
+test -f ~/.local/state/ryoku/build-info.json && cat ~/.local/state/ryoku/build-info.json
+grep -F repoPath distro/flake/hosts/paulo/default.nix   # must equal this checkout
+readlink -f ~/.config/hypr/hyprland.conf
+command -v ryoku-settings || echo "settings GUI not on PATH yet"
+```
+
+## 5. After next Hyprland GUI login
+
+```bash
+hyprctl configerrors
+hyprctl layers
+# Settings is nixGL-wrapped (Nix Qt6 + Debian Mesa). Prefer PATH launcher:
+ryoku-settings &
+# Debug without nixGL (expect EGL fail on Debian): ryoku-settings-unwrapped
+# VM-only software RHI diagnostic (not a module default):
+#   QT_QUICK_BACKEND=software ryoku-settings-unwrapped
+./distro/scripts/ryoku-doctor
+```
+
+## 6. HM build-then-switch (desktop user)
+
+```bash
+bash distro/scripts/ryoku-preserve-local backup
+home-manager build --flake "$PWD/distro/flake#$USER"
+# only after build exits 0:
+home-manager switch --flake "$PWD/distro/flake#$USER"
+# or: bash distro/scripts/ryoku-preserve-local hm-apply
+```
+
+## 7. Rollback
+
+```bash
+home-manager generations
+home-manager switch --rollback
+# Generation switch in Settings uses profile activate (not flake rebuild).
+# Prefs stamps: bash distro/scripts/ryoku-preserve-local list
+```
+
+## Status vocabulary
+
+| Code | Meaning |
+|------|---------|
+| `PASS_STATIC` | Repo/script checks without guest |
+| `PASS_BUILD` | Nix/Qt build succeeded |
+| `NOT_RUN` / `NOT_TESTABLE_HERE` / `GUEST_NOT_RUN` | Not proven here |
+| Never invent `PASS_MANUAL` / `PASS_GUEST` without guest evidence |

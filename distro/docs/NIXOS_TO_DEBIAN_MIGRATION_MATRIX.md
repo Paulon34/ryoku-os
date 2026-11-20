@@ -1,0 +1,48 @@
+# NixOS / ryoku-desktop → Debian Modular migration matrix
+
+**Sources:** `Paulon34/ryoku-desktop` (public) + this repo’s `distro/`.  
+**Not used:** private NixOS host trees / secrets (unauthorized).
+
+Install legend: **APT** | **Nix/HM** | **Flatpak** | **N/A**
+
+| App / concern | ryoku-desktop (NixOS/Hyprland) | Debian Modular method | Config port | Deps / notes | Compat | Gaps |
+|---------------|--------------------------------|------------------------|-------------|--------------|--------|------|
+| Compositor | Hyprland (HM) | **APT backports Hyprland** (default) + Nix Niri recovery | binds + GDM sessions | host Mesa / nixGL for Niri | Code ready | Guest Hyprland TBD |
+| Shell | DMS 1.5.3 + patches | **Nix/HM** `dms-shell-ryoku` | settings merge | quickshell, jq | Patches reused | Visual Quattro guest TBD |
+| Quickshell | via DMS | **Nix/HM** `pkgs.quickshell` | — | PATH wrapper | Required for ipc | SSH PATH was gap (fixed) |
+| Matugen | HM templates → hypr colors | **Nix/HM** → `niri/colors.kdl` + DMS `niri/dms/colors.kdl` | templates | wallpaper dir | Seeded | Guest live palette TBD |
+| Islands bar | DMS patches + styleBar | Same patches + `hosts/ryoku-islands` | HM merge | #26 enabled | Code ready | Guest screenshot TBD |
+| Wallpapers | assets CC0 | **HM** file tree | same assets | — | OK | — |
+| Kitty | HM + JetBrainsMono | **APT** pkg + **HM** config/font | kitty.nix | nerd-fonts Nix | OK | Fish shell optional |
+| File manager | (varies) | **APT** Thunar | — | — | OK | — |
+| Launcher | DMS / rofi | DMS spotlight + **APT/Nix** fuzzel fallback | scripts | — | OK | — |
+| Notifications | DMS (+ historical mako) | **DMS only** | — | — | Ownership fixed | — |
+| Network tray | NM applet | **APT** `network-manager-gnome` | Niri spawn | — | Wired | Needs APT apply once |
+| Polkit GUI | polkit_gnome | **APT** `mate-polkit` | spawn wrapper | — | Wired | — |
+| Clipboard | cliphist watchers | **Nix** cliphist + wl-paste | Niri spawn | wl-clipboard | Wired | — |
+| PipeWire | NixOS services | **APT** + user systemd at login | — | — | OK | Dummy sink on VM expected |
+| Portals | xdg-desktop-portal* | **APT** gtk+wlr | portals.conf | — | OK | — |
+| GDM session | SDDM astronaut (GPL QML) | **GDM** + ryoku-niri.desktop | session wrapper | — | OK | Astronaut not ported |
+| Ryoku Settings Qt | Nix app + polkit apply | **Nix/HM** `ryoku-settings` + Debian `ryoku-settings-apply` (HM switch) + Polkit `/usr/local/libexec/…` | GUI + apply helpers | Qt6, pkexec | Code ready | Guest Apply/polkit TBD |
+| Wallpaper persist | Settings + DMS + matugen | **Settings WallpaperApplier** + `change-wallpaper` → DMS + matugen + `~/.config/ryoku/current-wallpaper` | same | — | Code ready | Guest palette TBD |
+| ryoku-doctor / build-info | (NixOS generations UI) | **`distro/scripts/ryoku-doctor`** + HM `build-info.json` | — | read-only | Code ready | Guest stale-HM check TBD |
+| Video wallpaper | ryoku-video-wallpaper + mpvpaper | **Nix/HM** `video-wallpaper.nix` + `distro/scripts/ryoku-video-wallpaper` (VA-API, profiles, poster→matugen dark) | settings `wallpaperType`/`videoWallpaper` | mpvpaper, ffmpeg, jq | Code ready | Guest live mpvpaper **NOT_TESTED** |
+| dgop | optional monitor | **Nix** via DMS package + `~/.local/bin/dgop` | Quattro widgets | watch dgop→dux-gop rename; do not blind-replace | Wired (CPU/RAM/temp) | GPU widgets guest TBD |
+| Flatpaks | settings.json list | **APT** `flatpak` + Flathub via `ryoku-flatpak-sync`; Full IDs in `distro/flatpak/apps-full.txt`; Settings Apps + `apps.flatpakDeclared` | seed/merge settings.json | flatpak | Wired (static) | Guest Flathub install TBD |
+| Firefox / FM / terminal / archive / imv | mixed | **APT** firefox-esr, thunar, file-roller, kitty, imv | — | — | Wired | Guest launch TBD |
+| Full media/office | Nix multimedia | **APT** mpv/vlc/gimp/libreoffice-gtk3; Flatpak LocalSend/Telegram/Flatseal | packages-full + apps-full | — | Wired | Guest Full TBD |
+| Module groups Full | NixOS modules | **APT** `packages-full.txt` via `--profile full` + HM profile edition | bootstrap | — | Wired | Guest Full TBD |
+| External .deb | rare | `ryoku-pkg-helper apt-install-deb` (APT, not raw dpkg -i) | polkit | — | Wired | Guest .deb TBD |
+| Wallpapers | CC0 procedural | `distro/assets/wallpapers` + private `~/.local/share/ryoku/wallpapers-private` | matugen + Settings | — | Wired | Guest palette TBD |
+
+## Preserve Nix/HM where it still makes sense
+
+Keep **Nix pins** for: Niri, DMS+patches, Quickshell, Matugen, nixGL, fonts that APT lacks.  
+Keep **APT** for: GDM, Mesa, PipeWire, NM, portals, Thunar, Kitty binary, polkit/nm agents.
+
+## First migration actions (after desktop PASS)
+
+1. Export allowlisted prefs from NixOS/desktop only with user consent  
+2. Map packages through this matrix (no blind `nix-env` dump)  
+3. Apply Debian Modular profile dry-run → HM switch  
+4. Validate Quattro visually before expanding apps  

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Ryoku (Hyprland)
+Comment=Ryoku Wayland session on Hyprland (primary)
+Exec=ryoku-hyprland-session
+TryExec=ryoku-hyprland-session
+Type=Application
+DesktopNames=Hyprland
+X-GDM-SessionRegisters=true

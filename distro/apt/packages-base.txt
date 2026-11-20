@@ -1,0 +1,105 @@
+# Ryoku Debian foundation — APT packages (Debian 13 Trixie amd64)
+# One package per line. Comments and blank lines ignored.
+# Bootstrap never partitions disks or touches GRUB/bootloader config.
+# Minimal profile: usable browser / FM / terminal / archive / image /
+# screenshots / clipboard / audio / network / Flatpak plumbing.
+
+# Core
+# Required for the Debian guest's source-level C smoke checks and local
+# debugging: pulls gcc, g++, make, dpkg-dev and libc6-dev (ctype.h etc.).
+# Explicitly include the metapackage: gcc alone does NOT include C headers.
+build-essential
+ca-certificates
+curl
+git
+sudo
+dbus
+dbus-daemon
+dbus-session-bus-common
+dbus-user-session
+
+# Nix (Debian packages — prefer over upstream installer)
+nix-bin
+nix-setup-systemd
+
+# Display manager + session plumbing
+gdm3
+accountsservice
+
+# Wayland / graphics (host Mesa; Nix apps may still need nixGL)
+mesa-vulkan-drivers
+libegl1
+libgl1
+libglx-mesa0
+libgbm1
+libwayland-client0
+libwayland-server0
+xwayland
+seatd
+
+# Desktop essentials (APT)
+kitty
+thunar
+thunar-archive-plugin
+file-roller
+fuzzel
+firefox-esr
+imv
+xdg-utils
+xdg-user-dirs
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+xdg-desktop-portal-wlr
+
+# Screenshots / clipboard (host tools; HM may also provide grim/slurp)
+grim
+slurp
+wl-clipboard
+swappy
+
+# Flatpak plumbing (Flathub + declared apps: bootstrap / Settings)
+flatpak
+
+# Fonts / icons (minimal usable set)
+fonts-noto-core
+fonts-noto-color-emoji
+fonts-jetbrains-mono
+papirus-icon-theme
+
+# Network / audio / auth
+network-manager
+# nm-applet (Niri spawn-at-startup); without this the tray spawn fails every login.
+network-manager-gnome
+pipewire
+pipewire-pulse
+pipewire-audio
+wireplumber
+libspa-0.2-bluetooth
+polkitd
+pkexec
+rtkit
+# GUI polkit agent for pkexec prompts under Niri (GNOME Shell is not present).
+mate-polkit
+
+# Fonts / themes (minimal)
+fonts-dejavu-core
+adwaita-icon-theme
+# Host Adwaita-dark for APT Thunar/GTK3 (Nix gnome-themes-extra alone is not
+# always on the theme search path for /usr/bin apps).
+gnome-themes-extra
+
+# Hardware discovery and desktop diagnostics (both editions)
+pciutils
+usbutils
+python3
+jq
+mesa-utils
+vulkan-tools
+vainfo
+upower
+
+# Audio visualization for Ryoku Media Island (native Debian package).
+cava
+
+# Hyprland socket2 event client for smart video-wallpaper pause/unload.
+socat

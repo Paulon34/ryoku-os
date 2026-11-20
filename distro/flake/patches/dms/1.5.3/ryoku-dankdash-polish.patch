@@ -1,0 +1,863 @@
+--- a/Modules/DankDash/MediaPlayerTab.qml
++++ b/Modules/DankDash/MediaPlayerTab.qml
+@@ -453,7 +453,7 @@
+
+         DankIcon {
+             name: "music_note"
+-            size: Theme.iconSize * 2
++            size: Theme.iconSizeLarge
+             color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+--- a/Modules/DankDash/Overview/MediaOverviewCard.qml
++++ b/Modules/DankDash/Overview/MediaOverviewCard.qml
+@@ -4,7 +4,7 @@
+ import qs.Services
+ import qs.Widgets
+
+-// Ryoku 6G — media preview for ~294×146; art stays inside card (no 300ms Timer).
++// Ryoku — media preview for ~294×150; art stays inside card (no 300ms Timer).
+ Card {
+     id: root
+     clip: true
+@@ -35,7 +35,9 @@
+     }
+
+     Column {
+-        anchors.fill: parent
++        anchors.left: parent.left
++        anchors.right: parent.right
++        anchors.verticalCenter: parent.verticalCenter
+         spacing: Theme.spacingXS
+         visible: !!activePlayer
+
+@@ -59,6 +61,7 @@
+                         activePlayer: root.activePlayer
+                         albumSize: 56
+                         animationScale: 1.0
++                        showAnimation: false
+                     }
+                 }
+
+@@ -70,7 +73,7 @@
+                     StyledText {
+                         width: parent.width
+                         text: MprisController.stableTitle || I18n.tr("Unknown")
+-                        font.pixelSize: Theme.fontSizeSmall
++                        font.pixelSize: Theme.fontSizeMedium
+                         font.weight: Font.Medium
+                         color: Theme.surfaceText
+                         elide: Text.ElideRight
+@@ -108,23 +111,23 @@
+
+         Item {
+             width: parent.width
+-            height: 28
++            height: 32
+
+             Row {
+                 spacing: Theme.spacingXS
+                 anchors.centerIn: parent
+
+                 Rectangle {
+-                    width: 26
+-                    height: 26
+-                    radius: 13
++                    width: 28
++                    height: 28
++                    radius: 14
+                     anchors.verticalCenter: playPauseButton.verticalCenter
+                     color: prevArea.containsMouse ? Theme.primaryHoverLight : "transparent"
+
+                     DankIcon {
+                         anchors.centerIn: parent
+                         name: "skip_previous"
+-                        size: 14
++                        size: 18
+                         color: Theme.surfaceText
+                     }
+
+@@ -139,15 +142,15 @@
+
+                 Rectangle {
+                     id: playPauseButton
+-                    width: 28
+-                    height: 28
+-                    radius: 14
++                    width: 32
++                    height: 32
++                    radius: 16
+                     color: MediaAccentService.accent
+
+                     DankIcon {
+                         anchors.centerIn: parent
+                         name: activePlayer?.playbackState === MprisPlaybackState.Playing ? "pause" : "play_arrow"
+-                        size: 14
++                        size: 20
+                         color: MediaAccentService.onAccent
+                     }
+
+@@ -160,16 +163,16 @@
+                 }
+
+                 Rectangle {
+-                    width: 26
+-                    height: 26
+-                    radius: 13
++                    width: 28
++                    height: 28
++                    radius: 14
+                     anchors.verticalCenter: playPauseButton.verticalCenter
+                     color: nextArea.containsMouse ? Theme.primaryHoverLight : "transparent"
+
+                     DankIcon {
+                         anchors.centerIn: parent
+                         name: "skip_next"
+-                        size: 14
++                        size: 18
+                         color: Theme.surfaceText
+                     }
+
+--- a/Modules/DankDash/Overview/SystemMonitorCard.qml
++++ b/Modules/DankDash/Overview/SystemMonitorCard.qml
+@@ -3,7 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
+-// Ryoku 6G — compact monitor for right column (~294×112); labeled metrics.
++// Ryoku — compact monitor for right column (~294×112): quiet label, bar, strong value.
+ Card {
+     id: root
+
+@@ -14,185 +14,104 @@
+         DgopService.removeRef(["cpu", "memory", "system"]);
+     }
+
+-    Row {
+-        anchors.fill: parent
+-        spacing: Theme.spacingS
+-
+-        // CPU
+-        Column {
+-            width: (parent.width - Theme.spacingS * 2) / 3
+-            height: parent.height
+-            spacing: Theme.spacingXXS
+-
+-            StyledText {
+-                width: parent.width
+-                text: I18n.tr("CPU")
+-                font.pixelSize: Theme.fontSizeSmall
+-                font.weight: Font.Medium
+-                color: Theme.surfaceVariantText
+-                horizontalAlignment: Text.AlignHCenter
+-            }
+-
+-            Item {
+-                width: parent.width
+-                height: parent.height - Theme.fontSizeSmall * 2.6 - Theme.spacingXXS * 2
+-
+-                Rectangle {
+-                    width: 10
+-                    height: parent.height
+-                    radius: 5
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    color: Theme.outlineHeavy
+-
+-                    Rectangle {
+-                        width: parent.width
+-                        height: parent.height * Math.min((DgopService.cpuUsage || 0) / 100, 1)
+-                        radius: parent.radius
+-                        anchors.bottom: parent.bottom
+-                        anchors.horizontalCenter: parent.horizontalCenter
+-                        color: {
+-                            if (DgopService.cpuUsage > 80)
+-                                return Theme.error;
+-                            if (DgopService.cpuUsage > 60)
+-                                return Theme.warning;
+-                            return Theme.primary;
+-                        }
++    component Metric: Column {
++        id: metric
+
+-                        Behavior on height {
+-                            NumberAnimation {
+-                                duration: Theme.shortDuration
+-                                easing.type: Theme.standardEasing
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-
+-            StyledText {
+-                width: parent.width
+-                text: Math.round(DgopService.cpuUsage || 0) + "%"
+-                font.pixelSize: Theme.fontSizeSmall
+-                color: Theme.surfaceText
+-                horizontalAlignment: Text.AlignHCenter
+-            }
++        property string label: ""
++        property string valueText: ""
++        property real ratio: 0
++        property real warnAt: 0
++        property real errorAt: 0
++        property real value: 0
++
++        width: (parent.width - Theme.spacingS * 2) / 3
++        height: parent.height
++        spacing: Theme.spacingXXS
++
++        StyledText {
++            id: labelText
++            width: parent.width
++            text: metric.label
++            font.pixelSize: Theme.fontSizeSmall
++            color: Theme.surfaceVariantText
++            horizontalAlignment: Text.AlignHCenter
+         }
+
+-        // RAM
+-        Column {
+-            width: (parent.width - Theme.spacingS * 2) / 3
+-            height: parent.height
+-            spacing: Theme.spacingXXS
+-
+-            StyledText {
+-                width: parent.width
+-                text: I18n.tr("RAM")
+-                font.pixelSize: Theme.fontSizeSmall
+-                font.weight: Font.Medium
+-                color: Theme.surfaceVariantText
+-                horizontalAlignment: Text.AlignHCenter
+-            }
+-
+-            Item {
+-                width: parent.width
+-                height: parent.height - Theme.fontSizeSmall * 2.6 - Theme.spacingXXS * 2
++        Item {
++            width: parent.width
++            height: Math.max(0, parent.height - labelText.height - valueLabel.height - parent.spacing * 2)
++
++            Rectangle {
++                width: 10
++                height: parent.height
++                radius: 5
++                anchors.horizontalCenter: parent.horizontalCenter
++                color: Theme.outlineHeavy
+
+                 Rectangle {
+-                    width: 10
+-                    height: parent.height
+-                    radius: 5
++                    width: parent.width
++                    height: parent.height * Math.min(Math.max(metric.ratio, 0), 1)
++                    radius: parent.radius
++                    anchors.bottom: parent.bottom
+                     anchors.horizontalCenter: parent.horizontalCenter
+-                    color: Theme.outlineHeavy
+-
+-                    Rectangle {
+-                        width: parent.width
+-                        height: parent.height * Math.min((DgopService.memoryUsage || 0) / 100, 1)
+-                        radius: parent.radius
+-                        anchors.bottom: parent.bottom
+-                        anchors.horizontalCenter: parent.horizontalCenter
+-                        color: {
+-                            if (DgopService.memoryUsage > 90)
+-                                return Theme.error;
+-                            if (DgopService.memoryUsage > 75)
+-                                return Theme.warning;
+-                            return Theme.primary;
+-                        }
++                    color: {
++                        if (metric.value > metric.errorAt)
++                            return Theme.error;
++                        if (metric.value > metric.warnAt)
++                            return Theme.warning;
++                        return Theme.primary;
++                    }
+
+-                        Behavior on height {
+-                            NumberAnimation {
+-                                duration: Theme.shortDuration
+-                                easing.type: Theme.standardEasing
+-                            }
++                    Behavior on height {
++                        NumberAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
+                         }
+                     }
+                 }
+             }
+-
+-            StyledText {
+-                width: parent.width
+-                text: Math.round(DgopService.memoryUsage || 0) + "%"
+-                font.pixelSize: Theme.fontSizeSmall
+-                color: Theme.surfaceText
+-                horizontalAlignment: Text.AlignHCenter
+-            }
+         }
+
+-        // TEMP
+-        Column {
+-            width: (parent.width - Theme.spacingS * 2) / 3
+-            height: parent.height
+-            spacing: Theme.spacingXXS
+-
+-            StyledText {
+-                width: parent.width
+-                text: I18n.tr("TEMP")
+-                font.pixelSize: Theme.fontSizeSmall
+-                font.weight: Font.Medium
+-                color: Theme.surfaceVariantText
+-                horizontalAlignment: Text.AlignHCenter
+-            }
+-
+-            Item {
+-                width: parent.width
+-                height: parent.height - Theme.fontSizeSmall * 2.6 - Theme.spacingXXS * 2
++        StyledText {
++            id: valueLabel
++            width: parent.width
++            text: metric.valueText
++            font.pixelSize: Theme.fontSizeMedium
++            font.weight: Font.Medium
++            color: Theme.surfaceText
++            horizontalAlignment: Text.AlignHCenter
++        }
++    }
+
+-                Rectangle {
+-                    width: 10
+-                    height: parent.height
+-                    radius: 5
+-                    anchors.horizontalCenter: parent.horizontalCenter
+-                    color: Theme.outlineHeavy
++    Row {
++        anchors.fill: parent
++        spacing: Theme.spacingS
+
+-                    Rectangle {
+-                        width: parent.width
+-                        height: parent.height * Math.min(Math.max((DgopService.cpuTemperature || 0) / 100, 0), 1)
+-                        radius: parent.radius
+-                        anchors.bottom: parent.bottom
+-                        anchors.horizontalCenter: parent.horizontalCenter
+-                        color: {
+-                            if (DgopService.cpuTemperature > 85)
+-                                return Theme.error;
+-                            if (DgopService.cpuTemperature > 69)
+-                                return Theme.warning;
+-                            return Theme.primary;
+-                        }
++        Metric {
++            label: I18n.tr("CPU")
++            value: DgopService.cpuUsage || 0
++            ratio: value / 100
++            valueText: Math.round(value) + "%"
++            warnAt: 60
++            errorAt: 80
++        }
+
+-                        Behavior on height {
+-                            NumberAnimation {
+-                                duration: Theme.shortDuration
+-                                easing.type: Theme.standardEasing
+-                            }
+-                        }
+-                    }
+-                }
+-            }
++        Metric {
++            label: I18n.tr("RAM")
++            value: DgopService.memoryUsage || 0
++            ratio: value / 100
++            valueText: Math.round(value) + "%"
++            warnAt: 75
++            errorAt: 90
++        }
+
+-            StyledText {
+-                width: parent.width
+-                text: Math.round(DgopService.cpuTemperature || 0) + "°"
+-                font.pixelSize: Theme.fontSizeSmall
+-                color: Theme.surfaceText
+-                horizontalAlignment: Text.AlignHCenter
+-            }
++        Metric {
++            label: I18n.tr("TEMP")
++            value: DgopService.cpuTemperature || 0
++            ratio: value / 100
++            valueText: Math.round(value) + "°"
++            warnAt: 69
++            errorAt: 85
+         }
+     }
+ }
+--- a/Modules/DankDash/Overview/UserInfoCard.qml
++++ b/Modules/DankDash/Overview/UserInfoCard.qml
+@@ -3,7 +3,8 @@
+ import qs.Services
+ import qs.Widgets
+
+-// Ryoku 6G — user utility sized for ~52% of right column (~149×136).
++// Ryoku — user utility. Narrow card (weather on) stacks avatar above text so
++// nothing elides; wide card (weather off) keeps avatar beside text.
+ Card {
+     id: root
+
+@@ -13,102 +14,105 @@
+     Component.onCompleted: DgopService.addRef("system")
+     Component.onDestruction: DgopService.removeRef("system")
+
+-    readonly property real textColWidth: Math.max(40, width - pad * 2 - 44 - Theme.spacingS)
++    readonly property bool stacked: width < 220
++    readonly property int avatarSize: Theme.iconSizeLarge
++    readonly property int metaIconSize: 14
++
++    DankCircularImage {
++        id: avatarContainer
++        width: root.avatarSize
++        height: root.avatarSize
++        anchors.left: parent.left
++        anchors.top: root.stacked ? parent.top : undefined
++        anchors.verticalCenter: root.stacked ? undefined : parent.verticalCenter
++        imageSource: {
++            if (PortalService.profileImage === "")
++                return "";
++            if (PortalService.profileImage.startsWith("/"))
++                return "file://" + PortalService.profileImage;
++            return PortalService.profileImage;
++        }
++        fallbackIcon: "material:person"
++    }
+
+-    Row {
+-        anchors.fill: parent
+-        spacing: Theme.spacingS
+-
+-        DankCircularImage {
+-            id: avatarContainer
+-            width: 44
+-            height: 44
+-            anchors.verticalCenter: parent.verticalCenter
+-            imageSource: {
+-                if (PortalService.profileImage === "")
+-                    return "";
+-                if (PortalService.profileImage.startsWith("/"))
+-                    return "file://" + PortalService.profileImage;
+-                return PortalService.profileImage;
+-            }
+-            fallbackIcon: "person"
++    Column {
++        spacing: Theme.spacingXXS
++        anchors.left: root.stacked ? parent.left : avatarContainer.right
++        anchors.leftMargin: root.stacked ? 0 : Theme.spacingM
++        anchors.right: parent.right
++        anchors.top: root.stacked ? avatarContainer.bottom : undefined
++        anchors.topMargin: root.stacked ? Theme.spacingS : 0
++        anchors.verticalCenter: root.stacked ? undefined : parent.verticalCenter
++
++        StyledText {
++            width: parent.width
++            text: UserInfoService.fullName || UserInfoService.username || ""
++            font.pixelSize: Theme.fontSizeMedium
++            font.weight: Font.Medium
++            color: Theme.surfaceText
++            elide: Text.ElideRight
++            maximumLineCount: 1
++            wrapMode: Text.NoWrap
+         }
+
+-        Column {
+-            width: root.textColWidth
+-            spacing: Theme.spacingXXS
+-            anchors.verticalCenter: parent.verticalCenter
++        Row {
++            width: parent.width
++            spacing: Theme.spacingXS
++
++            SystemLogo {
++                width: root.metaIconSize
++                height: root.metaIconSize
++                anchors.verticalCenter: parent.verticalCenter
++                colorOverride: Theme.surfaceVariantText
++            }
+
+             StyledText {
+-                width: parent.width
+-                text: UserInfoService.fullName || UserInfoService.username || ""
+-                font.pixelSize: Theme.fontSizeMedium
+-                font.weight: Font.Medium
+-                color: Theme.surfaceText
++                width: parent.width - root.metaIconSize - Theme.spacingXS
++                text: {
++                    if (CompositorService.isNiri)
++                        return I18n.tr("on Niri");
++                    if (CompositorService.isHyprland)
++                        return I18n.tr("on Hyprland");
++                    if (CompositorService.isMango)
++                        return I18n.tr("on MangoWC");
++                    if (CompositorService.isSway)
++                        return I18n.tr("on Sway");
++                    if (CompositorService.isScroll)
++                        return I18n.tr("on Scroll");
++                    if (CompositorService.isMiracle)
++                        return I18n.tr("on Miracle WM");
++                    return "";
++                }
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceVariantText
++                anchors.verticalCenter: parent.verticalCenter
+                 elide: Text.ElideRight
+                 maximumLineCount: 1
+                 wrapMode: Text.NoWrap
+             }
++        }
+
+-            Row {
+-                width: parent.width
+-                spacing: Theme.spacingXS
+-
+-                SystemLogo {
+-                    width: 14
+-                    height: 14
+-                    anchors.verticalCenter: parent.verticalCenter
+-                    colorOverride: Theme.primary
+-                }
+-
+-                StyledText {
+-                    width: parent.width - 14 - Theme.spacingXS
+-                    text: {
+-                        if (CompositorService.isNiri)
+-                            return I18n.tr("on Niri");
+-                        if (CompositorService.isHyprland)
+-                            return I18n.tr("on Hyprland");
+-                        if (CompositorService.isMango)
+-                            return I18n.tr("on MangoWC");
+-                        if (CompositorService.isSway)
+-                            return I18n.tr("on Sway");
+-                        if (CompositorService.isScroll)
+-                            return I18n.tr("on Scroll");
+-                        if (CompositorService.isMiracle)
+-                            return I18n.tr("on Miracle WM");
+-                        return "";
+-                    }
+-                    font.pixelSize: Theme.fontSizeSmall
+-                    color: Theme.surfaceVariantText
+-                    anchors.verticalCenter: parent.verticalCenter
+-                    elide: Text.ElideRight
+-                    maximumLineCount: 1
+-                    wrapMode: Text.NoWrap
+-                }
++        Row {
++            width: parent.width
++            spacing: Theme.spacingXS
++            visible: !!DgopService.shortUptime
++
++            DankIcon {
++                name: "schedule"
++                size: root.metaIconSize
++                color: Theme.surfaceVariantText
++                anchors.verticalCenter: parent.verticalCenter
+             }
+
+-            Row {
+-                width: parent.width
+-                spacing: Theme.spacingXS
+-                visible: !!DgopService.shortUptime
+-
+-                DankIcon {
+-                    name: "schedule"
+-                    size: 14
+-                    color: Theme.primary
+-                    anchors.verticalCenter: parent.verticalCenter
+-                }
+-
+-                StyledText {
+-                    width: parent.width - 14 - Theme.spacingXS
+-                    text: I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + (DgopService.shortUptime || "").slice(2)
+-                    font.pixelSize: Theme.fontSizeSmall
+-                    color: Theme.surfaceVariantText
+-                    anchors.verticalCenter: parent.verticalCenter
+-                    elide: Text.ElideRight
+-                    maximumLineCount: 1
+-                    wrapMode: Text.NoWrap
+-                }
++            StyledText {
++                width: parent.width - root.metaIconSize - Theme.spacingXS
++                text: I18n.tr("up", "uptime prefix, e.g. 'up 4h 2m'") + (DgopService.shortUptime || "").slice(2)
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceVariantText
++                anchors.verticalCenter: parent.verticalCenter
++                elide: Text.ElideRight
++                maximumLineCount: 1
++                wrapMode: Text.NoWrap
+             }
+         }
+     }
+--- a/Modules/DankDash/Overview/WeatherOverviewCard.qml
++++ b/Modules/DankDash/Overview/WeatherOverviewCard.qml
+@@ -3,7 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
+-// Ryoku 6G — weather preview sized for ~48% of right column (~137×136).
++// Ryoku — weather preview sized for ~48% of right column (~137×136).
+ Card {
+     id: root
+
+@@ -15,6 +15,15 @@
+     Component.onCompleted: WeatherService.addRef()
+     Component.onDestruction: WeatherService.removeRef()
+
++    // Same "max/min" format as the Weather tab forecast cells.
++    readonly property string highLowText: {
++        SettingsData.useFahrenheit;
++        const f = WeatherService.weather.forecast?.[0];
++        const hi = WeatherService.formatTemp(f?.tempMax);
++        const lo = WeatherService.formatTemp(f?.tempMin);
++        return hi !== null && lo !== null ? hi + "/" + lo : "";
++    }
++
+     Column {
+         anchors.centerIn: parent
+         spacing: Theme.spacingXS
+@@ -29,7 +38,7 @@
+
+         DankIcon {
+             name: "cloud_off"
+-            size: 22
++            size: Theme.iconSize
+             color: Theme.surfaceVariantText
+             visible: !WeatherService.weather.loading
+             anchors.horizontalCenter: parent.horizontalCenter
+@@ -54,14 +63,15 @@
+             spacing: Theme.spacingS
+
+             DankIcon {
++                id: conditionIcon
+                 name: WeatherService.getWeatherIcon(WeatherService.weather.wCode)
+-                size: 36
++                size: Theme.iconSizeLarge
+                 color: Theme.primary
+                 anchors.verticalCenter: parent.verticalCenter
+             }
+
+             StyledText {
+-                width: parent.width - 36 - Theme.spacingS
++                width: parent.width - conditionIcon.width - Theme.spacingS
+                 anchors.verticalCenter: parent.verticalCenter
+                 text: {
+                     const temp = SettingsData.useFahrenheit ? WeatherService.weather.tempF : WeatherService.weather.temp;
+@@ -78,6 +88,11 @@
+             }
+         }
+
++        Item {
++            width: parent.width
++            height: Theme.spacingXS
++        }
++
+         StyledText {
+             width: parent.width
+             text: WeatherService.getWeatherCondition(WeatherService.weather.wCode)
+@@ -87,6 +102,17 @@
+             wrapMode: Text.WordWrap
+             maximumLineCount: 2
+         }
++
++        StyledText {
++            width: parent.width
++            text: root.highLowText
++            visible: text.length > 0
++            font.pixelSize: Theme.fontSizeSmall
++            color: Theme.surfaceVariantText
++            elide: Text.ElideRight
++            maximumLineCount: 1
++            wrapMode: Text.NoWrap
++        }
+     }
+
+     MouseArea {
+--- a/Modules/DankDash/WallpaperTab.qml
++++ b/Modules/DankDash/WallpaperTab.qml
+@@ -636,7 +636,7 @@
+
+                 DankIcon {
+                     name: "wallpaper"
+-                    size: Theme.iconSize * 2
++                    size: Theme.iconSizeLarge
+                     color: Theme.surfaceVariantText
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -681,7 +681,7 @@
+
+                     DankActionButton {
+                         anchors.verticalCenter: parent.verticalCenter
+-                        iconName: "skip_previous"
++                        iconName: "chevron_left"
+                         iconSize: 20
+                         buttonSize: 32
+                         enabled: totalPages > 1
+@@ -699,7 +699,7 @@
+                         id: pageIndicator
+                         anchors.verticalCenter: parent.verticalCenter
+                         text: wallpaperFolderModel.count > 0 ? (wallpaperFolderModel.count === 1 ? I18n.tr("%1 wallpaper  •  %2 / %3").arg(wallpaperFolderModel.count).arg(currentPage + 1).arg(totalPages) : I18n.tr("%1 wallpapers  •  %2 / %3").arg(wallpaperFolderModel.count).arg(currentPage + 1).arg(totalPages)) : I18n.tr("No wallpapers")
+-                        font.pixelSize: 14
++                        font.pixelSize: Theme.fontSizeMedium
+                         color: pageIndicatorMouseArea.containsMouse && pageIndicatorMouseArea.enabled ? Theme.primary : Theme.surfaceVariantText
+                         opacity: 0.9
+
+@@ -725,7 +725,7 @@
+
+                     DankActionButton {
+                         anchors.verticalCenter: parent.verticalCenter
+-                        iconName: "skip_next"
++                        iconName: "chevron_right"
+                         iconSize: 20
+                         buttonSize: 32
+                         enabled: totalPages > 1
+--- a/Modules/DankDash/WeatherForecastCard.qml
++++ b/Modules/DankDash/WeatherForecastCard.qml
+@@ -3,7 +3,7 @@
+ import qs.Services
+ import qs.Widgets
+
+-// Ryoku 6F — compact forecast cell; chrome aligned with Overview Card.
++// Ryoku — compact forecast cell; chrome aligned with Overview Card.
+ Rectangle {
+     id: root
+     radius: Theme.cornerRadius
+@@ -92,12 +92,13 @@
+         {
+             "name": I18n.tr("Visibility"),
+             "text": root.visibilityText,
+-            "icon": "wb_sunny"
++            "icon": "visibility"
+         }
+     ]
+
+     color: isCurrent ? Theme.primaryHover : Theme.nestedSurface
+-    border.width: 0
++    border.color: isCurrent ? Theme.withAlpha(Theme.primary, 0.5) : Theme.withAlpha(Theme.outline, 0.22)
++    border.width: 1
+
+     Behavior on color {
+         ColorAnimation {
+@@ -194,7 +195,7 @@
+
+                         DankIcon {
+                             name: root.values[index].icon
+-                            size: 8
++                            size: 12
+                             color: Theme.surfaceVariantText
+                             anchors.verticalCenter: parent.verticalCenter
+                         }
+--- a/Modules/DankDash/WeatherTab.qml
++++ b/Modules/DankDash/WeatherTab.qml
+@@ -136,7 +136,7 @@
+
+         DankIcon {
+             name: "cloud_off"
+-            size: Theme.iconSize * 2
++            size: Theme.iconSizeLarge
+             color: Theme.surfaceVariantText
+             anchors.horizontalCenter: parent.horizontalCenter
+         }
+@@ -192,14 +192,15 @@
+         visible: root.available
+         spacing: Theme.spacingXS
+
+-        // Ryoku 6F — current conditions hero; no heavy outline.
++        // Ryoku — current conditions hero; same thin outline as Overview cards.
+         Rectangle {
+             id: heroCard
+             width: parent.width
+             height: heroContent.height + Theme.spacingM * 2
+             radius: Theme.cornerRadius
+             color: Theme.nestedSurface
+-            border.width: 0
++            border.color: Theme.withAlpha(Theme.outline, 0.22)
++            border.width: 1
+
+             Column {
+                 id: heroContent
+--- a/translations/poexports/pt.json
++++ b/translations/poexports/pt.json
+@@ -150,10 +150,10 @@
+     "%1 variants": "%1 variantes"
+   },
+   "%1 wallpaper  •  %2 / %3": {
+-    "%1 wallpaper  •  %2 / %3": ""
++    "%1 wallpaper  •  %2 / %3": "%1 papel de parede  •  %2 / %3"
+   },
+   "%1 wallpapers  •  %2 / %3": {
+-    "%1 wallpapers  •  %2 / %3": ""
++    "%1 wallpapers  •  %2 / %3": "%1 papéis de parede  •  %2 / %3"
+   },
+   "%1 widgets": {
+     "%1 widgets": "%1 widgets"
+@@ -5271,7 +5271,7 @@
+     "Next Transition": "Próxima Transição"
+   },
+   "Next page": {
+-    "Next page": ""
++    "Next page": "Próxima página"
+   },
+   "Night": {
+     "Night": "Noite"
+@@ -5352,13 +5352,13 @@
+     "No VPN profiles": "Sem perfis de VPN"
+   },
+   "No Weather": {
+-    "No Weather": ""
++    "No Weather": "Clima indisponível"
+   },
+   "No Weather Data": {
+     "No Weather Data": "Sem Dados Meteorológicos"
+   },
+   "No Weather Data Available": {
+-    "No Weather Data Available": "Informações de Clima não dispóniveis"
++    "No Weather Data Available": "Dados de clima indisponíveis"
+   },
+   "No action": {
+     "No action": "Nenhuma ação"
+@@ -5589,7 +5589,7 @@
+     "No wallpaper selected": "Nenhum papel de parede selecionado"
+   },
+   "No wallpapers": {
+-    "No wallpapers": ""
++    "No wallpapers": "Nenhum papel de parede"
+   },
+   "No wallpapers found\n\nClick the folder icon below to browse": {
+     "No wallpapers found\n\nClick the folder icon below to browse": "Nenhum papel de parede encontrado\n\nClique no ícone de pasta abaixo para navegar"
+@@ -6408,7 +6408,7 @@
+     "Previous": ""
+   },
+   "Previous page": {
+-    "Previous page": ""
++    "Previous page": "Página anterior"
+   },
+   "Primary": {
+     "Primary": "Primário"
+@@ -9538,5 +9538,17 @@
+   },
+   "↑/↓: Navigate • Enter: Paste • Ctrl+C: Copy • Del: Delete • Ctrl+E: Edit • Ctrl+S: Pin/Unpin • F10: Help": {
+     "↑/↓: Navigate • Enter: Paste • Ctrl+C: Copy • Del: Delete • Ctrl+E: Edit • Ctrl+S: Pin/Unpin • F10: Help": ""
++  },
++  "uptime prefix, e.g. 'up 4h 2m'": {
++    "up": "ativo há"
++  },
++  "weather high low": {
++    "H:%1°  L:%2°": "Máx. %1°  Mín. %2°"
++  },
++  "No wallpapers found": {
++    "No wallpapers found": "Nenhum papel de parede encontrado"
++  },
++  "Click the folder icon below to browse": {
++    "Click the folder icon below to browse": "Clique no ícone de pasta abaixo para navegar"
+   }
+ }

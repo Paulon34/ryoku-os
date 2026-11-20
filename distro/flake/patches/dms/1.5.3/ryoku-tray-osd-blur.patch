@@ -1,0 +1,64 @@
+diff -ruN a/Modules/DankBar/Widgets/SystemTrayBar.qml b/Modules/DankBar/Widgets/SystemTrayBar.qml
+--- a/Modules/DankBar/Widgets/SystemTrayBar.qml
++++ b/Modules/DankBar/Widgets/SystemTrayBar.qml
+@@ -1030,12 +1030,14 @@
+     PanelWindow {
+         id: overflowMenu
+
++        // Blur tracks the container's scale × opacity so it never exceeds the visible card.
+         WindowBlur {
+             targetWindow: overflowMenu
+-            blurX: menuContainer.x
+-            blurY: menuContainer.y
+-            blurWidth: root.menuOpen ? menuContainer.width : 0
+-            blurHeight: root.menuOpen ? menuContainer.height : 0
++            readonly property real s: Math.min(1, menuContainer.scale) * Math.max(0, menuContainer.opacity)
++            blurX: menuContainer.x + menuContainer.width * (1 - s) * 0.5
++            blurY: menuContainer.y + menuContainer.height * (1 - s) * 0.5
++            blurWidth: menuContainer.width * s
++            blurHeight: menuContainer.height * s
+             blurRadius: Theme.cornerRadius
+         }
+
+@@ -1570,12 +1572,14 @@
+             PanelWindow {
+                 id: menuWindow
+
++                // Blur tracks the container's scale × opacity so it never exceeds the visible card.
+                 WindowBlur {
+                     targetWindow: menuWindow
+-                    blurX: trayMenuContainer.x
+-                    blurY: trayMenuContainer.y
+-                    blurWidth: menuRoot.showMenu ? trayMenuContainer.width : 0
+-                    blurHeight: menuRoot.showMenu ? trayMenuContainer.height : 0
++                    readonly property real s: Math.min(1, trayMenuContainer.scale) * Math.max(0, trayMenuContainer.opacity)
++                    blurX: trayMenuContainer.x + trayMenuContainer.width * (1 - s) * 0.5
++                    blurY: trayMenuContainer.y + trayMenuContainer.height * (1 - s) * 0.5
++                    blurWidth: trayMenuContainer.width * s
++                    blurHeight: trayMenuContainer.height * s
+                     blurRadius: Theme.cornerRadius
+                 }
+
+diff -ruN a/Widgets/DankOSD.qml b/Widgets/DankOSD.qml
+--- a/Widgets/DankOSD.qml
++++ b/Widgets/DankOSD.qml
+@@ -100,12 +100,16 @@
+     WlrLayershell.exclusiveZone: -1
+     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
++    // Blur follows the card's scale × opacity (same as notification popups), so it stays
++    // inside the visible card while it animates and fades out with it on hide instead of
++    // vanishing before the fade starts.
+     WindowBlur {
+         targetWindow: root
+-        blurX: shadowBuffer
+-        blurY: shadowBuffer
+-        blurWidth: shouldBeVisible ? alignedWidth : 0
+-        blurHeight: shouldBeVisible ? alignedHeight : 0
++        readonly property real s: Math.min(1, osdContainer.scale) * Math.max(0, osdContainer.opacity)
++        blurX: shadowBuffer + alignedWidth * (1 - s) * 0.5
++        blurY: shadowBuffer + alignedHeight * (1 - s) * 0.5
++        blurWidth: alignedWidth * s
++        blurHeight: alignedHeight * s
+         blurRadius: Theme.cornerRadius
+     }

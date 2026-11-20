@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Ryoku Settings
+Name[pt_BR]=Configurações Ryoku
+GenericName=System Settings
+GenericName[pt_BR]=Configurações do sistema
+Comment=Configure the Ryoku Desktop Experience
+Comment[pt_BR]=Configurar a aparência e o sistema Ryoku
+Exec=ryoku-settings
+TryExec=ryoku-settings
+Icon=org.ryoku.Settings
+Terminal=false
+Categories=Settings;DesktopSettings;System;
+Keywords=Ryoku;Settings;System;Configurações;Preferências;Control Center;Painel;
+StartupNotify=true
+StartupWMClass=org.ryoku.Settings

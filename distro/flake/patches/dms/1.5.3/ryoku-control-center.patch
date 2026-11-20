@@ -1,0 +1,925 @@
+diff -ruN a/Modules/ControlCenter/Components/ActionTile.qml b/Modules/ControlCenter/Components/ActionTile.qml
+--- a/Modules/ControlCenter/Components/ActionTile.qml
++++ b/Modules/ControlCenter/Components/ActionTile.qml
+@@ -20,19 +20,17 @@
+
+     width: parent ? parent.width : 200
+     height: 60
+-    radius: {
+-        if (Theme.cornerRadius === 0)
+-            return 0;
+-        return isActive ? Theme.cornerRadius : Theme.cornerRadius + 4;
+-    }
++    // Ryoku CC: consistent Material You radius (no inactive inflation)
++    radius: Theme.cornerRadius
+
+     readonly property color _tileBgActive: Theme.ccTileActiveBg
+     readonly property color _tileBgInactive: Theme.ccPillInactiveBg
+     readonly property color _tileRingActive: Theme.ccTileRing
+
+     color: isActive ? _tileBgActive : _tileBgInactive
+-    border.color: isActive ? _tileRingActive : Theme.outlineMedium
+-    border.width: isActive ? 1 : Theme.layerOutlineWidth
++    // Ryoku CC: ON = subtle primary ring; OFF = no outline
++    border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: isActive ? 1 : 0
+     opacity: enabled ? 1.0 : 0.6
+
+     function hoverTint(base) {
+diff -ruN a/Modules/ControlCenter/Components/HeaderPane.qml b/Modules/ControlCenter/Components/HeaderPane.qml
+--- a/Modules/ControlCenter/Components/HeaderPane.qml
++++ b/Modules/ControlCenter/Components/HeaderPane.qml
+@@ -19,24 +19,25 @@
+     Component.onCompleted: DgopService.addRef("system")
+     Component.onDestruction: DgopService.removeRef("system")
+
+-    implicitHeight: 70
++    // Ryoku CC: compact header — less card, more status strip
++    implicitHeight: 52
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+
+     Row {
+         anchors.left: parent.left
+         anchors.verticalCenter: parent.verticalCenter
+-        anchors.leftMargin: Theme.spacingL
+-        anchors.rightMargin: Theme.spacingL
+-        spacing: Theme.spacingM
++        anchors.leftMargin: Theme.spacingM
++        anchors.rightMargin: Theme.spacingM
++        spacing: Theme.spacingS
+
+         DankCircularImage {
+             id: avatarContainer
+
+-            width: 60
+-            height: 60
++            width: 36
++            height: 36
+             imageSource: {
+                 if (PortalService.profileImage === "")
+                     return "";
+@@ -51,7 +52,7 @@
+
+         Column {
+             anchors.verticalCenter: parent.verticalCenter
+-            spacing: Theme.spacingXXS
++            spacing: 0
+
+             Typography {
+                 text: UserInfoService.fullName || UserInfoService.username || I18n.tr("User")
+@@ -67,52 +68,63 @@
+         }
+     }
+
+-    Row {
+-        id: actionButtonsRow
++    // Discrete action cluster — same signals, smaller footprint, comfortable hit targets
++    Rectangle {
++        id: actionCluster
+         anchors.right: parent.right
+         anchors.verticalCenter: parent.verticalCenter
+-        anchors.rightMargin: Theme.spacingXS
+-        spacing: Theme.spacingXS
+-
+-        DankActionButton {
+-            buttonSize: 36
+-            iconName: "lock"
+-            iconSize: Theme.iconSize - 4
+-            iconColor: Theme.surfaceText
+-            backgroundColor: "transparent"
+-            onClicked: {
+-                root.lockRequested();
++        anchors.rightMargin: Theme.spacingS
++        height: 36
++        width: actionButtonsRow.width + Theme.spacingXXS * 2
++        radius: height / 2
++        color: Theme.withAlpha(Theme.surfaceContainerHigh, 0.35)
++        border.width: 0
++
++        Row {
++            id: actionButtonsRow
++            anchors.centerIn: parent
++            spacing: 0
++
++            DankActionButton {
++                buttonSize: 32
++                iconName: "lock"
++                iconSize: Theme.iconSize - 6
++                iconColor: Theme.surfaceText
++                backgroundColor: "transparent"
++                onClicked: {
++                    root.lockRequested();
++                }
+             }
+-        }
+
+-        DankActionButton {
+-            buttonSize: 36
+-            iconName: "power_settings_new"
+-            iconSize: Theme.iconSize - 4
+-            iconColor: Theme.surfaceText
+-            backgroundColor: "transparent"
+-            onClicked: root.powerButtonClicked()
+-        }
++            DankActionButton {
++                buttonSize: 32
++                iconName: "power_settings_new"
++                iconSize: Theme.iconSize - 6
++                iconColor: Theme.surfaceText
++                backgroundColor: "transparent"
++                onClicked: root.powerButtonClicked()
++            }
+
+-        DankActionButton {
+-            buttonSize: 36
+-            iconName: "settings"
+-            iconSize: Theme.iconSize - 4
+-            iconColor: Theme.surfaceText
+-            backgroundColor: "transparent"
+-            onClicked: {
+-                root.settingsButtonClicked();
+-                PopoutService.focusOrToggleSettings();
++            DankActionButton {
++                buttonSize: 32
++                iconName: "settings"
++                iconSize: Theme.iconSize - 6
++                iconColor: Theme.surfaceText
++                backgroundColor: "transparent"
++                onClicked: {
++                    root.settingsButtonClicked();
++                    PopoutService.focusOrToggleSettings();
++                }
+             }
+-        }
+
+-        DankActionButton {
+-            buttonSize: 36
+-            iconName: editMode ? "done" : "edit"
+-            iconSize: Theme.iconSize - 4
+-            iconColor: editMode ? Theme.primary : Theme.surfaceText
+-            backgroundColor: "transparent"
+-            onClicked: root.editModeToggled()
++            DankActionButton {
++                buttonSize: 32
++                iconName: editMode ? "done" : "edit"
++                iconSize: Theme.iconSize - 6
++                iconColor: editMode ? Theme.primary : Theme.surfaceText
++                backgroundColor: "transparent"
++                onClicked: root.editModeToggled()
++            }
+         }
+     }
+ }
+diff -ruN a/Modules/ControlCenter/Widgets/AudioSliderRow.qml b/Modules/ControlCenter/Widgets/AudioSliderRow.qml
+--- a/Modules/ControlCenter/Widgets/AudioSliderRow.qml
++++ b/Modules/ControlCenter/Widgets/AudioSliderRow.qml
+@@ -13,14 +13,16 @@
+     property color sliderTrackColor: "transparent"
+     property real sliderTrackOpacity: Theme.ccSliderTrackOpacity
+
+-    height: 40
++    // Ryoku CC: align with DankSlider height
++    height: 36
+     spacing: 0
+
++    // Ryoku CC: compact icon hit target without permanent pill chrome
+     Rectangle {
+-        width: Theme.iconSize + Theme.spacingS * 2
+-        height: Theme.iconSize + Theme.spacingS * 2
++        width: Theme.iconSize + Theme.spacingXS * 2
++        height: Theme.iconSize + Theme.spacingXS * 2
+         anchors.verticalCenter: parent.verticalCenter
+-        radius: (Theme.iconSize + Theme.spacingS * 2) / 2
++        radius: width / 2
+         color: iconArea.containsMouse ? Theme.primaryHover : Theme.withAlpha(Theme.primary, 0)
+
+         DankRipple {
+@@ -73,7 +75,7 @@
+         readonly property real actualVolumePercent: defaultSink?.audio ? Math.round(defaultSink.audio.volume * 100) : 0
+
+         anchors.verticalCenter: parent.verticalCenter
+-        width: parent.width - (Theme.iconSize + Theme.spacingS * 2)
++        width: parent.width - (Theme.iconSize + Theme.spacingXS * 2)
+         enabled: defaultSink?.audio != null
+         minimum: 0
+         maximum: AudioService.sinkMaxVolume
+diff -ruN a/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml b/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml
+--- a/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml
++++ b/Modules/ControlCenter/Widgets/BrightnessSliderRow.qml
+@@ -19,7 +19,8 @@
+
+     signal iconClicked
+
+-    height: 40
++    // Ryoku CC: align with DankSlider height
++    height: 36
+     spacing: 0
+
+     DankTooltipV2 {
+@@ -89,11 +90,12 @@
+         return DisplayService.getDeviceBrightness(targetDeviceName);
+     }
+
++    // Ryoku CC: compact icon hit target without permanent pill chrome
+     Rectangle {
+-        width: Theme.iconSize + Theme.spacingS * 2
+-        height: Theme.iconSize + Theme.spacingS * 2
++        width: Theme.iconSize + Theme.spacingXS * 2
++        height: Theme.iconSize + Theme.spacingXS * 2
+         anchors.verticalCenter: parent.verticalCenter
+-        radius: (Theme.iconSize + Theme.spacingS * 2) / 2
++        radius: width / 2
+         color: iconArea.containsMouse ? Theme.primaryHover : Theme.withAlpha(Theme.primary, 0)
+
+         DankRipple {
+@@ -153,7 +155,7 @@
+         id: brightnessSlider
+
+         anchors.verticalCenter: parent.verticalCenter
+-        width: parent.width - (Theme.iconSize + Theme.spacingS * 2)
++        width: parent.width - (Theme.iconSize + Theme.spacingXS * 2)
+         enabled: DisplayService.brightnessAvailable && targetDeviceName.length > 0
+         minimum: {
+             if (!targetDevice)
+diff -ruN a/Modules/ControlCenter/Widgets/CompactSlider.qml b/Modules/ControlCenter/Widgets/CompactSlider.qml
+--- a/Modules/ControlCenter/Widgets/CompactSlider.qml
++++ b/Modules/ControlCenter/Widgets/CompactSlider.qml
+@@ -21,8 +21,9 @@
+     height: 60
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC: no heavy outline on compact slider chrome
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+     opacity: enabled ? 1.0 : 0.6
+
+     Row {
+diff -ruN a/Modules/ControlCenter/Widgets/CompoundPill.qml b/Modules/ControlCenter/Widgets/CompoundPill.qml
+--- a/Modules/ControlCenter/Widgets/CompoundPill.qml
++++ b/Modules/ControlCenter/Widgets/CompoundPill.qml
+@@ -36,8 +36,9 @@
+         const baseColor = bodyMouse.containsMouse ? Theme.ccPillInactiveHoverBg : _containerBg;
+         return baseColor;
+     }
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC: outer shell without heavy outline; ON lives on the icon tile
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+     antialiasing: true
+
+     readonly property color _labelPrimary: Theme.surfaceText
+@@ -52,7 +53,7 @@
+     readonly property color _tileIconInactive: Theme.ccTileInactiveIcon
+
+     property int _padH: Theme.spacingS
+-    property int _tileSize: 48
++    property int _tileSize: 40
+     property int _tileRadius: Theme.cornerRadius
+
+     Rectangle {
+@@ -91,8 +92,8 @@
+             anchors.verticalCenter: parent.verticalCenter
+             radius: _tileRadius
+             color: isActive ? _tileBgActive : _tileBgInactive
+-            border.color: isActive ? _tileRingActive : Theme.outlineMedium
+-            border.width: isActive ? 1 : Theme.layerOutlineWidth
++            border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++            border.width: isActive ? 1 : 0
+             antialiasing: true
+
+             Rectangle {
+@@ -122,6 +123,13 @@
+                 }
+             }
+
++            Behavior on color {
++                ColorAnimation {
++                    duration: Theme.shortDuration
++                    easing.type: Theme.standardEasing
++                }
++            }
++
+             DankRipple {
+                 id: tileRipple
+                 cornerRadius: _tileRadius
+diff -ruN a/Modules/ControlCenter/Widgets/InputAudioSliderRow.qml b/Modules/ControlCenter/Widgets/InputAudioSliderRow.qml
+--- a/Modules/ControlCenter/Widgets/InputAudioSliderRow.qml
++++ b/Modules/ControlCenter/Widgets/InputAudioSliderRow.qml
+@@ -13,14 +13,16 @@
+     property color sliderTrackColor: "transparent"
+     property real sliderTrackOpacity: Theme.ccSliderTrackOpacity
+
+-    height: 40
++    // Ryoku CC: align with DankSlider height
++    height: 36
+     spacing: 0
+
++    // Ryoku CC: compact icon hit target without permanent pill chrome
+     Rectangle {
+-        width: Theme.iconSize + Theme.spacingS * 2
+-        height: Theme.iconSize + Theme.spacingS * 2
++        width: Theme.iconSize + Theme.spacingXS * 2
++        height: Theme.iconSize + Theme.spacingXS * 2
+         anchors.verticalCenter: parent.verticalCenter
+-        radius: (Theme.iconSize + Theme.spacingS * 2) / 2
++        radius: width / 2
+         color: iconArea.containsMouse ? Theme.primaryHover : Theme.withAlpha(Theme.primary, 0)
+
+         DankRipple {
+@@ -65,7 +67,7 @@
+         readonly property real actualVolumePercent: defaultSource?.audio ? Math.round(defaultSource.audio.volume * 100) : 0
+
+         anchors.verticalCenter: parent.verticalCenter
+-        width: parent.width - (Theme.iconSize + Theme.spacingS * 2)
++        width: parent.width - (Theme.iconSize + Theme.spacingXS * 2)
+         enabled: defaultSource?.audio != null
+         minimum: 0
+         maximum: 100
+diff -ruN a/Modules/ControlCenter/Widgets/SmallCompoundButton.qml b/Modules/ControlCenter/Widgets/SmallCompoundButton.qml
+--- a/Modules/ControlCenter/Widgets/SmallCompoundButton.qml
++++ b/Modules/ControlCenter/Widgets/SmallCompoundButton.qml
+@@ -19,11 +19,8 @@
+
+     width: parent ? ((parent.width - parent.spacing * 3) / 4) : 48
+     height: 48
+-    radius: {
+-        if (Theme.cornerRadius === 0)
+-            return 0;
+-        return isActive ? Theme.cornerRadius : Theme.cornerRadius + 4;
+-    }
++    // Ryoku CC: consistent Material You radius (no inactive inflation)
++    radius: Theme.cornerRadius
+
+     function hoverTint(base) {
+         const factor = 1.2;
+@@ -42,8 +39,9 @@
+         const baseColor = mouseArea.containsMouse ? Theme.ccPillInactiveHoverBg : _tileBgInactive;
+         return baseColor;
+     }
+-    border.color: isActive ? _tileRingActive : Theme.outlineMedium
+-    border.width: isActive ? 1 : Theme.layerOutlineWidth
++    // Ryoku CC: ON = subtle primary ring; OFF = no outline
++    border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: isActive ? 1 : 0
+     antialiasing: true
+     opacity: enabled ? 1.0 : 0.6
+
+@@ -98,6 +96,13 @@
+         }
+     }
+
++    Behavior on color {
++        ColorAnimation {
++            duration: Theme.shortDuration
++            easing.type: Theme.standardEasing
++        }
++    }
++
+     Behavior on radius {
+         NumberAnimation {
+             duration: Theme.shortDuration
+diff -ruN a/Modules/ControlCenter/Widgets/ToggleButton.qml b/Modules/ControlCenter/Widgets/ToggleButton.qml
+--- a/Modules/ControlCenter/Widgets/ToggleButton.qml
++++ b/Modules/ControlCenter/Widgets/ToggleButton.qml
+@@ -19,11 +19,8 @@
+
+     width: parent ? parent.width : 200
+     height: 60
+-    radius: {
+-        if (Theme.cornerRadius === 0)
+-            return 0;
+-        return isActive ? Theme.cornerRadius : Theme.cornerRadius + 4;
+-    }
++    // Ryoku CC: consistent Material You radius (no inactive inflation)
++    radius: Theme.cornerRadius
+
+     readonly property color _tileBgActive: Theme.ccTileActiveBg
+     readonly property color _tileBgInactive: Theme.ccPillInactiveBg
+@@ -35,8 +32,9 @@
+         const baseColor = mouseArea.containsMouse ? Theme.ccPillInactiveHoverBg : _tileBgInactive;
+         return baseColor;
+     }
+-    border.color: isActive ? _tileRingActive : Theme.outlineMedium
+-    border.width: isActive ? 1 : Theme.layerOutlineWidth
++    // Ryoku CC: ON = subtle primary ring; OFF = no outline
++    border.color: isActive ? Theme.withAlpha(_tileRingActive, 0.28) : Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: isActive ? 1 : 0
+     opacity: enabled ? 1.0 : 0.6
+
+     function hoverTint(base) {
+@@ -124,6 +122,13 @@
+         onClicked: root.clicked()
+     }
+
++    Behavior on color {
++        ColorAnimation {
++            duration: Theme.shortDuration
++            easing.type: Theme.standardEasing
++        }
++    }
++
+     Behavior on radius {
+         NumberAnimation {
+             duration: Theme.shortDuration
+diff -ruN a/Widgets/DankSlider.qml b/Widgets/DankSlider.qml
+--- a/Widgets/DankSlider.qml
++++ b/Widgets/DankSlider.qml
+@@ -38,7 +38,8 @@
+     signal sliderValueChanged(int newValue)
+     signal sliderDragFinished(int finalValue)
+
+-    height: 48
++    // Ryoku CC: denser slider row height
++    height: 40
+
+     function updateValueFromPosition(x) {
+         let ratio = Math.max(0, Math.min(1, (x - sliderHandle.width / 2) / (sliderTrack.width - sliderHandle.width)));
+@@ -73,8 +74,9 @@
+             property int rightIconWidth: slider.rightIcon.length > 0 ? Theme.iconSize : 0
+
+             width: parent.width - (leftIconWidth + rightIconWidth + (slider.leftIcon.length > 0 ? Theme.spacingM : 0) + (slider.rightIcon.length > 0 ? Theme.spacingM : 0))
+-            height: 12
+-            radius: Theme.cornerRadius
++            // Ryoku CC: thin continuous track
++            height: 4
++            radius: height / 2
+             color: Theme.withAlpha(slider.trackColor, slider.trackOpacity)
+             anchors.verticalCenter: parent.verticalCenter
+             clip: false
+@@ -82,16 +84,15 @@
+             StyledRect {
+                 id: sliderFill
+                 height: parent.height
+-                radius: Theme.cornerRadius
+-                topRightRadius: 0
+-                bottomRightRadius: 0
++                // Ryoku CC: rounded fill meeting the circular thumb
++                radius: parent.radius
+                 width: {
+                     const range = slider.maximum - slider.minimum;
+                     const rawRatio = range === 0 ? 0 : (slider.value - slider.minimum) / range;
+                     const ratio = slider.centerMinimum ? (0.5 + rawRatio * 0.5) : rawRatio;
+                     const travel = sliderTrack.width - sliderHandle.width;
+                     const handleLeft = travel * ratio;
+-                    const endPoint = handleLeft - 3;
++                    const endPoint = handleLeft + sliderHandle.width / 2;
+                     return Math.max(0, Math.min(sliderTrack.width, endPoint));
+                 }
+                 color: slider.enabled ? Theme.primary : Theme.withAlpha(Theme.onSurface, 0.12)
+@@ -102,9 +103,10 @@
+
+                 property bool active: sliderMouseArea.containsMouse || sliderMouseArea.pressed || slider.isDragging
+
+-                width: 4
+-                height: 20
+-                radius: Theme.cornerRadius
++                // Ryoku CC: small circular thumb
++                width: 14
++                height: 14
++                radius: width / 2
+                 x: {
+                     const range = slider.maximum - slider.minimum;
+                     const rawRatio = range === 0 ? 0 : (slider.value - slider.minimum) / range;
+@@ -114,26 +116,27 @@
+                 }
+                 anchors.verticalCenter: parent.verticalCenter
+                 color: slider.enabled ? Theme.primary : Theme.withAlpha(Theme.onSurface, 0.12)
+-                border.width: 0
+-                border.color: slider.thumbOutlineColor
++                border.width: 2
++                border.color: slider.enabled ? Theme.surfaceContainer : Theme.withAlpha(Theme.surfaceContainer, 0)
+
+                 StyledRect {
+                     anchors.fill: parent
+-                    radius: Theme.cornerRadius
++                    radius: parent.radius
+                     color: Theme.onPrimary
+                     opacity: slider.enabled ? (sliderMouseArea.pressed ? 0.16 : (sliderMouseArea.containsMouse ? 0.08 : 0)) : 0
+                     visible: opacity > 0
+                 }
+
++                // Soft focus halo — no heavy white ring
+                 StyledRect {
+                     anchors.centerIn: parent
+-                    width: parent.width + 20
+-                    height: parent.height + 20
++                    width: parent.width + 10
++                    height: parent.height + 10
+                     radius: width / 2
+                     color: "transparent"
+-                    border.width: 2
++                    border.width: 1
+                     border.color: Theme.primary
+-                    opacity: slider.enabled && slider.focus ? 0.3 : 0
++                    opacity: slider.enabled && slider.focus ? 0.22 : 0
+                     visible: opacity > 0
+                 }
+
+@@ -179,7 +182,7 @@
+                     }
+                 }
+
+-                scale: active ? 1.05 : 1.0
++                scale: active ? 1.12 : 1.0
+
+                 Behavior on scale {
+                     NumberAnimation {
+@@ -257,8 +260,8 @@
+                 height: tooltipText.contentHeight + Theme.spacingXS * 2
+                 radius: Theme.cornerRadius
+                 color: Theme.surfaceContainer
+-                border.color: Theme.outline
+-                border.width: 1
++                border.color: Theme.withAlpha(Theme.outline, 0)
++                border.width: 0
+                 anchors.bottom: parent.top
+                 anchors.bottomMargin: Theme.spacingM
+                 x: Math.max(0, Math.min(parent.width - width, sliderHandle.x + sliderHandle.width / 2 - width / 2))
+diff -ruN a/Modules/ControlCenter/Details/BluetoothDetail.qml b/Modules/ControlCenter/Details/BluetoothDetail.qml
+--- a/Modules/ControlCenter/Details/BluetoothDetail.qml
++++ b/Modules/ControlCenter/Details/BluetoothDetail.qml
+@@ -21,8 +21,9 @@
+     }
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC Details: soft panel — no permanent outline
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+     focus: true
+
+     property var bluetoothCodecModalRef: null
+@@ -273,22 +274,25 @@
+                         BluetoothService.refreshDeviceCodec(modelData);
+                     }
+
++                    // Ryoku CC Details: Material You fill — no heavy border
+                     color: {
+                         if (isConnecting)
+                             return Theme.warningHover;
++                        if (isConnected)
++                            return Theme.primaryHover;
+                         if (deviceMouseArea.containsMouse)
+                             return Theme.primaryHoverLight;
+                         return Theme.surfaceLight;
+                     }
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
+
+-                    border.color: {
+-                        if (isConnecting)
+-                            return Theme.warning;
+-                        if (isConnected)
+-                            return Theme.primary;
+-                        return Theme.outlineLight;
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
+                     }
+-                    border.width: (isConnecting || isConnected) ? 2 : 1
+
+                     Row {
+                         anchors.left: parent.left
+@@ -316,7 +320,7 @@
+                             StyledText {
+                                 text: pairedDelegate.deviceName
+                                 font.pixelSize: Theme.fontSizeMedium
+-                                color: Theme.surfaceText
++                                color: pairedDelegate.isConnected ? Theme.primary : Theme.surfaceText
+                                 font.weight: pairedDelegate.isConnected ? Font.Medium : Font.Normal
+                                 elide: Text.ElideRight
+                                 width: parent.width
+@@ -526,11 +530,19 @@
+                     width: parent.width
+                     height: 50
+                     radius: Theme.cornerRadius
++                    // Ryoku CC Details: discovered rows stay light — no outline card
+                     color: availableMouseArea.containsMouse && isInteractive ? Theme.primaryHoverLight : Theme.surfaceLight
+-                    border.color: Theme.outlineLight
+-                    border.width: 1
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
+                     opacity: isInteractive ? 1 : 0.6
+
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
++
+                     Row {
+                         anchors.left: parent.left
+                         anchors.verticalCenter: parent.verticalCenter
+diff -ruN a/Modules/ControlCenter/Details/AudioInputDetail.qml b/Modules/ControlCenter/Details/AudioInputDetail.qml
+--- a/Modules/ControlCenter/Details/AudioInputDetail.qml
++++ b/Modules/ControlCenter/Details/AudioInputDetail.qml
+@@ -19,8 +19,9 @@
+     implicitHeight: headerRow.height + (hasInputVolumeSliderInCC ? 0 : volumeSlider.height) + audioContent.height + Theme.spacingM
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC Details: soft panel — no permanent outline
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+
+     Row {
+         id: headerRow
+@@ -209,9 +210,23 @@
+                     width: parent.width
+                     height: 50
+                     radius: Theme.cornerRadius
+-                    color: deviceMouseArea.containsMouse ? Theme.primaryHoverLight : Theme.surfaceLight
+-                    border.color: modelData === AudioService.source ? Theme.primary : Theme.outlineLight
+-                    border.width: modelData === AudioService.source ? 2 : 1
++                    // Ryoku CC Details: selected source = soft primary fill; no heavy border
++                    color: {
++                        if (modelData === AudioService.source)
++                            return Theme.primaryHover;
++                        if (deviceMouseArea.containsMouse)
++                            return Theme.primaryHoverLight;
++                        return Theme.surfaceLight;
++                    }
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
++
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
+
+                     Row {
+                         anchors.left: parent.left
+@@ -244,7 +259,7 @@
+                             StyledText {
+                                 text: AudioService.displayName(modelData)
+                                 font.pixelSize: Theme.fontSizeMedium
+-                                color: Theme.surfaceText
++                                color: modelData === AudioService.source ? Theme.primary : Theme.surfaceText
+                                 font.weight: modelData === AudioService.source ? Font.Medium : Font.Normal
+                                 elide: Text.ElideRight
+                                 width: parent.width
+diff -ruN a/Modules/ControlCenter/Details/AudioOutputDetail.qml b/Modules/ControlCenter/Details/AudioOutputDetail.qml
+--- a/Modules/ControlCenter/Details/AudioOutputDetail.qml
++++ b/Modules/ControlCenter/Details/AudioOutputDetail.qml
+@@ -19,8 +19,9 @@
+     implicitHeight: headerRow.height + (!hasVolumeSliderInCC ? volumeSlider.height : 0) + audioContent.height + Theme.spacingM
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC Details: soft panel — no permanent outline
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+
+     Row {
+         id: headerRow
+@@ -220,9 +221,23 @@
+                     width: parent.width
+                     height: 50
+                     radius: Theme.cornerRadius
+-                    color: deviceMouseArea.containsMouse ? Theme.primaryHoverLight : Theme.surfaceLight
+-                    border.color: modelData === AudioService.sink ? Theme.primary : Theme.outlineLight
+-                    border.width: modelData === AudioService.sink ? 2 : 1
++                    // Ryoku CC Details: selected sink = soft primary fill; no heavy border
++                    color: {
++                        if (modelData === AudioService.sink)
++                            return Theme.primaryHover;
++                        if (deviceMouseArea.containsMouse)
++                            return Theme.primaryHoverLight;
++                        return Theme.surfaceLight;
++                    }
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
++
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
+
+                     DankRipple {
+                         id: deviceRipple
+@@ -253,7 +268,7 @@
+                             StyledText {
+                                 text: AudioService.displayName(modelData)
+                                 font.pixelSize: Theme.fontSizeMedium
+-                                color: Theme.surfaceText
++                                color: modelData === AudioService.sink ? Theme.primary : Theme.surfaceText
+                                 font.weight: modelData === AudioService.sink ? Font.Medium : Font.Normal
+                                 elide: Text.ElideRight
+                                 width: parent.width
+@@ -393,15 +408,31 @@
+                 }
+
+                 delegate: Rectangle {
++                    id: playbackDelegate
+                     required property var modelData
+                     required property int index
+
+                     width: parent.width
+                     height: 50
+                     radius: Theme.cornerRadius
+-                    color: Theme.surfaceLight
+-                    border.color: modelData === AudioService.sink ? Theme.primary : Theme.outlineLight
+-                    border.width: modelData === AudioService.sink ? 2 : 1
++                    // Ryoku CC Details: playback streams — light rows, soft hover, no outline card
++                    color: streamHoverArea.containsMouse ? Theme.primaryHoverLight : Theme.surfaceLight
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
++
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
++
++                    MouseArea {
++                        id: streamHoverArea
++                        anchors.fill: parent
++                        hoverEnabled: true
++                        acceptedButtons: Qt.NoButton
++                    }
+
+                     Row {
+                         anchors.left: parent.left
+diff -ruN a/Modules/ControlCenter/Details/BrightnessDetail.qml b/Modules/ControlCenter/Details/BrightnessDetail.qml
+--- a/Modules/ControlCenter/Details/BrightnessDetail.qml
++++ b/Modules/ControlCenter/Details/BrightnessDetail.qml
+@@ -131,8 +131,9 @@
+     }
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC Details: soft panel — no permanent outline
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+
+     DankFlickable {
+         id: brightnessContent
+@@ -281,9 +282,23 @@
+                     width: parent.width
+                     height: 100
+                     radius: Theme.cornerRadius
+-                    color: Theme.withAlpha(Theme.surfaceContainerHighest, Theme.popupTransparency)
+-                    border.color: selected ? Theme.primary : Theme.outlineStrong
+-                    border.width: selected ? 2 : 0
++                    // Ryoku CC Details: selected device = soft primary fill; no heavy border
++                    color: {
++                        if (selected)
++                            return Theme.primaryHover;
++                        if (deviceCardMouseArea.containsMouse)
++                            return Theme.primaryHoverLight;
++                        return Theme.surfaceLight;
++                    }
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
++
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
+
+                     Column {
+                         anchors.fill: parent
+@@ -351,7 +366,7 @@
+                                             return name;
+                                         }
+                                         font.pixelSize: Theme.fontSizeMedium
+-                                        color: Theme.surfaceText
++                                        color: deviceCard.selected ? Theme.primary : Theme.surfaceText
+                                         font.weight: deviceCard.selected ? Font.Medium : Font.Normal
+                                         elide: Text.ElideRight
+                                         width: parent.width
+@@ -542,6 +557,7 @@
+                     }
+
+                     MouseArea {
++                        id: deviceCardMouseArea
+                         anchors.fill: parent
+                         anchors.bottomMargin: 28
+                         anchors.rightMargin: rightControls.width + Theme.spacingS
+diff -ruN a/Modules/ControlCenter/Details/NetworkDetail.qml b/Modules/ControlCenter/Details/NetworkDetail.qml
+--- a/Modules/ControlCenter/Details/NetworkDetail.qml
++++ b/Modules/ControlCenter/Details/NetworkDetail.qml
+@@ -24,8 +24,9 @@
+     }
+     radius: Theme.cornerRadius
+     color: Theme.nestedSurface
+-    border.color: Theme.outlineMedium
+-    border.width: Theme.layerOutlineWidth
++    // Ryoku CC Details: soft panel — no permanent outline
++    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++    border.width: 0
+
+     Component.onCompleted: {
+         NetworkService.addRef();
+@@ -308,11 +309,26 @@
+                     readonly property string configName: modelData.id || I18n.tr("Unknown Config")
+
+                     width: parent.width
+-                    height: wiredContentRow.implicitHeight + Theme.spacingM * 2
++                    height: wiredContentRow.implicitHeight + Theme.spacingS * 2
+                     radius: Theme.cornerRadius
+-                    color: wiredNetworkMouseArea.containsMouse ? Theme.primaryHoverLight : Theme.surfaceLight
+-                    border.color: isActive ? Theme.primary : Theme.outlineLight
+-                    border.width: isActive ? 2 : 1
++                    // Ryoku CC density: row pad matches Audio/BT rhythm
++                    // Ryoku CC Details: Material You fill — no heavy border
++                    color: {
++                        if (isActive)
++                            return Theme.primaryHover;
++                        if (wiredNetworkMouseArea.containsMouse)
++                            return Theme.primaryHoverLight;
++                        return Theme.surfaceLight;
++                    }
++                    border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++                    border.width: 0
++
++                    Behavior on color {
++                        ColorAnimation {
++                            duration: Theme.shortDuration
++                            easing.type: Theme.standardEasing
++                        }
++                    }
+
+                     Row {
+                         id: wiredContentRow
+@@ -571,11 +587,28 @@
+             readonly property int signalStrength: modelData.signal || 0
+
+             width: wifiContent.width
+-            height: wifiContentRow.implicitHeight + Theme.spacingM * 2
++            height: wifiContentRow.implicitHeight + Theme.spacingS * 2
+             radius: Theme.cornerRadius
+-            color: networkMouseArea.containsMouse ? Theme.primaryHoverLight : Theme.surfaceLight
+-            border.color: wifiDelegate.isConnected ? Theme.primary : Theme.outlineLight
+-            border.width: wifiDelegate.isConnected ? 2 : 1
++            // Ryoku CC density: row pad matches Audio/BT rhythm
++            // Ryoku CC Details: connected = soft primary fill; idle/hover without heavy border
++            color: {
++                if (wifiDelegate.isConnecting)
++                    return Theme.warningHover;
++                if (wifiDelegate.isConnected)
++                    return Theme.primaryHover;
++                if (networkMouseArea.containsMouse)
++                    return Theme.primaryHoverLight;
++                return Theme.surfaceLight;
++            }
++            border.color: Theme.withAlpha(Theme.outlineMedium, 0)
++            border.width: 0
++
++            Behavior on color {
++                ColorAnimation {
++                    duration: Theme.shortDuration
++                    easing.type: Theme.standardEasing
++                }
++            }
+
+             Row {
+                 id: wifiContentRow
+diff -ruN a/Modules/ControlCenter/ControlCenterPopout.qml b/Modules/ControlCenter/ControlCenterPopout.qml
+--- a/Modules/ControlCenter/ControlCenterPopout.qml
++++ b/Modules/ControlCenter/ControlCenterPopout.qml
+@@ -212,9 +212,10 @@
+
+                 Column {
+                     id: mainColumn
+-                    width: contentFlickable.width - Theme.spacingL * 2
+-                    x: Theme.spacingL
+-                    y: Theme.spacingL
++                    // Ryoku CC density: outer frame matches Header spacingM
++                    width: contentFlickable.width - Theme.spacingM * 2
++                    x: Theme.spacingM
++                    y: Theme.spacingM
+                     spacing: Theme.spacingS
+
+                     HeaderPane {
+@@ -246,7 +247,7 @@
+                         editMode: root.editMode
+                         maxPopoutHeight: {
+                             const screenHeight = (root.triggerScreen?.height ?? 1080);
+-                            return screenHeight - 100 - Theme.spacingL - headerPane.implicitHeight - Theme.spacingS;
++                            return screenHeight - 100 - Theme.spacingM - headerPane.implicitHeight - Theme.spacingS;
+                         }
+                         expandedSection: root.expandedSection
+                         expandedWidgetIndex: root.expandedWidgetIndex

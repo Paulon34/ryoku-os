@@ -1,0 +1,51 @@
+diff --git a/Modules/Lock/LockScreenContent.qml b/Modules/Lock/LockScreenContent.qml
+index 6970e09..24f034d 100644
+--- a/Modules/Lock/LockScreenContent.qml
++++ b/Modules/Lock/LockScreenContent.qml
+@@ -772,13 +772,27 @@ Item {
+                     property bool showPassword: false
+
+                     Layout.fillWidth: true
+-                    Layout.preferredHeight: 60
++                    Layout.preferredHeight: RyokuVisual.quattro ? 64 : 60
+                     radius: Theme.cornerRadius
+-                    color: Theme.withAlpha(Theme.surfaceContainer, 0.9)
++                    color: Theme.withAlpha(Theme.surfaceContainer, RyokuVisual.quattro ? 0.8 : 0.9)
+                     border.color: passwordField.activeFocus ? Theme.primary : Qt.rgba(1, 1, 1, 0.3)
+-                    border.width: passwordField.activeFocus ? 2 : 1
++                    border.width: RyokuVisual.quattro ? 0 : (passwordField.activeFocus ? 2 : 1)
+                     visible: SettingsData.lockScreenShowPasswordField || root.passwordBuffer.length > 0
+
++                    // Quattro: Omarchy's lock field — a 3 px frame in the active-border
++                    // gradient, red after a failed attempt.
++                    RyokuFrame {
++                        readonly property bool failed: root.pamState === "fail" || root.pamState === "max" || root.pamState === "error"
++                        anchors.fill: parent
++                        visible: RyokuVisual.quattro
++                        frameWidth: 3
++                        radius: parent.radius
++                        alpha: passwordField.activeFocus || failed ? 1 : 0.6
++                        startColor: failed ? Theme.error : (Theme.currentThemeData.surfaceTint ? Theme.surfaceTint : Theme.primary)
++                        endColor: failed ? Theme.error : Theme.getMatugenColor("tertiary_fixed_dim", Theme.tertiary)
++                        z: 10
++                    }
++
+                     Item {
+                         id: lockIconContainer
+                         anchors.left: parent.left
+@@ -1107,6 +1121,7 @@ Item {
+                         }
+                         color: root.unlocking ? Theme.primary : (pam.passwd.active ? Theme.primary : Theme.outline)
+                         font.pixelSize: Theme.fontSizeMedium
++                        font.family: RyokuVisual.quattro ? RyokuVisual.chromeFont : resolvedFontFamily
+                         opacity: (demoMode || root.passwordBuffer.length === 0) ? 1 : 0
+
+                         Behavior on opacity {
+@@ -1143,6 +1158,7 @@ Item {
+                         }
+                         color: Theme.surfaceText
+                         font.pixelSize: parent.showPassword ? Theme.fontSizeMedium : Theme.fontSizeLarge
++                        font.family: RyokuVisual.quattro ? RyokuVisual.chromeFont : resolvedFontFamily
+                         opacity: (demoMode || root.passwordBuffer.length > 0) ? 1 : 0
+                         clip: true
+                         elide: Text.ElideNone

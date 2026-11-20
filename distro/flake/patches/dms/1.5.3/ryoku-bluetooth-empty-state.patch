@@ -1,0 +1,361 @@
+diff -ruN a/Modules/ControlCenter/Details/BluetoothDetail.qml b/Modules/ControlCenter/Details/BluetoothDetail.qml
+--- a/Modules/ControlCenter/Details/BluetoothDetail.qml	2026-09-28 01:15:10.670979419 +0000
++++ b/Modules/ControlCenter/Details/BluetoothDetail.qml	2026-09-28 01:18:08.430587752 +0000
+@@ -15,8 +15,8 @@
+     implicitHeight: {
+         if (height > 0)
+             return height;
+-        if (!BluetoothService.adapter?.enabled)
+-            return headerRow.height;
++        if (emptyStateView.visible)
++            return headerRow.height + emptyStateColumn.implicitHeight + Theme.spacingM * 3;
+         return headerRow.height + bluetoothContent.height + Theme.spacingM;
+     }
+     radius: Theme.cornerRadius
+@@ -29,8 +29,59 @@
+     property var bluetoothCodecModalRef: null
+     property var devicesBeingPaired: new Set()
+
++    // Ryoku empty states — derived only from existing adapter/device state.
++    property bool scanStarted: false
++    property bool scanFoundDevices: false
++    readonly property string emptyState: {
++        const adapter = BluetoothService.adapter;
++        if (!adapter)
++            return "noAdapter";
++        if (adapter.state === BluetoothAdapterState.Blocked)
++            return "blocked";
++        if (!adapter.enabled)
++            return adapter.state === BluetoothAdapterState.Enabling ? "enabling" : "off";
++        if (pairedRepeater.count > 0 || availableRepeater.count > 0)
++            return "";
++        if (adapter.discovering)
++            return "scanning";
++        return scanStarted && !scanFoundDevices ? "noneFound" : "idle";
++    }
++
+     signal showCodecSelector(var device)
+
++    Connections {
++        target: BluetoothService.adapter
++        function onDiscoveringChanged() {
++            if (!BluetoothService.adapter?.discovering)
++                return;
++            root.scanStarted = true;
++            root.scanFoundDevices = availableRepeater.count > 0;
++        }
++    }
++
++    function friendlyBluetoothError(raw) {
++        const text = String(raw || "");
++        if (/AuthenticationCanceled|AuthenticationRejected/i.test(text))
++            return I18n.tr("Pairing was canceled on the device.");
++        if (/AuthenticationFailed/i.test(text))
++            return I18n.tr("Authentication failed. Try pairing again.");
++        if (/ConnectionAttemptFailed|page-timeout|br-connection/i.test(text))
++            return I18n.tr("Could not connect. Keep the device close and in pairing mode.");
++        if (/AuthenticationTimeout|timed? ?out/i.test(text))
++            return I18n.tr("The device did not respond in time.");
++        if (/AlreadyExists/i.test(text))
++            return I18n.tr("The device is already paired.");
++        if (/InProgress/i.test(text))
++            return I18n.tr("Another Bluetooth operation is in progress.");
++        if (/NotReady/i.test(text))
++            return I18n.tr("Bluetooth is not ready.");
++        if (/DoesNotExist|UnknownObject/i.test(text))
++            return I18n.tr("Device not found.");
++        const tail = text.split(": ").pop().replace(/^org\.bluez\.Error\./, "").trim();
++        return tail.length > 120 ? tail.slice(0, 117) + "..." : tail;
++    }
++
++    Component.onCompleted: scanStarted = BluetoothService.adapter?.discovering ?? false
+     Component.onDestruction: closeTransientSurfaces()
+     onVisibleChanged: {
+         if (!visible)
+@@ -83,7 +134,7 @@
+             devicesBeingPairedChanged();
+
+             if (response.error) {
+-                ToastService.showError(I18n.tr("Pairing failed"), response.error);
++                ToastService.showError(I18n.tr("Pairing failed"), root.friendlyBluetoothError(response.error));
+                 return;
+             }
+             if (!BluetoothService.enhancedPairingAvailable) {
+@@ -167,7 +218,7 @@
+                 }
+
+                 StyledText {
+-                    text: scanButton.isDiscovering ? I18n.tr("Scanning") : I18n.tr("Scan")
++                    text: scanButton.isDiscovering ? I18n.tr("Scanning...") : I18n.tr("Scan")
+                     color: scanButton.adapterEnabled ? Theme.primary : Theme.surfaceVariantText
+                     font.pixelSize: Theme.fontSizeMedium
+                     font.weight: Font.Medium
+@@ -477,24 +528,37 @@
+                 visible: pairedRepeater.count > 0 && availableRepeater.count > 0
+             }
+
++            // Paired list present while scanning with no new results yet.
+             Item {
+                 width: parent.width
+-                height: 80
+-                visible: (BluetoothService.adapter?.discovering ?? false) && availableRepeater.count === 0
++                height: 36
++                visible: pairedRepeater.count > 0 && (BluetoothService.adapter?.discovering ?? false) && availableRepeater.count === 0
+
+-                DankIcon {
++                Row {
+                     anchors.centerIn: parent
+-                    name: "sync"
+-                    size: 24
+-                    color: Theme.onSurface_38
+-                    smoothTransform: BluetoothService.adapter?.discovering ?? false
++                    spacing: Theme.spacingS
+
+-                    RotationAnimator on rotation {
+-                        running: parent.visible
+-                        loops: Animation.Infinite
+-                        from: 0
+-                        to: 360
+-                        duration: 1500
++                    DankIcon {
++                        name: "sync"
++                        size: 16
++                        color: Theme.surfaceVariantText
++                        anchors.verticalCenter: parent.verticalCenter
++                        smoothTransform: true
++
++                        RotationAnimator on rotation {
++                            running: parent.visible
++                            loops: Animation.Infinite
++                            from: 0
++                            to: 360
++                            duration: 1500
++                        }
++                    }
++
++                    StyledText {
++                        text: I18n.tr("Searching for devices...")
++                        font.pixelSize: Theme.fontSizeSmall
++                        color: Theme.surfaceVariantText
++                        anchors.verticalCenter: parent.verticalCenter
+                     }
+                 }
+             }
+@@ -516,6 +580,10 @@
+             Repeater {
+                 id: availableRepeater
+                 model: availableDevicesModel
++                onCountChanged: {
++                    if (count > 0)
++                        root.scanFoundDevices = true;
++                }
+
+                 delegate: Rectangle {
+                     id: availableDelegate
+@@ -626,19 +694,125 @@
+                     }
+                 }
+             }
++        }
++    }
+
+-            Item {
+-                width: parent.width
+-                height: 60
+-                visible: !BluetoothService.adapter
++    // Ryoku empty / unavailable states: icon + title + one short line.
++    Item {
++        id: emptyStateView
++        anchors.top: headerRow.bottom
++        anchors.left: parent.left
++        anchors.right: parent.right
++        anchors.bottom: parent.bottom
++        anchors.margins: Theme.spacingM
++        visible: root.emptyState !== ""
++
++        readonly property var spec: {
++            switch (root.emptyState) {
++            case "noAdapter":
++                return {
++                    icon: "bluetooth_disabled",
++                    color: Theme.surfaceVariantText,
++                    title: I18n.tr("Bluetooth not available"),
++                    body: I18n.tr("No Bluetooth adapter was found on this device.")
++                };
++            case "blocked":
++                return {
++                    icon: "bluetooth_disabled",
++                    color: Theme.error,
++                    title: I18n.tr("Bluetooth is blocked"),
++                    body: I18n.tr("Unblock Bluetooth in the system (rfkill or airplane mode).")
++                };
++            case "enabling":
++                return {
++                    icon: "bluetooth",
++                    color: Theme.surfaceVariantText,
++                    title: I18n.tr("Turning on Bluetooth..."),
++                    body: ""
++                };
++            case "off":
++                return {
++                    icon: "bluetooth_disabled",
++                    color: Theme.surfaceVariantText,
++                    title: I18n.tr("Bluetooth is off"),
++                    body: I18n.tr("Turn on Bluetooth to search for devices.")
++                };
++            case "scanning":
++                return {
++                    icon: "bluetooth_searching",
++                    color: Theme.primary,
++                    title: I18n.tr("Searching for devices..."),
++                    body: I18n.tr("Put the device in pairing mode.")
++                };
++            case "noneFound":
++                return {
++                    icon: "bluetooth",
++                    color: Theme.surfaceVariantText,
++                    title: I18n.tr("No devices found"),
++                    body: I18n.tr("Put the device in pairing mode and try again.")
++                };
++            default:
++                return {
++                    icon: "bluetooth",
++                    color: Theme.surfaceVariantText,
++                    title: I18n.tr("No paired devices"),
++                    body: I18n.tr("Tap Scan to search for nearby devices.")
++                };
++            }
++        }
++
++        Column {
++            id: emptyStateColumn
++            anchors.centerIn: parent
++            width: parent.width
++            spacing: Theme.spacingXS
++
++            DankIcon {
++                anchors.horizontalCenter: parent.horizontalCenter
++                name: emptyStateView.spec.icon
++                size: 28
++                color: emptyStateView.spec.color
++            }
++
++            Row {
++                anchors.horizontalCenter: parent.horizontalCenter
++                spacing: Theme.spacingXS
++
++                DankIcon {
++                    name: "sync"
++                    size: 14
++                    color: Theme.surfaceVariantText
++                    anchors.verticalCenter: parent.verticalCenter
++                    visible: root.emptyState === "scanning"
++                    smoothTransform: true
++
++                    RotationAnimator on rotation {
++                        running: parent.visible && emptyStateView.visible
++                        loops: Animation.Infinite
++                        from: 0
++                        to: 360
++                        duration: 1500
++                    }
++                }
+
+                 StyledText {
+-                    anchors.centerIn: parent
+-                    text: I18n.tr("No Bluetooth adapter found")
++                    text: emptyStateView.spec.title
+                     font.pixelSize: Theme.fontSizeMedium
+-                    color: Theme.surfaceVariantText
++                    font.weight: Font.Medium
++                    color: Theme.surfaceText
++                    anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
++
++            StyledText {
++                width: parent.width
++                visible: text.length > 0
++                text: emptyStateView.spec.body
++                font.pixelSize: Theme.fontSizeSmall
++                color: Theme.surfaceVariantText
++                horizontalAlignment: Text.AlignHCenter
++                wrapMode: Text.WordWrap
++            }
+         }
+     }
+
+@@ -772,7 +946,7 @@
+                 DMSService.bluetoothRemove(devicePath, response => {
+                     if (!response.error)
+                         return;
+-                    ToastService.showError(I18n.tr("Failed to remove device"), response.error);
++                    ToastService.showError(I18n.tr("Failed to remove device"), root.friendlyBluetoothError(response.error));
+                 });
+             }
+         }
+diff -ruN a/translations/poexports/pt.json b/translations/poexports/pt.json
+--- a/translations/poexports/pt.json	2026-09-28 01:15:10.671979439 +0000
++++ b/translations/poexports/pt.json	2026-09-28 01:15:48.485746914 +0000
+@@ -1,4 +1,61 @@
+ {
++  "No Bluetooth adapter was found on this device.": {
++    "No Bluetooth adapter was found on this device.": "Nenhum adaptador Bluetooth foi encontrado neste dispositivo."
++  },
++  "Bluetooth is blocked": {
++    "Bluetooth is blocked": "Bluetooth bloqueado"
++  },
++  "Unblock Bluetooth in the system (rfkill or airplane mode).": {
++    "Unblock Bluetooth in the system (rfkill or airplane mode).": "Desbloqueie o Bluetooth no sistema (rfkill ou modo avião)."
++  },
++  "Turning on Bluetooth...": {
++    "Turning on Bluetooth...": "Ligando o Bluetooth..."
++  },
++  "Bluetooth is off": {
++    "Bluetooth is off": "Bluetooth desligado"
++  },
++  "Turn on Bluetooth to search for devices.": {
++    "Turn on Bluetooth to search for devices.": "Ative o Bluetooth para procurar dispositivos."
++  },
++  "Searching for devices...": {
++    "Searching for devices...": "Procurando dispositivos..."
++  },
++  "Put the device in pairing mode.": {
++    "Put the device in pairing mode.": "Coloque o dispositivo em modo de pareamento."
++  },
++  "Put the device in pairing mode and try again.": {
++    "Put the device in pairing mode and try again.": "Coloque o dispositivo em modo de pareamento e tente novamente."
++  },
++  "No paired devices": {
++    "No paired devices": "Nenhum dispositivo pareado"
++  },
++  "Tap Scan to search for nearby devices.": {
++    "Tap Scan to search for nearby devices.": "Toque em Escanear para procurar dispositivos próximos."
++  },
++  "Pairing was canceled on the device.": {
++    "Pairing was canceled on the device.": "O pareamento foi cancelado no dispositivo."
++  },
++  "Authentication failed. Try pairing again.": {
++    "Authentication failed. Try pairing again.": "Falha na autenticação. Tente parear novamente."
++  },
++  "The device did not respond in time.": {
++    "The device did not respond in time.": "O dispositivo não respondeu a tempo."
++  },
++  "Could not connect. Keep the device close and in pairing mode.": {
++    "Could not connect. Keep the device close and in pairing mode.": "Não foi possível conectar. Mantenha o dispositivo perto e em modo de pareamento."
++  },
++  "The device is already paired.": {
++    "The device is already paired.": "O dispositivo já está pareado."
++  },
++  "Another Bluetooth operation is in progress.": {
++    "Another Bluetooth operation is in progress.": "Outra operação Bluetooth está em andamento."
++  },
++  "Bluetooth is not ready.": {
++    "Bluetooth is not ready.": "O Bluetooth não está pronto."
++  },
++  "Device not found.": {
++    "Device not found.": "Dispositivo não encontrado."
++  },
+   "%1 (+%2 more)": {
+     "%1 (+%2 more)": ""
+   },

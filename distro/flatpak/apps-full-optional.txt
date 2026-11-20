@@ -1,0 +1,19 @@
+# Full workstation applications; availability is checked on the target.
+# Preserve public app IDs only, not user account data, private settings or wallpapers.
+com.spotify.Client
+com.visualstudio.code
+com.heroicgameslauncher.hgl
+net.davidotek.pupgui2
+com.usebottles.bottles
+com.valvesoftware.Steam
+net.rpcs3.RPCS3
+com.vysp3r.ProtonPlus
+com.getpostman.Postman
+io.dbeaver.DBeaverCommunity
+com.mojang.Minecraft
+com.rtosta.zapzap
+it.mijorus.gearlever
+org.vinegarhq.Sober
+ai.storyteller.artcraft-launcher
+ai.storyteller.photocraft
+org.cutwire.Drift

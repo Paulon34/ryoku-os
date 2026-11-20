@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# ryoku-pkg-helper — allowlisted APT / Flatpak / local .deb operations for Settings.
+#
+# Invoked via pkexec. Never accepts arbitrary shell. Commands are fixed verbs
+# with validated package names / Flatpak IDs / local .deb paths.
+#
+# Usage (allowlisted):
+#   ryoku-pkg-helper apt-install <pkg>…
+#   ryoku-pkg-helper apt-remove <pkg>…
+#   ryoku-pkg-helper apt-update
+#   ryoku-pkg-helper apt-install-deb </abs/path/to/file.deb>
+#   ryoku-pkg-helper flatpak-install <id>…
+#   ryoku-pkg-helper flatpak-update <id>…
+#   ryoku-pkg-helper flatpak-remove <id>…
+#   ryoku-pkg-helper flatpak-sync-profile <minimal|full>
+#
+set -euo pipefail
+
+PROG=$(basename "$0")
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+FLATHUB_REMOTE="flathub"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+
+# Resolve distro/ when running from checkout OR from /usr/local/libexec.
+resolve_distro_dir() {
+  if [[ -n "${RYOKU_DISTRO_DIR:-}" && -d "${RYOKU_DISTRO_DIR}/apt" ]]; then
+    echo "$RYOKU_DISTRO_DIR"
+    return 0
+  fi
+  if [[ -f /etc/ryoku/distro-dir ]]; then
+    local d
+    d=$(tr -d '[:space:]' </etc/ryoku/distro-dir || true)
+    if [[ -n "$d" && -d "$d/apt" ]]; then
+      echo "$d"
+      return 0
+    fi
+  fi
+  if [[ -f /etc/ryoku/repo-path ]]; then
+    local r
+    r=$(tr -d '[:space:]' </etc/ryoku/repo-path || true)
+    if [[ -n "$r" && -d "$r/distro/apt" ]]; then
+      echo "$r/distro"
+      return 0
+    fi
+  fi
+  # Checkout layout: distro/scripts/ryoku-pkg-helper
+  if [[ -d "$SCRIPT_DIR/../apt" ]]; then
+    echo "$(cd "$SCRIPT_DIR/.." && pwd)"
+    return 0
+  fi
+  return 1
+}
+
+DISTRO_DIR=$(resolve_distro_dir) || die "cannot resolve distro/ (set RYOKU_DISTRO_DIR or /etc/ryoku/repo-path)"
+APT_BASE="$DISTRO_DIR/apt/packages-base.txt"
+APT_FULL="$DISTRO_DIR/apt/packages-full.txt"
+APT_HYPR="$DISTRO_DIR/apt/packages-hyprland.txt"
+if [[ -x "$SCRIPT_DIR/ryoku-flatpak-sync" ]]; then
+  FLATPAK_SYNC="$SCRIPT_DIR/ryoku-flatpak-sync"
+elif [[ -x /usr/local/libexec/ryoku-flatpak-sync ]]; then
+  FLATPAK_SYNC=/usr/local/libexec/ryoku-flatpak-sync
+elif [[ -x "$DISTRO_DIR/scripts/ryoku-flatpak-sync" ]]; then
+  FLATPAK_SYNC="$DISTRO_DIR/scripts/ryoku-flatpak-sync"
+else
+  FLATPAK_SYNC=""
+fi
+
+usage() {
+  cat <<EOF
+$PROG — allowlisted package helper (APT / Flatpak / local .deb via APT)
+
+Verbs:
+  apt-install <pkg>…
+  apt-remove <pkg>…
+  apt-update
+  apt-install-deb </absolute/path.deb>
+  flatpak-install <id>…
+  flatpak-update <id>…
+  flatpak-remove <id>…
+  flatpak-sync-profile <minimal|full>
+EOF
+}
+
+# Package names: Debian-like [a-z0-9][a-z0-9+.-]+
+valid_apt_name() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9+.-]*$ ]]
+}
+
+valid_flatpak_id() {
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(\.[A-Za-z0-9][A-Za-z0-9._-]*)+$ ]]
+}
+
+# Only packages that appear in Ryoku APT manifests (or hyprland backports list).
+is_allowlisted_apt() {
+  local pkg=$1
+  grep -Eq "^${pkg}$" "$APT_BASE" "$APT_FULL" "$APT_HYPR" 2>/dev/null
+}
+
+load_allowlist_or_die() {
+  [[ -f "$APT_BASE" ]] || die "missing APT base list"
+}
+
+cmd_apt_update() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+}
+
+cmd_apt_install() {
+  local pkgs=("$@")
+  [[ "${#pkgs[@]}" -gt 0 ]] || die "apt-install needs package names"
+  local p
+  for p in "${pkgs[@]}"; do
+    valid_apt_name "$p" || die "invalid apt package name: $p"
+    is_allowlisted_apt "$p" || die "package not in Ryoku APT allowlist: $p"
+  done
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get install -y --no-install-recommends "${pkgs[@]}"
+}
+
+cmd_apt_remove() {
+  local pkgs=("$@")
+  [[ "${#pkgs[@]}" -gt 0 ]] || die "apt-remove needs package names"
+  local p
+  for p in "${pkgs[@]}"; do
+    valid_apt_name "$p" || die "invalid apt package name: $p"
+    is_allowlisted_apt "$p" || die "package not in Ryoku APT allowlist: $p"
+  done
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get remove -y "${pkgs[@]}"
+}
+
+# Local .deb via APT (resolves deps) — never raw dpkg -i.
+cmd_apt_install_deb() {
+  local deb=${1:-}
+  [[ -n "$deb" ]] || die "apt-install-deb needs an absolute .deb path"
+  [[ "$deb" == /* ]] || die "deb path must be absolute"
+  [[ "$deb" == *.deb ]] || die "path must end with .deb"
+  [[ -f "$deb" ]] || die "deb not found: $deb"
+  # Refuse path traversal / weirdness
+  [[ "$deb" != *..* ]] || die "refusing deb path with .."
+  export DEBIAN_FRONTEND=noninteractive
+  # apt-get install ./file.deb requires a path apt can resolve; prefer absolute.
+  apt-get install -y --no-install-recommends "$deb"
+}
+
+cmd_flatpak_install() {
+  local ids=("$@")
+  [[ "${#ids[@]}" -gt 0 ]] || die "flatpak-install needs application IDs"
+  local id
+  for id in "${ids[@]}"; do
+    valid_flatpak_id "$id" || die "invalid flatpak id: $id"
+  done
+  command -v flatpak >/dev/null 2>&1 || die "flatpak not installed"
+  flatpak remote-add --if-not-exists "$FLATHUB_REMOTE" \
+    https://dl.flathub.org/repo/flathub.flatpakrepo \
+    || die "failed to ensure Flathub"
+  flatpak install -y --noninteractive "$FLATHUB_REMOTE" "${ids[@]}"
+}
+
+cmd_flatpak_update() {
+  local ids=("$@")
+  [[ "${#ids[@]}" -gt 0 ]] || die "flatpak-update needs application IDs"
+  local id
+  for id in "${ids[@]}"; do
+    valid_flatpak_id "$id" || die "invalid flatpak id: $id"
+  done
+  command -v flatpak >/dev/null 2>&1 || die "flatpak not installed"
+  flatpak update -y --noninteractive "${ids[@]}"
+}
+
+cmd_flatpak_remove() {
+  local ids=("$@")
+  [[ "${#ids[@]}" -gt 0 ]] || die "flatpak-remove needs application IDs"
+  local id
+  for id in "${ids[@]}"; do
+    valid_flatpak_id "$id" || die "invalid flatpak id: $id"
+  done
+  command -v flatpak >/dev/null 2>&1 || die "flatpak not installed"
+  flatpak uninstall -y --noninteractive "${ids[@]}"
+}
+
+cmd_flatpak_sync_profile() {
+  local profile=${1:-}
+  [[ "$profile" == "minimal" || "$profile" == "full" ]] \
+    || die "flatpak-sync-profile needs minimal|full"
+  [[ -x "$FLATPAK_SYNC" ]] || die "missing $FLATPAK_SYNC"
+  "$FLATPAK_SYNC" --apply --profile "$profile"
+}
+
+main() {
+  [[ $# -ge 1 ]] || { usage; exit 2; }
+  load_allowlist_or_die
+  local verb=$1
+  shift
+  case "$verb" in
+    apt-install) cmd_apt_install "$@" ;;
+    apt-remove) cmd_apt_remove "$@" ;;
+    apt-update) cmd_apt_update ;;
+    apt-install-deb) cmd_apt_install_deb "$@" ;;
+    flatpak-install) cmd_flatpak_install "$@" ;;
+    flatpak-update) cmd_flatpak_update "$@" ;;
+    flatpak-remove) cmd_flatpak_remove "$@" ;;
+    flatpak-sync-profile) cmd_flatpak_sync_profile "$@" ;;
+    -h|--help) usage ;;
+    *) die "unknown verb: $verb (see --help)" ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# Ryoku smart power policy helper (read + optional tip; never invents metrics).
+#
+# Applies conservative tips when on battery / power-saver:
+#   - wallpaper profile → economy (via env rewrite + smart reload, no rematugen)
+#   - unload grace → 20s (saved previous restored on AC)
+#   - power-profiles-daemon → power-saver when available
+#
+# Usage:
+#   ryoku-power-policy status
+#   ryoku-power-policy apply   # battery/AC aware tips
+#   ryoku-power-policy restore # return original profile + unload grace
+set -euo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/ryoku"
+env_file="$state_dir/video-wallpaper.env"
+tip_stamp="$state_dir/power-policy-tip.json"
+
+log() { printf 'ryoku-power-policy: %s\n' "$*" >&2; }
+
+battery_discharging() {
+  local p st
+  for p in /sys/class/power_supply/BAT*; do
+    [[ -r "$p/status" ]] || continue
+    st=$(cat "$p/status")
+    [[ "$st" == Discharging ]] && return 0
+  done
+  return 1
+}
+
+battery_pct() {
+  local p cap
+  for p in /sys/class/power_supply/BAT*; do
+    [[ -r "$p/capacity" ]] || continue
+    cap=$(cat "$p/capacity")
+    [[ "$cap" =~ ^[0-9]+$ ]] && { echo "$cap"; return 0; }
+  done
+  echo ""
+}
+
+ppd_get() {
+  if command -v powerprofilesctl >/dev/null 2>&1; then
+    powerprofilesctl get 2>/dev/null || true
+  fi
+}
+
+ppd_set() {
+  local want=$1
+  if command -v powerprofilesctl >/dev/null 2>&1; then
+    powerprofilesctl set "$want" 2>/dev/null && log "powerprofilesctl → $want" || \
+      log "powerprofilesctl set $want failed (optional)"
+  else
+    log "power-profiles-daemon not installed; skipped"
+  fi
+}
+
+cmd_status() {
+  local pct disc=0 ppd
+  pct=$(battery_pct)
+  battery_discharging && disc=1
+  ppd=$(ppd_get)
+  echo "battery_discharging=$disc capacity=${pct:-n/a}"
+  echo "power_profile=${ppd:-unavailable}"
+  if [[ -f "$env_file" ]]; then
+    awk -F= '/^RYOKU_VIDEO_WALLPAPER_PROFILE=/{print "video_wallpaper_profile="$2}
+             /^RYOKU_VIDEO_WALLPAPER_SMART_UNLOAD=/{print "smart_unload="$2}
+             /^RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE=/{print "unload_grace="$2}' "$env_file"
+  else
+    echo "video_wallpaper: inactive"
+  fi
+  if [[ -f "$tip_stamp" ]]; then
+    echo "tip_active=1"
+    if command -v jq >/dev/null 2>&1; then
+      jq -r '"tip_previous_profile=" + (.previousProfile // "n/a"),
+             "tip_previous_grace=" + ((.previousGrace // "n/a")|tostring)' "$tip_stamp" 2>/dev/null || true
+    fi
+  else
+    echo "tip_active=0"
+  fi
+}
+
+rewrite_env_kv() {
+  local key=$1 value=$2
+  local tmp="$env_file.$$"
+  [[ -f "$env_file" ]] || return 1
+  awk -v k="$key" -v v="$value" '
+    BEGIN { done=0 }
+    $0 ~ ("^" k "=") { print k "=" v; done=1; next }
+    { print }
+    END { if (!done) print k "=" v }
+  ' "$env_file" >"$tmp"
+  mv -f "$tmp" "$env_file"
+}
+
+restart_wallpaper_units() {
+  # Never rematugen. Prefer try-restart; skip renderer if disarmed.
+  if [[ -f "$state_dir/video-wallpaper.want" ]]; then
+    systemctl --user try-restart ryoku-video-wallpaper.service 2>/dev/null || true
+  fi
+  systemctl --user try-restart ryoku-video-wallpaper-smart.service 2>/dev/null || true
+}
+
+cmd_apply() {
+  mkdir -p "$state_dir"
+  local pct disc=0
+  pct=$(battery_pct)
+  battery_discharging && disc=1
+
+  if (( disc )); then
+    ppd_set power-saver
+    if [[ -f "$env_file" ]]; then
+      local prev grace_prev
+      prev=$(awk -F= '/^RYOKU_VIDEO_WALLPAPER_PROFILE=/{print $2; exit}' "$env_file")
+      prev=${prev:-balanced}
+      grace_prev=$(awk -F= '/^RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE=/{print $2; exit}' "$env_file")
+      grace_prev=${grace_prev:-60}
+      # Tip only once (preserve original profile/grace under an active tip).
+      if [[ ! -f "$tip_stamp" && "$prev" != economy ]]; then
+        if command -v jq >/dev/null 2>&1; then
+          jq -n --arg p "$prev" --argjson g "$grace_prev" \
+            '{previousProfile:$p, previousGrace:$g, reason:"battery"}' >"$tip_stamp"
+        else
+          printf '{"previousProfile":"%s","previousGrace":%s,"reason":"battery"}\n' \
+            "$prev" "$grace_prev" >"$tip_stamp"
+        fi
+        rewrite_env_kv RYOKU_VIDEO_WALLPAPER_PROFILE economy
+        rewrite_env_kv RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE 20
+        restart_wallpaper_units
+        log "tipped video wallpaper profile $prev → economy (grace $grace_prev → 20)"
+      elif [[ -f "$tip_stamp" ]]; then
+        log "tip already active; leaving original profile/grace stamp intact"
+      fi
+    fi
+    if [[ -n "$pct" && "$pct" -le 20 ]]; then
+      log "battery ≤20% ($pct%); economy tips active"
+    fi
+  else
+    local cur
+    cur=$(ppd_get)
+    if [[ "$cur" == power-saver && -f "$tip_stamp" ]]; then
+      ppd_set balanced
+    fi
+    cmd_restore
+  fi
+  cmd_status
+}
+
+cmd_restore() {
+  [[ -f "$tip_stamp" ]] || { log "no tip stamp"; return 0; }
+  local prev grace_prev
+  if command -v jq >/dev/null 2>&1; then
+    prev=$(jq -r '.previousProfile // empty' "$tip_stamp" 2>/dev/null || true)
+    grace_prev=$(jq -r '.previousGrace // empty' "$tip_stamp" 2>/dev/null || true)
+  else
+    prev=$(sed -n 's/.*"previousProfile"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tip_stamp" | head -1)
+    grace_prev=$(sed -n 's/.*"previousGrace"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$tip_stamp" | head -1)
+  fi
+  case "$prev" in economy | balanced | quality) ;; *) prev=balanced ;; esac
+  [[ "$grace_prev" =~ ^[0-9]+$ ]] || grace_prev=60
+  if [[ -f "$env_file" ]]; then
+    rewrite_env_kv RYOKU_VIDEO_WALLPAPER_PROFILE "$prev"
+    rewrite_env_kv RYOKU_VIDEO_WALLPAPER_UNLOAD_GRACE "$grace_prev"
+    restart_wallpaper_units
+    log "restored video wallpaper profile → $prev (grace → $grace_prev)"
+  fi
+  rm -f "$tip_stamp"
+}
+
+case "${1:-status}" in
+  status) cmd_status ;;
+  apply) cmd_apply ;;
+  restore) cmd_restore ;;
+  *) echo "Usage: ryoku-power-policy status|apply|restore" >&2; exit 2 ;;
+esac

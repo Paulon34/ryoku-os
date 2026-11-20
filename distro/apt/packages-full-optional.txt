@@ -1,0 +1,46 @@
+# Full extras; try available packages individually if a batch fails.
+# These are optional because Debian package availability varies.
+# Package installs may start distro-managed services; no user/group or LAN rules changed by Ryoku.
+fastfetch
+lazygit
+fd-find
+starship
+pnpm
+just
+shfmt
+yq
+gopls
+clippy
+rustfmt
+gamescope
+gamemode
+mangohud
+lutris
+wine
+winetricks
+protontricks
+distrobox
+podman-compose
+docker-compose
+default-mysql-client
+mariadb-client
+postgresql-client
+scrcpy
+masscan
+amass
+ffuf
+gobuster
+sqlmap
+john
+hashcat
+nikto
+feroxbuster
+
+# Additional parity with NixOS (do not grant privileged groups automatically)
+docker.io
+libvirt-daemon-system
+libvirt-clients
+swtpm
+spice-vdagent
+zram-tools
+earlyoom

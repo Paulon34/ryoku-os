@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# Stage the original Ryoku Astronaut SDDM theme on Debian 13 (Qt6).
+# No unattended display-manager switch: GDM remains the recovery login until
+# a human sees the greeter preview, confirms a Proxmox snapshot, and activates.
+set -euo pipefail
+
+REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+PIN=abb3163c724935af888ba5ea9ac0c4f22afd8048
+UPSTREAM=https://github.com/Keyitdev/sddm-astronaut-theme.git
+THEME=/usr/share/sddm/themes/ryoku-astronaut
+WALL_HELPER=/usr/local/libexec/ryoku-sddm-wallpaper
+POLICY=/usr/share/polkit-1/actions/org.ryoku.sddm.wallpaper.policy
+CONF=/etc/sddm.conf.d/20-ryoku.conf
+STATE=/var/lib/ryoku/sddm
+die() { echo "ryoku-sddm: $*" >&2; exit 1; }
+need_root() { [[ "$EUID" -eq 0 ]] || die "sudo required for $1"; }
+exists() { command -v "$1" >/dev/null 2>&1; }
+user_id() { id -u "$1" 2>/dev/null; }
+
+usage() {
+  cat <<EOF
+Ryoku SDDM for Debian 13:
+  sudo ./distro/scripts/ryoku-sddm stage USER   # install theme only (keeps GDM)
+  ./distro/scripts/ryoku-sddm preview           # GUI test, do NOT sudo
+  sudo ./distro/scripts/ryoku-sddm activate     # opt-in DM switch, NEXT boot
+  sudo ./distro/scripts/ryoku-sddm rollback     # restore previous GDM for NEXT boot
+  ./distro/scripts/ryoku-sddm status
+No reboot, GDM restart, or GRUB change in any command.
+EOF
+}
+
+stage() {
+  need_root stage
+  [[ $# -eq 1 ]] || die "stage requires a Debian username"
+  local username=$1
+  [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "invalid username"
+  local uid
+  uid=$(user_id "$username") || die "user not found"
+  [[ "$uid" -ge 1000 ]] || die "refusing system account"
+  [[ -f /etc/debian_version ]] || die "only Debian supported"
+  for cmd in git python3 magick sddm-greeter-qt6; do
+    exists "$cmd" || die "$cmd missing: install SDDM + Qt6 QML + imagemagick first (see distro/docs/SDDM_DEBIAN.md)"
+  done
+
+  # Do not execute any upstream install script. Fetch a pinned Git commit, then
+  # copy only inert theme data and overlay our licensed Ryoku QML.
+  local tmp src target
+  tmp=$(mktemp -d)
+  trap 'rm -rf -- "$tmp"' EXIT
+  src="$tmp/upstream"
+  mkdir -p "$src"
+  git -C "$src" init -q
+  git -C "$src" -c advice.detachedHead=false fetch -q --depth 1 "$UPSTREAM" "$PIN"
+  git -C "$src" -c advice.detachedHead=false checkout -q --detach FETCH_HEAD
+  [[ "$(git -C "$src" rev-parse HEAD)" == "$PIN" ]] || die "upstream pin mismatch"
+  for f in Main.qml Components/Input.qml Components/LoginForm.qml Themes/japanese_aesthetic.conf metadata.desktop; do
+    [[ -f "$src/$f" ]] || die "missing pinned upstream file: $f"
+  done
+  mkdir -p /usr/share/sddm/themes
+  target=$(mktemp -d /usr/share/sddm/themes/.ryoku-astronaut.XXXXXXXX)
+  tar -C "$src" --exclude=.git -cf - . | tar -C "$target" -xf -
+  install -m 0644 "$REPO/distro/sddm/astronaut-overlay/Main.qml" "$target/Main.qml"
+  install -m 0644 "$REPO/distro/sddm/astronaut-overlay/Clock.qml" "$target/Components/Clock.qml"
+  install -m 0644 "$REPO/distro/sddm/astronaut-overlay/SystemButtons.qml" "$target/Components/SystemButtons.qml"
+
+  # Reuse original Ryoku's visual-only Input.qml adjustments. Leave upstream
+  # authentication/session selection logic untouched. Abort on drift.
+  python3 - "$target" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+inp = root / "Components/Input.qml"
+text = inp.read_text()
+a = 'opacity: 0.2\n                border.color: "transparent"'
+b = 'opacity: 1\n                border.color: config.RyokuFieldBorderColor || "transparent"'
+c = 'opacity: 0.2\n                radius: config.RoundCorners || 0'
+d = ('opacity: 0.55\n                border.width: loginButton.activeFocus ? 2 : 1\n'
+     '                border.color: loginButton.activeFocus ? config.HighlightBorderColor '
+     ': (config.RyokuLoginButtonBorderColor || "transparent")\n'
+     '                radius: config.RoundCorners || 0')
+if a not in text or c not in text:
+    raise SystemExit("upstream Input.qml changed; refusing unsafe patch")
+inp.write_text(text.replace(a, b).replace(c, d))
+
+meta = root / "metadata.desktop"
+metadata = meta.read_text()
+if 'ConfigFile=Themes/astronaut.conf' not in metadata:
+    raise SystemExit("upstream SDDM metadata changed")
+meta.write_text(metadata.replace('ConfigFile=Themes/astronaut.conf',
+                                  'ConfigFile=Themes/ryoku.conf'))
+cfg = (root / "Themes/japanese_aesthetic.conf").read_text()
+overrides = {
+    'Font': 'Sans Serif', 'FontSize': '12', 'ScreenWidth': '', 'ScreenHeight': '',
+    'HeaderText': 'RYOKU', 'Background': 'Backgrounds/ryoku-current.png',
+    'HaveFormBackground': 'true', 'FullBlur': 'false', 'PartialBlur': 'false',
+    'FormPosition': 'left', 'CropBackground': 'true', 'DimBackground': '0.07',
+    'BackgroundColor': '#16171f', 'DimBackgroundColor': '#000000',
+    'FormBackgroundColor': '#5416171f', 'RyokuGlassBorderColor': '#29ffffff',
+    'RyokuGlassHighlightColor': '#14ffffff', 'RyokuFieldBorderColor': '#33ffffff',
+    'RyokuLoginButtonBorderColor': '#40c8d6ff',
+    'LoginFieldBackgroundColor': '#1affffff',
+    'PasswordFieldBackgroundColor': '#1affffff',
+    'LoginFieldTextColor': '#f5f5f7', 'PasswordFieldTextColor': '#f5f5f7',
+    'HeaderTextColor': '#f5f5f7', 'TimeTextColor': '#f5f5f7',
+    'DateTextColor': '#e8e8ed', 'SystemButtonsIconsColor': '#e8e8ed',
+    'SessionButtonTextColor': '#e8e8ed', 'HighlightBorderColor': '#c8d6ff',
+}
+for key, val in overrides.items():
+    pattern = re.compile(r'^' + re.escape(key) + r'=.*$', re.M)
+    if pattern.search(cfg):
+        cfg = pattern.sub(lambda m, k=key, v=val: k+'="'+v+'"', cfg)
+    else:
+        cfg += '\n'+key+'="'+val+'"'
+(root / "Themes/ryoku.conf").write_text(cfg + '\n')
+PY
+
+  # Use only public Ryoku CC0 wallpaper. Private wallpapers stay on the VM,
+  # never in the published theme or Git. User choice sync comes afterward.
+  mkdir -p "$target/Backgrounds"
+  magick "$REPO/distro/assets/wallpapers/ryoku-night.jpg" \
+    -auto-orient -strip "PNG:$target/Backgrounds/ryoku-current.png"
+  chmod 0644 "$target/Backgrounds/ryoku-current.png"
+  chmod -R a+rX "$target"
+  chown -R root:root "$target"
+
+  if [[ -e "$THEME" ]]; then
+    backup="$STATE/theme-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$STATE"
+    mv -- "$THEME" "$backup"
+    echo "ryoku-sddm: previous theme backup $backup"
+  fi
+  mv -- "$target" "$THEME"
+  trap - EXIT
+  rm -rf -- "$tmp"
+
+  install -d -m 0755 /usr/local/libexec /usr/share/polkit-1/actions /etc/sddm.conf.d
+  install -m 0755 "$REPO/distro/scripts/ryoku-sddm-wallpaper" "$WALL_HELPER"
+  install -m 0644 "$REPO/distro/polkit/org.ryoku.sddm.wallpaper.policy" "$POLICY"
+  cat > "$CONF" <<EOF
+[Theme]
+Current=ryoku-astronaut
+EOF
+
+  # Sync user's saved login selection if present (not desktop wallpaper).
+  # Run this narrowly scoped helper as root, with the selected UID supplied
+  # only by the trusted stage script, never by the GUI.
+  selected=$(python3 - "$REPO/ryoku/settings.json" <<'PY'
+import json, sys
+try:
+    val = json.load(open(sys.argv[1]))["appearance"]["loginWallpaper"]
+    print(val if isinstance(val, str) else "")
+except (OSError, KeyError, ValueError, TypeError):
+    print("")
+PY
+)
+  if [[ -n "$selected" ]]; then
+    PKEXEC_UID="$uid" "$WALL_HELPER" "$selected" ||
+      echo "ryoku-sddm: saved wallpaper not available; using public default"
+  fi
+  echo "ryoku-sddm: theme staged, GDM NOT switched; preview with no sudo."
+}
+
+activate() {
+  need_root activate
+  [[ -f "$THEME/metadata.desktop" && -f "$THEME/Backgrounds/ryoku-current.png" ]] ||
+    die "theme not staged"
+  [[ -f /usr/share/wayland-sessions/ryoku-hyprland.desktop &&
+     -f /usr/share/wayland-sessions/ryoku-niri.desktop ]] ||
+    die "Ryoku Hyprland/Niri sessions missing"
+  mkdir -p "$STATE"
+  if [[ ! -f "$STATE/previous-display-manager" ]]; then
+    readlink -f /etc/systemd/system/display-manager.service > "$STATE/previous-display-manager" ||
+      die "previous display manager cannot be backed up"
+    cat /etc/X11/default-display-manager > "$STATE/previous-dm-executable" 2>/dev/null || true
+  fi
+  echo "Switch display-manager.service to SDDM on NEXT boot (GDM recovery preserved)."
+  read -r -p "Type SWITCH to confirm a VM snapshot exists: " answer
+  [[ "$answer" == SWITCH ]] || die "cancelled"
+  systemctl enable --force sddm.service
+  systemctl daemon-reload
+  printf '%s\n' /usr/bin/sddm > /etc/X11/default-display-manager
+  echo "ryoku-sddm: SDDM selected for next boot; no service restarted."
+}
+rollback() {
+  need_root rollback
+  [[ -f "$STATE/previous-display-manager" ]] || die "no backed-up display manager"
+  prev=$(cat "$STATE/previous-display-manager")
+  [[ "$prev" == /usr/*/systemd/system/* || "$prev" == /lib/systemd/system/* ]] ||
+    die "unsafe backed-up service path"
+  [[ -f "$prev" ]] || die "backed-up service unit missing"
+  systemctl disable sddm.service || true
+  ln -sfn -- "$prev" /etc/systemd/system/display-manager.service
+  if [[ -f "$STATE/previous-dm-executable" ]]; then
+    cat "$STATE/previous-dm-executable" > /etc/X11/default-display-manager
+  fi
+  systemctl daemon-reload
+  echo "ryoku-sddm: previous display manager restored for next boot; no restart."
+}
+case "${1:-}" in
+  stage) shift; stage "$@" ;;
+  preview)
+    [[ "$EUID" -ne 0 ]] || die "preview must run as desktop user, not root"
+    command -v sddm-greeter-qt6 >/dev/null || die "sddm-greeter-qt6 not installed"
+    exec sddm-greeter-qt6 --test-mode --theme "$THEME" ;;
+  activate) activate ;;
+  rollback) rollback ;;
+  status)
+    echo "Theme: $THEME"
+    [[ -f "$THEME/metadata.desktop" ]] && echo "Theme staged: yes" || echo "Theme staged: no"
+    echo "Default DM: $(readlink -f /etc/systemd/system/display-manager.service || echo unknown)"
+    [[ -f "$STATE/previous-display-manager" ]] && echo "Rollback backup: available" || true ;;
+  *) usage; exit 2 ;;
+esac

@@ -1,0 +1,1283 @@
+#!/usr/bin/env bash
+# ryoku-bootstrap — Debian 13 (Trixie) foundation for Ryoku (ENTREGA A + preflight)
+#
+# Installs/configures: APT base + Nix multi-user (nix-setup-systemd) +
+# standalone Home Manager flake + Hyprland (primary) + Niri (recovery) GDM sessions.
+#
+# HM hosts: writes distro/flake/hosts/<user>/default.nix (tracked via git add),
+# then `home-manager switch --flake …#<user>` as that user — never a fixed
+# /home/ryoku for another account, never root-owned $HOME, never gitignored overlay.
+#
+# NEVER: partitions disks, edits GRUB/bootloader, installs NixOS, or auto-runs
+# against a developer host without --apply. Refuse NixOS guests.
+#
+set -euo pipefail
+
+PROG=$(basename "$0")
+VERSION="0.1.1-preflight-a"
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+DISTRO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(cd "$DISTRO_DIR/.." && pwd)
+FLAKE_DIR="$DISTRO_DIR/flake"
+APT_LIST="$DISTRO_DIR/apt/packages-base.txt"
+APT_FULL_LIST="$DISTRO_DIR/apt/packages-full.txt"
+APT_FULL_OPTIONAL="$DISTRO_DIR/apt/packages-full-optional.txt"
+HARDWARE_PROBE="$DISTRO_DIR/scripts/ryoku-hardware"
+HARDWARE=auto
+NVIDIA_DRIVER=0
+SESSION_DESKTOP_HYPR="$DISTRO_DIR/session/ryoku-hyprland.desktop"
+SESSION_WRAPPER_HYPR="$DISTRO_DIR/session/ryoku-hyprland-session"
+SESSION_DESKTOP_NIRI="$DISTRO_DIR/session/ryoku-niri.desktop"
+SESSION_WRAPPER_NIRI="$DISTRO_DIR/session/ryoku-niri-session"
+# Legacy aliases used by older preflight checks / recovery docs.
+SESSION_DESKTOP="$SESSION_DESKTOP_NIRI"
+SESSION_WRAPPER="$SESSION_WRAPPER_NIRI"
+APT_HYPR_LIST="$DISTRO_DIR/apt/packages-hyprland.txt"
+FLATPAK_MIN_LIST="$DISTRO_DIR/flatpak/apps-minimal.txt"
+FLATPAK_FULL_LIST="$DISTRO_DIR/flatpak/apps-full.txt"
+FLATPAK_SYNC="$DISTRO_DIR/scripts/ryoku-flatpak-sync"
+PKG_HELPER="$DISTRO_DIR/scripts/ryoku-pkg-helper"
+POLKIT_POLICY="$DISTRO_DIR/polkit/org.ryoku.settings.apply.policy"
+POLKIT_PKG_POLICY="$DISTRO_DIR/polkit/org.ryoku.pkg.policy"
+SETTINGS_APPLY_LIBEXEC="/usr/local/libexec/ryoku-settings-apply"
+PKG_HELPER_LIBEXEC="/usr/local/libexec/ryoku-pkg-helper"
+SKIP_FLATPAK=0
+
+sysroot_path() {
+  local rel=$1
+  rel=${rel#/}
+  if [[ "$SYSROOT" == "/" ]]; then
+    echo "/$rel"
+  else
+    echo "$SYSROOT/$rel"
+  fi
+}
+
+MODE=""
+TARGET_USER="${SUDO_USER:-${USER:-}}"
+SYSROOT="/"
+LOG_DIR=""
+BACKUP_DIR=""
+SKIP_APT=0
+SKIP_NIX=0
+SKIP_HM=0
+ASSUME_YES=0
+PROFILE="minimal"
+VISUAL="balanced"
+SHELL_STYLE="islands"
+COMPOSITOR="hyprland"
+JARVIS=0
+PREFLIGHT_FAILED=0
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+warn() { echo "WARN: $*" >&2; }
+ok() { echo "OK: $*"; }
+fail() { echo "FAIL: $*" >&2; PREFLIGHT_FAILED=1; }
+
+usage() {
+  cat <<EOF
+$PROG $VERSION — Ryoku Debian foundation bootstrap
+
+Usage:
+  $PROG --dry-run [options]     Preflight + plan; write nothing durable
+  $PROG --apply [options]       Apply (root for APT/Nix/DM; HM as --user)
+
+Options:
+  --user NAME         Desktop user for Home Manager (default: \$SUDO_USER or \$USER)
+  --sysroot PATH      Alternate root for tests (default: /)
+  --flake-dir PATH    Flake directory (default: distro/flake)
+  --log-dir PATH      Log directory
+  --backup-dir PATH   Backup directory
+  --skip-apt          Do not install APT packages
+  --skip-flatpak      Do not configure Flathub / install declared Flatpaks
+  --skip-nix          Do not configure Nix daemon / flakes
+  --skip-hm           Do not run home-manager switch
+  --profile NAME      minimal|full (default: minimal)
+  --visual NAME       auto|lite|balanced|ultra (default: balanced)
+  --hardware NAME     auto|off (default: auto; safe firmware candidates)
+  --nvidia-driver     opt in to Debian-detected proprietary NVIDIA driver; requires Secure Boot off
+  --shell-style NAME  quattro|islands (default: islands)
+  --compositor NAME   hyprland|niri (default: hyprland; niri = recovery)
+  --jarvis            Enable Jarvis (default: off)
+  --yes               Do not prompt on --apply
+  -h, --help          Show this help
+
+Safety:
+  - Refuses NixOS; never touches GRUB/EFI/partitions
+  - Preflight runs before any mutation on --apply
+  - HM host module is hosts/<user>/default.nix (git-add; not gitignored)
+  - home-manager switch runs as --user (not root writing \$HOME)
+  - Installs BOTH GDM sessions (Hyprland primary + Niri recovery); does not
+    uninstall Niri from the VM
+
+Guest verification after this script alone: GUEST_NOT_RUN
+(do not invent PASS_MANUAL).
+EOF
+}
+
+ts() { date -u +%Y%m%dT%H%M%SZ; }
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+is_nixos() {
+  [[ -e "$SYSROOT/etc/NIXOS" ]]
+}
+
+read_os_release() {
+  local f="$SYSROOT/etc/os-release"
+  [[ -f "$f" ]] || die "missing $f"
+  # shellcheck disable=SC1090
+  set -a
+  # shellcheck source=/dev/null
+  . "$f"
+  set +a
+}
+
+assert_debian_trixie() {
+  read_os_release
+  [[ "${ID:-}" == "debian" ]] || die "refusing non-Debian system (ID=${ID:-unknown})"
+  local ver="${VERSION_ID:-}"
+  local codename="${VERSION_CODENAME:-}"
+  if [[ "$ver" != "13" && "$codename" != "trixie" ]]; then
+    die "refusing Debian != 13/trixie (VERSION_ID=$ver VERSION_CODENAME=$codename)"
+  fi
+  local arch
+  arch=$(uname -m)
+  [[ "$arch" == "x86_64" || "$arch" == "amd64" ]] || die "refusing arch=$arch (need amd64/x86_64)"
+}
+
+resolve_home_dir() {
+  if [[ "$SYSROOT" == "/" ]] && id "$TARGET_USER" >/dev/null 2>&1; then
+    getent passwd "$TARGET_USER" | cut -d: -f6
+  else
+    echo "/home/$TARGET_USER"
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) MODE=dry-run; shift ;;
+      --apply) MODE=apply; shift ;;
+      --user) TARGET_USER=$2; shift 2 ;;
+      --sysroot) SYSROOT=$2; shift 2 ;;
+      --flake-dir) FLAKE_DIR=$2; shift 2 ;;
+      --log-dir) LOG_DIR=$2; shift 2 ;;
+      --backup-dir) BACKUP_DIR=$2; shift 2 ;;
+      --skip-apt) SKIP_APT=1; shift ;;
+      --skip-flatpak) SKIP_FLATPAK=1; shift ;;
+      --skip-nix) SKIP_NIX=1; shift ;;
+      --skip-hm) SKIP_HM=1; shift ;;
+      --profile) PROFILE=$2; shift 2 ;;
+      --visual) VISUAL=$2; shift 2 ;;
+      --hardware) HARDWARE=$2; shift 2 ;;
+      --nvidia-driver) NVIDIA_DRIVER=1; shift ;;
+      --shell-style) SHELL_STYLE=$2; shift 2 ;;
+      --compositor) COMPOSITOR=$2; shift 2 ;;
+      --jarvis) JARVIS=1; shift ;;
+      --yes) ASSUME_YES=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown argument: $1 (see --help)" ;;
+    esac
+  done
+  [[ -n "$MODE" ]] || die "specify --dry-run or --apply"
+  [[ "$PROFILE" == "minimal" || "$PROFILE" == "full" ]] || die "invalid --profile: $PROFILE"
+  [[ "$HARDWARE" == auto || "$HARDWARE" == off ]] || die "invalid --hardware: $HARDWARE"
+  [[ "$VISUAL" == auto || "$VISUAL" == "lite" || "$VISUAL" == "balanced" || "$VISUAL" == "ultra" ]] || die "invalid --visual: $VISUAL"
+  [[ "$SHELL_STYLE" == "quattro" || "$SHELL_STYLE" == "islands" ]] || die "invalid --shell-style: $SHELL_STYLE"
+  [[ "$COMPOSITOR" == "hyprland" || "$COMPOSITOR" == "niri" ]] || die "invalid --compositor: $COMPOSITOR"
+  [[ "$TARGET_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "invalid --user: '$TARGET_USER'"
+  [[ "$TARGET_USER" != "root" ]] || die "desktop user cannot be root"
+  FLAKE_DIR=$(cd "$FLAKE_DIR" 2>/dev/null && pwd || echo "$FLAKE_DIR")
+}
+
+setup_paths() {
+  local stamp
+  stamp=$(ts)
+  if [[ -z "$LOG_DIR" ]]; then
+    if [[ "$SYSROOT" == "/" ]]; then
+      LOG_DIR="/var/log/ryoku-bootstrap"
+    else
+      LOG_DIR="$SYSROOT/var/log/ryoku-bootstrap"
+    fi
+  fi
+  if [[ -z "$BACKUP_DIR" ]]; then
+    if [[ "$SYSROOT" == "/" ]]; then
+      BACKUP_DIR="/var/backups/ryoku-bootstrap-$stamp"
+    else
+      BACKUP_DIR="$SYSROOT/var/backups/ryoku-bootstrap-$stamp"
+    fi
+  fi
+}
+
+apt_packages() {
+  [[ -f "$APT_LIST" ]] || die "missing APT list: $APT_LIST"
+  {
+    grep -vE '^\s*(#|$)' "$APT_LIST" | sed 's/[[:space:]]*$//'
+    if [[ "$PROFILE" == "full" && -f "$APT_FULL_LIST" ]]; then
+      grep -vE '^\s*(#|$)' "$APT_FULL_LIST" | sed 's/[[:space:]]*$//'
+    fi
+  } | awk 'NF && !seen[$0]++'
+}
+
+host_nix_path() {
+  echo "$FLAKE_DIR/hosts/$TARGET_USER/default.nix"
+}
+
+render_host_nix() {
+  local home_dir=$1
+  local jarvis_nix=false
+  [[ "$JARVIS" -eq 1 ]] && jarvis_nix=true
+  # Canonical checkout for Settings Apply / build-info — this REPO_ROOT, never a guess.
+  local repo_path=$REPO_ROOT
+  cat <<EOF
+# Generated by ryoku-bootstrap $VERSION — Home Manager host for flake purity.
+# Attr: homeConfigurations.$TARGET_USER  →  home-manager switch --flake <flake>#$TARGET_USER
+# settingsApply.repoPath is the absolute checkout being applied (no ~/ryoku-os guess).
+{
+  username = "$TARGET_USER";
+  homeDirectory = "$home_dir";
+  profile = {
+    edition = "$PROFILE";
+    visual = "$VISUAL";
+    shellStyle = "$SHELL_STYLE";
+    compositor = "$COMPOSITOR";
+    jarvis = $jarvis_nix;
+  };
+  settingsApply = {
+    repoPath = "$repo_path";
+    flakeHost = "$TARGET_USER";
+  };
+}
+EOF
+}
+
+plan_summary() {
+  local home_dir
+  home_dir=$(resolve_home_dir)
+  cat <<EOF
+Ryoku bootstrap plan ($MODE)
+  version:     $VERSION
+  sysroot:     $SYSROOT
+  user:        $TARGET_USER
+  home:        $home_dir
+  profile:     $PROFILE
+  visual:      $VISUAL
+  hardware:    $HARDWARE
+  NVIDIA proprietary opt-in: $NVIDIA_DRIVER
+  shellStyle:  $SHELL_STYLE
+  compositor:  $COMPOSITOR
+  jarvis:      $JARVIS
+  flake dir:   $FLAKE_DIR
+  host module: $(host_nix_path)
+  hm attr:     $TARGET_USER
+  log dir:     $LOG_DIR
+  backup dir:  $BACKUP_DIR
+  skip apt/flatpak/nix/hm: $SKIP_APT / $SKIP_FLATPAK / $SKIP_NIX / $SKIP_HM
+
+Steps:
+  0. Preflight (abort before mutations on failure)
+  1. Refuse NixOS; Debian 13 Trixie amd64 on --apply /
+  2. Backup configs we may overwrite
+  3. APT packages from distro/apt/packages-base.txt (+ packages-full.txt if --profile full)
+  4. Flatpak: ensure Flathub + install distro/flatpak/apps-*.txt for profile
+  5. Merge declared Flatpak IDs into ryoku/settings.json (apps.flatpakDeclared)
+  6. nix-setup-systemd + flakes
+  7. GDM session wrapper + desktop
+  8. NM / PipeWire / polkit (+ Settings apply + pkg helper actions)
+  9. Write hosts/<user>/default.nix + git add; HM switch as user
+  10. Install libexec helpers (settings-apply + pkg-helper) + /etc/ryoku markers
+  11. Recovery notes
+
+Out of scope: GRUB/EFI/partitions/Calamares/NixOS/osConfig/QEMU
+Guest after apply alone: GUEST_NOT_RUN (do not invent PASS_MANUAL)
+EOF
+}
+
+# --- Preflight (no mutations) -------------------------------------------------
+
+preflight() {
+  info "preflight begin"
+  PREFLIGHT_FAILED=0
+  local home_dir
+  home_dir=$(resolve_home_dir)
+
+  if is_nixos; then
+    fail "NixOS detected ($SYSROOT/etc/NIXOS) — refuse"
+  else
+    ok "not NixOS"
+  fi
+
+  if [[ "$SYSROOT" == "/" ]]; then
+    if [[ -f /etc/os-release ]]; then
+      local host_id host_ver host_codename host_pretty arch
+      host_pretty=$(. /etc/os-release; echo "${PRETTY_NAME:-unknown}")
+      host_id=$(. /etc/os-release; echo "${ID:-}")
+      host_ver=$(. /etc/os-release; echo "${VERSION_ID:-}")
+      host_codename=$(. /etc/os-release; echo "${VERSION_CODENAME:-}")
+      arch=$(uname -m)
+      if [[ "$MODE" == "apply" ]]; then
+        if [[ "$host_id" != "debian" || ( "$host_ver" != "13" && "$host_codename" != "trixie" ) ]]; then
+          fail "apply requires Debian 13/trixie (got $host_pretty)"
+        else
+          ok "Debian 13/trixie"
+        fi
+        if [[ "$arch" != "x86_64" && "$arch" != "amd64" ]]; then
+          fail "arch=$arch (need amd64)"
+        else
+          ok "arch=$arch"
+        fi
+      else
+        if [[ "$host_id" != "debian" || ( "$host_ver" != "13" && "$host_codename" != "trixie" ) ]]; then
+          warn "host is $host_pretty (not Debian 13) — dry-run plan only"
+        else
+          ok "Debian 13/trixie"
+        fi
+        if [[ "$arch" != "x86_64" && "$arch" != "amd64" ]]; then
+          warn "arch=$arch (target is amd64)"
+        else
+          ok "arch=$arch"
+        fi
+      fi
+    else
+      fail "missing /etc/os-release"
+    fi
+  else
+    read_os_release
+    if [[ "${ID:-}" != "debian" ]]; then
+      fail "fixture sysroot ID=${ID:-unknown} (want debian)"
+    else
+      ok "fixture Debian (${VERSION_CODENAME:-?} ${VERSION_ID:-?})"
+    fi
+  fi
+
+  # User / home
+  if [[ "$SYSROOT" == "/" ]]; then
+    if id "$TARGET_USER" >/dev/null 2>&1; then
+      ok "user $TARGET_USER exists"
+      if [[ -d "$home_dir" ]]; then
+        ok "home exists: $home_dir"
+        local owner
+        owner=$(stat -c '%U' "$home_dir" 2>/dev/null || true)
+        if [[ -n "$owner" && "$owner" != "$TARGET_USER" ]]; then
+          fail "home $home_dir owned by $owner (expected $TARGET_USER) — refuse wrong HOME"
+        else
+          ok "home owner is $TARGET_USER"
+        fi
+      else
+        if [[ "$MODE" == "apply" ]]; then
+          fail "home missing: $home_dir"
+        else
+          warn "home missing: $home_dir (create before --apply)"
+        fi
+      fi
+    else
+      if [[ "$MODE" == "apply" && "$SKIP_HM" -eq 0 ]]; then
+        fail "user $TARGET_USER does not exist (needed for HM)"
+      else
+        warn "user $TARGET_USER does not exist yet"
+      fi
+    fi
+  else
+    ok "fixture mode: planned home $home_dir for $TARGET_USER"
+  fi
+
+  # Refuse fixed /home/ryoku when targeting someone else
+  if [[ "$TARGET_USER" != "ryoku" && "$home_dir" == "/home/ryoku" ]]; then
+    fail "refusing homeDirectory=/home/ryoku for user $TARGET_USER"
+  else
+    ok "homeDirectory for $TARGET_USER → $home_dir"
+  fi
+
+  # Tree / sessions (Hyprland primary + Niri recovery)
+  [[ -f "$FLAKE_DIR/flake.nix" ]] && ok "flake.nix" || fail "missing $FLAKE_DIR/flake.nix"
+  [[ -f "$APT_LIST" ]] && ok "APT list" || fail "missing APT list"
+  [[ -f "$APT_HYPR_LIST" ]] && ok "Hyprland APT list" || fail "missing Hyprland APT list"
+  [[ -f "$APT_FULL_LIST" ]] && ok "Full APT list" || warn "missing packages-full.txt"
+  [[ -f "$POLKIT_POLICY" ]] && ok "Ryoku Settings polkit policy" || fail "missing polkit policy"
+  [[ -f "$POLKIT_PKG_POLICY" ]] && ok "Ryoku pkg polkit policy" || fail "missing pkg polkit policy"
+  [[ -f "$FLATPAK_MIN_LIST" ]] && ok "Flatpak minimal list" || fail "missing flatpak apps-minimal.txt"
+  [[ -f "$FLATPAK_FULL_LIST" ]] && ok "Flatpak full list" || fail "missing flatpak apps-full.txt"
+  [[ -x "$FLATPAK_SYNC" ]] && ok "ryoku-flatpak-sync" || fail "ryoku-flatpak-sync missing/not executable"
+  [[ -x "$PKG_HELPER" ]] && ok "ryoku-pkg-helper" || fail "ryoku-pkg-helper missing/not executable"
+  [[ -x "$DISTRO_DIR/scripts/ryoku-doctor" ]] && ok "ryoku-doctor" || fail "ryoku-doctor missing/not executable"
+  [[ -f "$FLAKE_DIR/home/settings.nix" ]] && ok "settings.nix" || fail "missing settings.nix"
+  [[ -f "$FLAKE_DIR/home/build-info.nix" ]] && ok "build-info.nix" || fail "missing build-info.nix"
+  [[ -f "$DISTRO_DIR/ryoku/settings.json" || -f "$REPO_ROOT/ryoku/settings.json" ]] \
+    && ok "settings.json" || fail "missing ryoku/settings.json"
+  [[ -f "$SESSION_DESKTOP_HYPR" ]] && ok "GDM Hyprland desktop" || fail "missing hyprland session desktop"
+  [[ -f "$SESSION_WRAPPER_HYPR" ]] && ok "Hyprland session wrapper" || fail "missing hyprland session wrapper"
+  [[ -f "$SESSION_DESKTOP_NIRI" ]] && ok "GDM Niri recovery desktop" || fail "missing niri session desktop"
+  [[ -f "$SESSION_WRAPPER_NIRI" ]] && ok "Niri session wrapper" || fail "missing niri session wrapper"
+  if [[ -f "$SESSION_DESKTOP_HYPR" ]]; then
+    grep -q '^Exec=ryoku-hyprland-session' "$SESSION_DESKTOP_HYPR" \
+      && ok "GDM Exec=ryoku-hyprland-session" \
+      || fail "Hyprland desktop Exec mismatch"
+  fi
+  if [[ -f "$SESSION_DESKTOP_NIRI" ]]; then
+    grep -q '^Exec=ryoku-niri-session' "$SESSION_DESKTOP_NIRI" \
+      && ok "GDM Exec=ryoku-niri-session (recovery)" \
+      || fail "Niri desktop Exec mismatch"
+  fi
+  if [[ -f "$SESSION_WRAPPER_HYPR" ]]; then
+    head -1 "$SESSION_WRAPPER_HYPR" | grep -q 'bash\|sh' \
+      && ok "hyprland wrapper shebang" \
+      || fail "hyprland wrapper missing shebang"
+    grep -q 'Hyprland' "$SESSION_WRAPPER_HYPR" && ok "wrapper references Hyprland" || fail "wrapper missing Hyprland"
+  fi
+  if [[ -f "$SESSION_WRAPPER_NIRI" ]]; then
+    grep -q 'niri' "$SESSION_WRAPPER_NIRI" && ok "wrapper references niri" || fail "wrapper missing niri"
+  fi
+  [[ -f "$FLAKE_DIR/home/niri.nix" ]] && ok "niri.nix present" || fail "missing niri.nix"
+  [[ -f "$FLAKE_DIR/home/hyprland.nix" ]] && ok "hyprland.nix present" || fail "missing hyprland.nix"
+  # Lightweight Niri KDL brace sanity from embedded conf (string in niri.nix)
+  if [[ -f "$FLAKE_DIR/home/niri.nix" ]]; then
+    local opens closes
+    opens=$(grep -o '{' "$FLAKE_DIR/home/niri.nix" | wc -l)
+    closes=$(grep -o '}' "$FLAKE_DIR/home/niri.nix" | wc -l)
+    if [[ "$opens" -eq "$closes" ]]; then
+      ok "niri.nix brace balance ($opens)"
+    else
+      fail "niri.nix brace imbalance ($opens vs $closes)"
+    fi
+  fi
+
+  # GPU / Mesa called out in APT list
+  if grep -q 'mesa-vulkan-drivers' "$APT_LIST" && grep -q 'libegl1' "$APT_LIST"; then
+    ok "APT list includes Mesa/EGL/Vulkan"
+  else
+    fail "APT list missing Mesa/EGL/Vulkan packages"
+  fi
+  grep -q 'xwayland' "$APT_LIST" && ok "APT list includes XWayland" || fail "APT list missing xwayland"
+  grep -q 'gdm3' "$APT_LIST" && ok "APT list includes gdm3" || fail "APT list missing gdm3"
+  grep -q 'nix-setup-systemd' "$APT_LIST" && ok "APT list prefers nix-setup-systemd" || fail "APT list missing nix-setup-systemd"
+
+  # Nix / lock
+  if [[ "$SKIP_NIX" -eq 0 ]]; then
+    if command -v nix >/dev/null 2>&1; then
+      ok "nix on PATH ($(nix --version 2>/dev/null | head -1))"
+      if [[ "$SYSROOT" == "/" ]] && command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet nix-daemon.socket 2>/dev/null \
+          || systemctl is-active --quiet nix-daemon.service 2>/dev/null; then
+          ok "nix-daemon active"
+        else
+          if [[ "$MODE" == "apply" ]]; then
+            warn "nix-daemon not active yet (will enable during apply)"
+          else
+            warn "nix-daemon not active (expected before first apply)"
+          fi
+        fi
+      fi
+    else
+      if [[ "$MODE" == "apply" && "$SYSROOT" == "/" ]]; then
+        warn "nix not on PATH yet (install via APT during apply)"
+      else
+        warn "nix not on PATH (dry-run / fixture OK)"
+      fi
+    fi
+  fi
+  if [[ -f "$FLAKE_DIR/flake.lock" ]]; then
+    ok "flake.lock present"
+  else
+    warn "flake.lock missing — will run nix flake lock on apply"
+  fi
+
+  # Flake dir writable for host module
+  if [[ -d "$FLAKE_DIR/hosts" || -d "$FLAKE_DIR" ]]; then
+    if [[ -w "$FLAKE_DIR" ]]; then
+      ok "flake dir writable for hosts/<user>"
+    else
+      if [[ "$MODE" == "apply" && "$SKIP_HM" -eq 0 ]]; then
+        fail "flake dir not writable: $FLAKE_DIR"
+      else
+        warn "flake dir not writable: $FLAKE_DIR"
+      fi
+    fi
+  fi
+
+  # Host module preview
+  info "planned host module:"
+  render_host_nix "$home_dir" | sed 's/^/  /'
+
+  # Explicit out-of-scope
+  ok "no GRUB/partition operations in plan"
+
+  if [[ "$PREFLIGHT_FAILED" -ne 0 ]]; then
+    echo "PREFLIGHT FAILED — aborting before any mutation" >&2
+    return 1
+  fi
+  info "preflight passed"
+  return 0
+}
+
+backup_file() {
+  local src=$1
+  [[ -e "$src" ]] || return 0
+  mkdir -p "$BACKUP_DIR"
+  local rel=${src#"$SYSROOT"}
+  rel=${rel#/}
+  local dest="$BACKUP_DIR/$rel"
+  mkdir -p "$(dirname "$dest")"
+  cp -a "$src" "$dest"
+  info "backed up $src -> $dest"
+}
+
+write_file() {
+  local dest=$1
+  local content=$2
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would write $dest"
+    return 0
+  fi
+  backup_file "$dest"
+  mkdir -p "$(dirname "$dest")"
+  printf '%s' "$content" > "$dest"
+  info "wrote $dest"
+}
+
+copy_file() {
+  local src=$1
+  local dest=$2
+  local mode=${3:-0644}
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would install $src -> $dest (mode $mode)"
+    return 0
+  fi
+  backup_file "$dest"
+  mkdir -p "$(dirname "$dest")"
+  install -m "$mode" "$src" "$dest"
+  info "installed $dest"
+}
+
+run_cmd() {
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] $*"
+    return 0
+  fi
+  info "+ $*"
+  "$@"
+}
+
+ensure_root_for_apply() {
+  [[ "$MODE" == "apply" ]] || return 0
+  [[ "$SYSROOT" == "/" ]] || return 0
+  [[ "$(id -u)" -eq 0 ]] || die "--apply on real sysroot requires root (sudo) for APT/DM; HM still runs as --user"
+}
+
+confirm_apply() {
+  [[ "$MODE" == "apply" ]] || return 0
+  [[ "$ASSUME_YES" -eq 1 ]] && return 0
+  [[ "$SYSROOT" != "/" ]] && return 0
+  echo
+  echo "About to modify this Debian system (APT, Nix daemon, GDM session, HM host)."
+  echo "No GRUB/partition changes. HM switch runs as user '$TARGET_USER'."
+  echo "Type 'APPLY' to continue:"
+  local ans
+  read -r ans
+  [[ "$ans" == "APPLY" ]] || die "aborted by user"
+}
+
+ensure_trixie_backports() {
+  local list
+  list=$(sysroot_path /etc/apt/sources.list.d/ryoku-trixie-backports.list)
+  local line='deb http://deb.debian.org/debian trixie-backports main contrib non-free-firmware'
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] ensure trixie-backports for Hyprland ~0.55.x: $list"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    mkdir -p "$(dirname "$list")"
+    printf '%s\n' "$line" > "$list"
+    info "fixture: wrote $list"
+    return 0
+  fi
+  if [[ ! -f "$list" ]] || ! grep -Fq 'trixie-backports' "$list"; then
+    backup_file "$list"
+    printf '%s\n' "$line" > "$list"
+    info "enabled trixie-backports ($list)"
+  else
+    info "trixie-backports already configured"
+  fi
+}
+
+# Optional packages are attempted only if a candidate exists. Never remove
+# existing packages to satisfy an optional desktop/firmware dependency.
+install_optional_apt() {
+  local pkg candidate
+  local -a available=()
+  for pkg in "$@"; do
+    candidate=$(LC_ALL=C apt-cache policy "$pkg" | awk '/Candidate:/ {print $2; exit}')
+    if [[ -n "$candidate" && "$candidate" != "(none)" ]]; then
+      available+=("$pkg")
+    else
+      warn "optional APT unavailable: $pkg"
+    fi
+  done
+  ((${#available[@]})) || return 0
+  if apt-get -s --no-remove install --no-install-recommends "${available[@]}" >/dev/null 2>&1; then
+    if apt-get install -y --no-remove --no-install-recommends "${available[@]}"; then return 0; fi
+  fi
+  for pkg in "${available[@]}"; do
+    if ! apt-get -s --no-remove install --no-install-recommends "$pkg" >/dev/null 2>&1 ||
+       ! apt-get install -y --no-remove --no-install-recommends "$pkg"; then
+      warn "optional APT not installed: $pkg"
+    fi
+  done
+}
+
+install_detected_hardware() {
+  [[ "$HARDWARE" == auto ]] || return 0
+  local -a candidates=()
+  mapfile -t candidates < <(bash "$HARDWARE_PROBE" --sysroot "$SYSROOT" --packages)
+  info "hardware firmware candidates: ${candidates[*]:-none}"
+  [[ "$MODE" == apply && "$SYSROOT" == / ]] || return 0
+  install_optional_apt "${candidates[@]}"
+  [[ "$NVIDIA_DRIVER" -eq 1 ]] || return 0
+  local gpu
+  gpu=$(bash "$HARDWARE_PROBE" --gpu)
+  case "$gpu" in hybrid-nvidia|nvidia) ;; *) warn "NVIDIA opt-in ignored: no NVIDIA graphics detected"; return 0 ;; esac
+  # Do not switch kernel drivers under Secure Boot without signing/MOK
+  # preparation. Never disable Secure Boot or modify GRUB on user's behalf.
+  if [[ -d /sys/firmware/efi ]]; then
+    command -v mokutil >/dev/null || apt-get install -y --no-remove mokutil || { warn "cannot verify Secure Boot"; return 0; }
+    if ! LC_ALL=C mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot disabled'; then
+      warn "Secure Boot enabled or unknown; NVIDIA installation deferred"; return 0
+    fi
+  fi
+  if ! apt-get -s --no-remove install nvidia-detect >/dev/null 2>&1 ||
+     ! apt-get install -y --no-remove nvidia-detect; then
+    warn "nvidia-detect unavailable: check Debian non-free component"; return 0
+  fi
+  local recommendation headers
+  recommendation=$(LC_ALL=C nvidia-detect 2>&1 || true)
+  printf '%s\n' "$recommendation"
+  # Only use Debian's explicitly recommended current metapackage.
+  if ! grep -Eq '^[[:space:]]*nvidia-driver[[:space:]]*$' <<<"$recommendation"; then
+    warn "NVIDIA driver recommendation needs manual review"; return 0
+  fi
+  headers="linux-headers-$(uname -r)"
+  if ! apt-get -s --no-remove install "$headers" nvidia-driver >/dev/null 2>&1; then
+    warn "NVIDIA driver or running-kernel headers unavailable; review APT sources"; return 0
+  fi
+  apt-get install -y --no-remove "$headers" nvidia-driver ||
+    die "NVIDIA package installation failed; inspect DKMS before reboot"
+  info "NVIDIA installed; reboot and verify DKMS, driver binding and PRIME. No reboot performed."
+}
+
+install_apt() {
+  [[ "$SKIP_APT" -eq 0 ]] || { info "skip APT"; return 0; }
+  local pkgs hypr_pkgs
+  mapfile -t pkgs < <(apt_packages)
+  mapfile -t hypr_pkgs < <(grep -vE '^\s*(#|$)' "$APT_HYPR_LIST" | sed 's/[[:space:]]*$//' || true)
+  info "APT packages (${#pkgs[@]}): ${pkgs[*]}"
+  info "Hyprland backports packages (${#hypr_pkgs[@]}): ${hypr_pkgs[*]}"
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] apt-get update && apt-get install -y ${pkgs[*]}"
+    info "[dry-run] apt-get install -t trixie-backports -y ${hypr_pkgs[*]}"
+    ensure_trixie_backports
+    install_detected_hardware
+    if [[ "$PROFILE" == full ]]; then info "[dry-run] optional Full APT packages: $APT_FULL_OPTIONAL"; fi
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    warn "sysroot!=/: skipping real apt (policy/fixture mode)"
+    ensure_trixie_backports
+    return 0
+  fi
+  export DEBIAN_FRONTEND=noninteractive
+  ensure_trixie_backports
+  apt-get update -y
+  apt-get -s --no-remove install --no-install-recommends "${pkgs[@]}" >/dev/null || die "APT base/full simulation failed; inspect dependencies"
+  apt-get install -y --no-remove --no-install-recommends "${pkgs[@]}"
+  install_detected_hardware
+  if [[ "$PROFILE" == full ]]; then
+    local -a optional=()
+    mapfile -t optional < <(grep -vE '^[[:space:]]*(#|$)' "$APT_FULL_OPTIONAL")
+    install_optional_apt "${optional[@]}"
+  fi
+  # Fail-closed: Hyprland is the default compositor. A soft warn left guests
+  # thinking apply succeeded without a working Hyprland binary.
+  if [[ "${#hypr_pkgs[@]}" -gt 0 ]]; then
+    apt-get install -y --no-remove -t trixie-backports --no-install-recommends "${hypr_pkgs[@]}" \
+      || die "Hyprland APT install from trixie-backports failed — aborting apply (no false success)"
+  fi
+  if ! command -v Hyprland >/dev/null 2>&1; then
+    die "Hyprland binary missing after APT install — aborting apply"
+  fi
+  # This runs as root before an interactive graphical session exists.
+  # Hyprland --version itself may abort without XDG_RUNTIME_DIR on Debian 13:
+  # read Debian's package metadata rather than launching the compositor here.
+  local hypr_ver
+  hypr_ver=$(dpkg-query -W -f='${Version}' hyprland 2>/dev/null || true)
+  info "Hyprland installed (APT): ${hypr_ver:-unknown}"
+  # Soft check: expect 0.55.x on Debian backports (not NixOS 0.56.2).
+  if [[ -n "$hypr_ver" ]] && ! grep -Eq '0\.55\.' <<<"$hypr_ver"; then
+    warn "Hyprland APT version is not 0.55.x ($hypr_ver) — conf targets ~0.55; verify before GUI login"
+  fi
+}
+
+# Merge profile Flatpak IDs into apps.flatpakDeclared (sorted unique).
+# Compatible with Settings; does not remove user-added IDs already present.
+merge_flatpak_declared_into_settings() {
+  local settings=""
+  if [[ -f "$REPO_ROOT/ryoku/settings.json" ]]; then
+    settings="$REPO_ROOT/ryoku/settings.json"
+  elif [[ -f "$DISTRO_DIR/ryoku/settings.json" ]]; then
+    settings="$DISTRO_DIR/ryoku/settings.json"
+  else
+    warn "no settings.json to merge flatpakDeclared"
+    return 0
+  fi
+  local ids=()
+  mapfile -t ids < <("$FLATPAK_SYNC" --list-declared --profile "$PROFILE" 2>/dev/null || true)
+  if [[ "$MODE" == apply && "$SYSROOT" == / ]]; then
+    # Optional apps can be unavailable. Record only apps actually installed by
+    # this profile, while preserving any existing user declarations.
+    local -a installed=()
+    local id
+    for id in "${ids[@]}"; do
+      if flatpak info --system "$id" >/dev/null 2>&1; then installed+=("$id"); fi
+    done
+    ids=("${installed[@]}")
+  fi
+  if [[ "${#ids[@]}" -eq 0 ]]; then
+    info "flatpakDeclared merge: no profile IDs (profile=$PROFILE)"
+    return 0
+  fi
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] merge flatpakDeclared into $settings: ${ids[*]}"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 missing — cannot merge flatpakDeclared (install manually via Settings)"
+    return 0
+  fi
+  PROFILE_IDS="${ids[*]}" SETTINGS_PATH="$settings" python3 - <<'PY'
+import json, os
+path = os.environ["SETTINGS_PATH"]
+ids = sorted(set(os.environ.get("PROFILE_IDS", "").split()))
+with open(path, encoding="utf-8") as f:
+    data = json.load(f)
+apps = data.setdefault("apps", {})
+cur = apps.get("flatpakDeclared") or []
+if not isinstance(cur, list):
+    cur = []
+merged = sorted(set([str(x) for x in cur if str(x).strip()] + ids))
+apps["flatpakDeclared"] = merged
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=4, ensure_ascii=False)
+    f.write("\n")
+print(f"merged flatpakDeclared ({len(merged)}): {', '.join(merged)}")
+PY
+  # Root settings is the live source. Never overwrite it from the seed.
+}
+
+install_flatpak() {
+  [[ "$SKIP_FLATPAK" -eq 0 ]] || { info "skip Flatpak"; return 0; }
+  [[ -x "$FLATPAK_SYNC" ]] || die "missing executable $FLATPAK_SYNC"
+  if [[ "$MODE" == "dry-run" ]]; then
+    "$FLATPAK_SYNC" --dry-run --profile "$PROFILE" --sysroot "$SYSROOT"
+    merge_flatpak_declared_into_settings
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    "$FLATPAK_SYNC" --apply --profile "$PROFILE" --sysroot "$SYSROOT"
+    merge_flatpak_declared_into_settings
+    return 0
+  fi
+  # Real host: flatpak binary comes from APT step.
+  if ! command -v flatpak >/dev/null 2>&1; then
+    die "flatpak missing after APT — cannot sync Flathub apps"
+  fi
+  "$FLATPAK_SYNC" --apply --profile "$PROFILE" \
+    || die "Flatpak sync failed (network/Flathub) — aborting apply (no false success)"
+  merge_flatpak_declared_into_settings
+}
+
+configure_nix() {
+  [[ "$SKIP_NIX" -eq 0 ]] || { info "skip Nix"; return 0; }
+  local nix_conf
+  nix_conf=$(sysroot_path /etc/nix/nix.conf)
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] ensure nix-bin + nix-setup-systemd; enable nix-daemon.socket"
+    info "[dry-run] ensure experimental-features = nix-command flakes in $nix_conf"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    mkdir -p "$(dirname "$nix_conf")"
+    if [[ ! -f "$nix_conf" ]]; then
+      printf '%s\n' 'experimental-features = nix-command flakes' > "$nix_conf"
+    fi
+    info "fixture: wrote $nix_conf"
+    return 0
+  fi
+  require_cmd nix
+  # Debian's nix-setup-systemd may already start the daemon as a service.
+  # Starting its socket while the service is active fails with
+  # "Socket service nix-daemon.service already active, refusing".
+  if systemctl is-active --quiet nix-daemon.service; then
+    info "nix-daemon.service already active; socket activation not required"
+  elif systemctl is-active --quiet nix-daemon.socket; then
+    info "nix-daemon.socket already active"
+  elif systemctl enable --now nix-daemon.socket; then
+    info "nix-daemon.socket enabled"
+  elif systemctl enable --now nix-daemon.service; then
+    info "nix-daemon.service enabled"
+  else
+    die "neither nix-daemon.service nor nix-daemon.socket could start"
+  fi
+  backup_file "$nix_conf"
+  mkdir -p "$(dirname "$nix_conf")"
+  if [[ -f "$nix_conf" ]] && grep -q 'experimental-features' "$nix_conf"; then
+    if ! grep -Eq 'experimental-features.*flakes' "$nix_conf"; then
+      sed -i 's/^experimental-features.*/experimental-features = nix-command flakes/' "$nix_conf"
+    fi
+  else
+    printf '\n%s\n' 'experimental-features = nix-command flakes' >> "$nix_conf"
+  fi
+  # Debian's nix-setup-systemd authorizes clients through nix-users.
+  # nixbld is a build-workers group, not the login-user access group.
+  if ! getent group nix-users >/dev/null 2>&1; then
+    die "group nix-users missing: check nix-setup-systemd before Home Manager"
+  fi
+  if id "$TARGET_USER" >/dev/null 2>&1; then
+    usermod -a -G nix-users "$TARGET_USER"
+    info "added $TARGET_USER to nix-users (new login required for interactive SSH)"
+  fi
+  info "Nix configured (flakes enabled)"
+}
+
+install_session() {
+  # Always install BOTH sessions: Hyprland (primary) + Niri (recovery).
+  # Never remove Niri from the VM in this mission.
+  local dest_desktop dest_wrapper desktop_content
+  dest_wrapper=$(sysroot_path /usr/local/bin/ryoku-hyprland-session)
+  copy_file "$SESSION_WRAPPER_HYPR" "$dest_wrapper" 0755
+  dest_desktop=$(sysroot_path /usr/share/wayland-sessions/ryoku-hyprland.desktop)
+  desktop_content=$(cat "$SESSION_DESKTOP_HYPR")
+  write_file "$dest_desktop" "$desktop_content"$'\n'
+
+  dest_wrapper=$(sysroot_path /usr/local/bin/ryoku-niri-session)
+  copy_file "$SESSION_WRAPPER_NIRI" "$dest_wrapper" 0755
+  dest_desktop=$(sysroot_path /usr/share/wayland-sessions/ryoku-niri.desktop)
+  desktop_content=$(cat "$SESSION_DESKTOP_NIRI")
+  write_file "$dest_desktop" "$desktop_content"$'\n'
+
+  if [[ "$MODE" == "apply" && "$SYSROOT" == "/" ]]; then
+    # gdm.service is a static unit on Debian 13; it cannot be enabled directly.
+    # The gdm3 package provides display-manager.service for graphical.target.
+    if systemctl cat display-manager.service >/dev/null 2>&1; then
+      if [[ "$(systemctl get-default)" == "multi-user.target" ]]; then
+        run_cmd systemctl set-default graphical.target
+      fi
+      info "GDM sessions installed: Ryoku (Hyprland) + Ryoku (Niri recovery)"
+    else
+      warn "display-manager.service missing; inspect GDM before graphical boot"
+    fi
+  fi
+}
+
+enable_services() {
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] systemctl enable NetworkManager; enable pipewire --user for $TARGET_USER"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: skip service enable"
+    return 0
+  fi
+  run_cmd systemctl enable --now NetworkManager.service || warn "NetworkManager enable failed"
+  if [[ "$PROFILE" == full ]]; then
+    run_cmd systemctl enable --now cups.service || die "CUPS failed to start (Full printing support)"
+    run_cmd systemctl enable --now avahi-daemon.service || warn "Avahi printer discovery unavailable"
+  fi
+  # A non-login sudo -u session lacks XDG_RUNTIME_DIR and a user D-Bus bus.
+  # PipeWire/WirePlumber use the systemd user session; do not try to start
+  # them as root via sudo -u during a headless SSH bootstrap.
+  info "PipeWire user units deferred until desktop login (systemd --user)"
+}
+
+write_host_module() {
+  local home_dir path
+  home_dir=$(resolve_home_dir)
+  path=$(host_nix_path)
+  local content
+  content=$(render_host_nix "$home_dir")
+
+  # Guard: never write /home/ryoku for a different user
+  if [[ "$TARGET_USER" != "ryoku" ]] && grep -q 'homeDirectory = "/home/ryoku"' <<<"$content"; then
+    die "internal error: refusing to emit /home/ryoku for $TARGET_USER"
+  fi
+
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would write HM host $path"
+    echo "$content"
+    return 0
+  fi
+
+  # Root-created hosts/<user> caused an EACCES when tee subsequently ran
+  # as paulo on the first real Debian VM. Own only the generated host dir/file
+  # as the target desktop user; never chown the whole repository.
+  if [[ "$(id -u)" -eq 0 && "$SYSROOT" == "/" ]]; then
+    local target_group
+    target_group=$(id -gn "$TARGET_USER")
+    install -d -m 0755 -o "$TARGET_USER" -g "$target_group" "$(dirname "$path")"
+    [[ ! -L "$path" ]] || die "refusing symlinked HM host file: $path"
+    if [[ -f "$path" ]]; then
+      chown "$TARGET_USER:$target_group" "$path"
+    fi
+    printf '%s\n' "$content" | sudo -u "$TARGET_USER" tee "$path" >/dev/null
+  else
+    mkdir -p "$(dirname "$path")"
+    printf '%s\n' "$content" > "$path"
+  fi
+  info "wrote $path"
+
+  # Fixture tests deliberately use a copied flake outside a Git checkout and
+  # never run Home Manager. They must not alter the repository index.
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: host written without Git staging (no flake evaluation)"
+    return 0
+  fi
+
+  # Flakes with a git+file source only see tracked or staged files.
+  # In a linked worktree .git is a FILE, not a directory; never test -d .git.
+  # Fail closed: without this host attr, Home Manager cannot evaluate #$TARGET_USER.
+  if ! command -v git >/dev/null 2>&1 ||
+     [[ "$(git -C "$REPO_ROOT" rev-parse --is-inside-work-tree 2>/dev/null || true)" != "true" ]]; then
+    die "Git checkout/worktree not available at $REPO_ROOT — cannot stage Home Manager host for pure flake"
+  fi
+  local rel="distro/flake/hosts/$TARGET_USER/default.nix"
+  if [[ "$(id -u)" -eq 0 && "$SYSROOT" == "/" ]]; then
+    sudo -u "$TARGET_USER" git -C "$REPO_ROOT" add -- "$rel" ||
+      die "git add failed for $rel (check ownership and .gitignore)"
+  else
+    git -C "$REPO_ROOT" add -- "$rel" ||
+      die "git add failed for $rel (check ownership and .gitignore)"
+  fi
+  git -C "$REPO_ROOT" ls-files --error-unmatch -- "$rel" >/dev/null ||
+    die "host $rel is not indexed by Git; refusing Home Manager activation"
+  info "staged and verified $rel for pure flake evaluation"
+}
+
+activate_home_manager() {
+  # Always materialize hosts/<user>/default.nix on apply (even with --skip-hm),
+  # so profile/user/home are recorded; --skip-hm only skips the nix switch.
+  write_host_module
+
+  local flake_attr="$TARGET_USER"
+  local hm_pin="github:nix-community/home-manager/2c0c1f01521469cf0271180c453c79782d53c2f6"
+
+  if [[ "$SKIP_HM" -ne 0 ]]; then
+    info "skip Home Manager switch (--skip-hm); host module written"
+    return 0
+  fi
+
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would: nix flake lock $FLAKE_DIR"
+    info "[dry-run] would (as $TARGET_USER): nix run $hm_pin -- switch --flake $FLAKE_DIR#$flake_attr -b ryoku-hm-backup"
+    info "[dry-run] HM uses homeDirectory from hosts/$TARGET_USER (not a fixed /home/ryoku)"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: wrote host module only; skip HM switch"
+    return 0
+  fi
+  require_cmd nix
+  # Preserve VM-tested flake.lock — never flake update; only create lock if absent.
+  if [[ -f "$FLAKE_DIR/flake.lock" ]]; then
+    info "preserving existing flake.lock (no nix flake update)"
+  else
+    warn "flake.lock missing — creating once (do not discard a guest-tested lock later)"
+    if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
+      run_cmd sudo -u "$SUDO_USER" nix --extra-experimental-features "nix-command flakes" flake lock "$FLAKE_DIR"
+    else
+      run_cmd nix --extra-experimental-features "nix-command flakes" flake lock "$FLAKE_DIR"
+    fi
+  fi
+
+  id "$TARGET_USER" >/dev/null 2>&1 || die "user $TARGET_USER missing — cannot HM switch"
+
+  # Debian 13 ships its session-bus configuration under /usr/share/dbus-1.
+  # In a headless SSH bootstrap, Home Manager's dconfSettings activation
+  # otherwise launches the Nix-provided dbus-daemon, which expects
+  # /etc/dbus-1/session.conf and fails before completing the HM switch.
+  # Start a private *Debian* session bus as the target user, so HM sees
+  # DBUS_SESSION_BUS_ADDRESS and reuses that bus instead of launching its own.
+  [[ -x /usr/bin/dbus-run-session ]] || die "Debian dbus-run-session missing (install dbus-daemon)"
+  [[ -f /usr/share/dbus-1/session.conf ]] || die "Debian D-Bus session config missing (install dbus-session-bus-common)"
+
+  # Critical: run as the desktop user so $HOME is correct and files are not root-owned.
+  run_cmd sudo -u "$TARGET_USER" -H \
+    env HOME="$(resolve_home_dir)" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+    /usr/bin/dbus-run-session -- \
+    nix --extra-experimental-features "nix-command flakes" run "$hm_pin" -- \
+    switch --flake "$FLAKE_DIR#$flake_attr" -b ryoku-hm-backup \
+    || die "home-manager switch failed for #$flake_attr"
+
+  # Config smoke (SSH-safe). Always validate Niri so GDM recovery works even
+  # when compositor=hyprland. Hyprland conf required when compositor=hyprland.
+  local home_dir
+  home_dir=$(resolve_home_dir)
+  local niri_bin="$home_dir/.local/state/nix/profiles/home-manager/home-path/bin/niri"
+  [[ -x "$niri_bin" ]] || die "Niri executable missing after HM switch (needed for GDM recovery): $niri_bin"
+  local nixgl="$home_dir/.local/state/nix/profiles/home-manager/home-path/bin/nixGLIntel"
+  [[ -x "$nixgl" ]] || warn "nixGLIntel missing — Niri recovery may fail Mesa GBM on Debian"
+  run_cmd sudo -u "$TARGET_USER" -H \
+    env HOME="$home_dir" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+    "$niri_bin" validate \
+    || die "Niri configuration validation failed; check ~/.config/niri/config.kdl (recovery)"
+  info "Niri config validated (GDM Ryoku Niri recovery usable)"
+
+  if [[ "$COMPOSITOR" == "hyprland" ]]; then
+    local hypr_conf="$home_dir/.config/hypr/hyprland.conf"
+    [[ -f "$hypr_conf" ]] || die "Hyprland config missing after HM switch: $hypr_conf"
+    [[ -s "$hypr_conf" ]] || die "Hyprland config empty: $hypr_conf"
+    # Reject forms that Hyprland 0.55.2 ConfigManager rejects or deprecates.
+    # Source: v0.55.2 handleWindowrule / handleLayerrule (space+value required
+    # per comma field; windowrulev2 is a hard deprecation error).
+    if grep -Fq 'new_optimizations' "$hypr_conf"; then
+      die "Hyprland conf uses removed blur key new_optimizations (unsafe on ~0.55.2)"
+    fi
+    if grep -Eq '^[[:space:]]*windowrulev2[[:space:]]*=' "$hypr_conf"; then
+      die "Hyprland conf still uses deprecated windowrulev2 (0.55.2 overlay); use windowrule ="
+    fi
+    # Bare effects → "invalid field float: missing a value"
+    if grep -Eq '^[[:space:]]*windowrule[[:space:]]*=[[:space:]]*(float|center)[[:space:]]*,' "$hypr_conf"; then
+      die "Hyprland conf has bare windowrule effects; use 'float on' / 'center on' (0.55.2)"
+    fi
+    # Legacy v2 matchers used class:^(…)$ / title:^(…)$ (colon after class/title).
+    # Modern match:class / match:title put the colon before the prop name.
+    if grep -Eq 'windowrule[[:space:]]*=.*[^:](class|title):' "$hypr_conf"; then
+      die "Hyprland conf uses legacy class:/title: windowrule matchers; use match:class / match:title"
+    fi
+    if grep -Eq '^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*(noanim|blur)[[:space:]]*,' "$hypr_conf"; then
+      die "Hyprland conf has bare layerrule effects; use 'no_anim on' / 'blur on' + match:namespace"
+    fi
+    if grep -Eq '^[[:space:]]*windowrule[[:space:]]*=' "$hypr_conf"; then
+      grep -Eq 'windowrule[[:space:]]*=.*match:(class|title)' "$hypr_conf" \
+        || die "Hyprland conf windowrule lines must include match:class or match:title"
+      grep -Eq 'windowrule[[:space:]]*=.*float on' "$hypr_conf" \
+        || die "Hyprland conf windowrule lines must use valued effects (float on)"
+    fi
+    if grep -Eq '^[[:space:]]*layerrule[[:space:]]*=' "$hypr_conf"; then
+      grep -Eq 'layerrule[[:space:]]*=.*match:namespace' "$hypr_conf" \
+        || die "Hyprland conf layerrule lines must include match:namespace (0.55.2)"
+    fi
+    command -v Hyprland >/dev/null 2>&1 \
+      || die "Hyprland binary missing after apply (APT backports install required)"
+    info "Hyprland config present + 0.55.2 syntax guard OK (guest: hyprctl configerrors / layers)"
+  fi
+
+  install_settings_helper
+}
+
+install_settings_helper() {
+  # Stable Debian path for Polkit exec.path + ApplyController detection.
+  local home_dir helper_src dest_policy dest_pkg_policy etc_ryoku
+  home_dir=$(resolve_home_dir)
+  helper_src=""
+  for cand in \
+    "$home_dir/.local/state/home-manager/gcroots/current-home/home-path/bin/ryoku-settings-apply" \
+    "$home_dir/.local/state/nix/profiles/home-manager/home-path/bin/ryoku-settings-apply" \
+    "$home_dir/.nix-profile/bin/ryoku-settings-apply"
+  do
+    if [[ -x "$cand" ]]; then
+      helper_src=$(readlink -f "$cand" 2>/dev/null || echo "$cand")
+      break
+    fi
+  done
+
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would install polkit policies + libexec helpers (apply src=${helper_src:-pending-HM}; pkg=$PKG_HELPER)"
+    return 0
+  fi
+  if [[ "$SYSROOT" != "/" ]]; then
+    info "fixture: skip settings helper / polkit install"
+    return 0
+  fi
+
+  dest_policy=$(sysroot_path /usr/share/polkit-1/actions/org.ryoku.settings.apply.policy)
+  if [[ -f "$POLKIT_POLICY" ]]; then
+    copy_file "$POLKIT_POLICY" "$dest_policy" 0644
+    info "installed polkit policy $dest_policy"
+  fi
+  dest_pkg_policy=$(sysroot_path /usr/share/polkit-1/actions/org.ryoku.pkg.policy)
+  if [[ -f "$POLKIT_PKG_POLICY" ]]; then
+    copy_file "$POLKIT_PKG_POLICY" "$dest_pkg_policy" 0644
+    info "installed polkit policy $dest_pkg_policy"
+  fi
+
+  mkdir -p "$(dirname "$(sysroot_path "$SETTINGS_APPLY_LIBEXEC")")"
+  if [[ -n "$helper_src" ]]; then
+    ln -sfn "$helper_src" "$(sysroot_path "$SETTINGS_APPLY_LIBEXEC")"
+    info "libexec helper → $helper_src"
+  else
+    warn "ryoku-settings-apply not in HM profile yet — Settings Apply needs a successful HM switch that builds the package"
+  fi
+
+  # Pkg helper is a repo script (not Nix-built) — install a stable copy.
+  if [[ -x "$PKG_HELPER" ]]; then
+    install -m 0755 "$PKG_HELPER" "$(sysroot_path "$PKG_HELPER_LIBEXEC")"
+    # flatpak-sync is invoked by pkg-helper via sibling path under distro/scripts
+    # when run from the checkout; also keep a libexec copy of sync for apply hosts
+    # that may not have the same checkout layout after moves.
+    install -m 0755 "$FLATPAK_SYNC" "$(sysroot_path /usr/local/libexec/ryoku-flatpak-sync)"
+    # Rewrite FLATPAK_SYNC discovery for the installed copy: prefer libexec sibling.
+    info "installed $PKG_HELPER_LIBEXEC + ryoku-flatpak-sync"
+  else
+    warn "ryoku-pkg-helper missing — Settings Apps install/remove unavailable"
+  fi
+
+  etc_ryoku=$(sysroot_path /etc/ryoku)
+  mkdir -p "$etc_ryoku"
+  # Absolute checkout paths for pkg-helper / flatpak-sync (no machine guess).
+  printf '%s\n' "$REPO_ROOT" > "$etc_ryoku/repo-path"
+  printf '%s\n' "$DISTRO_DIR" > "$etc_ryoku/distro-dir"
+  if [[ -n "$helper_src" ]]; then
+    printf '%s\n' "$SETTINGS_APPLY_LIBEXEC" > "$etc_ryoku/settings-apply-helper"
+  fi
+  if [[ -x "$(sysroot_path "$PKG_HELPER_LIBEXEC")" ]]; then
+    printf '%s\n' "$PKG_HELPER_LIBEXEC" > "$etc_ryoku/pkg-helper"
+  fi
+  # Do NOT seed applied-settings-hash with a non-SHA256 placeholder ("unapplied"
+  # made ApplyController warn invalid hash len=9). Absent marker = not applied.
+  if [[ -f "$etc_ryoku/applied-settings-hash" ]]; then
+    local marker
+    marker=$(tr -d '[:space:]' < "$etc_ryoku/applied-settings-hash" || true)
+    if [[ ! "$marker" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      info "removing invalid applied-settings-hash marker (len=''${#marker}')"
+      rm -f "$etc_ryoku/applied-settings-hash"
+    fi
+  fi
+}
+
+write_recovery() {
+  local recovery="$BACKUP_DIR/RECOVERY.md"
+  local home_dir
+  home_dir=$(resolve_home_dir)
+  if [[ "$MODE" == "dry-run" ]]; then
+    info "[dry-run] would write recovery notes to $BACKUP_DIR/RECOVERY.md"
+    return 0
+  fi
+  mkdir -p "$BACKUP_DIR"
+  cat > "$recovery" <<EOF
+# Ryoku bootstrap recovery
+
+Timestamp: $(ts)
+Mode: $MODE
+User: $TARGET_USER
+Home: $home_dir
+HM attr: $TARGET_USER
+Host module: $(host_nix_path)
+
+## What this bootstrap does NOT do
+- No GRUB/systemd-boot/EFI changes
+- No partitioning
+- No NixOS installation
+
+## Roll back configs
+  sudo cp -a $BACKUP_DIR/etc/nix/nix.conf /etc/nix/nix.conf
+
+## Roll back Home Manager (as $TARGET_USER)
+  sudo -u $TARGET_USER -H home-manager generations
+  sudo -u $TARGET_USER -H home-manager switch --flake $FLAKE_DIR#$TARGET_USER --rollback
+
+## GDM sessions (keep Niri recovery until Hyprland is guest-proven)
+  # Primary:  ryoku-hyprland.desktop / ryoku-hyprland-session
+  # Recovery: ryoku-niri.desktop / ryoku-niri-session
+  # To leave recovery only: remove the Hyprland .desktop (do not uninstall Niri).
+
+## Remove generated host (optional)
+  rm -f $FLAKE_DIR/hosts/$TARGET_USER/default.nix
+
+## Nix daemon
+  sudo systemctl disable --now nix-daemon.socket nix-daemon.service
+
+## Guest verification
+Status remains **GUEST_NOT_RUN**. Do not invent PASS_MANUAL.
+EOF
+  info "recovery notes: $recovery"
+}
+
+init_logging() {
+  if [[ "$MODE" == "dry-run" && "$SYSROOT" == "/" ]]; then
+    if [[ ! -w "$(dirname "$LOG_DIR")" ]] 2>/dev/null; then
+      LOG_DIR="${TMPDIR:-/tmp}/ryoku-bootstrap-dry-run-logs"
+    fi
+  fi
+  if [[ "$MODE" == "apply" ]]; then
+    mkdir -p "$LOG_DIR"
+  else
+    mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="${TMPDIR:-/tmp}/ryoku-bootstrap-dry-run-logs"
+    mkdir -p "$LOG_DIR"
+  fi
+  local log="$LOG_DIR/bootstrap-$(ts).log"
+  exec > >(tee -a "$log") 2>&1
+  info "logging to $log"
+}
+
+main() {
+  parse_args "$@"
+  setup_paths
+
+  [[ -d "$FLAKE_DIR" ]] || die "flake dir missing: $FLAKE_DIR"
+  [[ -f "$APT_LIST" ]] || die "APT list missing: $APT_LIST"
+
+  if is_nixos; then
+    die "refusing NixOS ($SYSROOT/etc/NIXOS present). Ryoku Debian bootstrap is for Debian 13 only."
+  fi
+
+  if [[ "$SYSROOT" == "/" ]]; then
+    if [[ "$MODE" == "apply" ]]; then
+      assert_debian_trixie
+    fi
+  else
+    read_os_release
+    if [[ "${ID:-}" != "debian" ]]; then
+      die "fixture sysroot is not Debian (ID=${ID:-unknown})"
+    fi
+  fi
+
+  ensure_root_for_apply
+  init_logging
+  if [[ "$VISUAL" == auto ]]; then
+    VISUAL=$(bash "$HARDWARE_PROBE" --sysroot "$SYSROOT" --visual)
+  fi
+  if [[ "$HARDWARE" == auto ]]; then
+    bash "$HARDWARE_PROBE" --sysroot "$SYSROOT"
+  fi
+  plan_summary
+
+  # Preflight before confirm / mutations — dry-run is preflight+plan only (no-op).
+  preflight || die "preflight failed"
+
+  if [[ "$MODE" == "dry-run" ]]; then
+    # Plan-only: reuse install_* dry-run branches (no durable writes on /).
+    install_apt
+    install_flatpak
+    install_settings_helper
+    info "dry-run complete — no durable changes"
+    info "done ($MODE). Guest desktop verification: GUEST_NOT_RUN"
+    return 0
+  fi
+
+  confirm_apply
+  mkdir -p "$BACKUP_DIR"
+
+  install_apt
+  install_flatpak
+  configure_nix
+  install_session
+  enable_services
+  activate_home_manager
+  write_recovery
+
+  info "done ($MODE). Guest desktop verification: GUEST_NOT_RUN"
+}
+
+main "$@"

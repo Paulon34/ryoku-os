@@ -1,0 +1,101 @@
+# Full edition extras (Debian 13 Trixie amd64) — installed when --profile full.
+# Minimal already covers session/compositor essentials in packages-base.txt +
+# packages-hyprland.txt. This list is additive and idempotent.
+# Do NOT duplicate packages already listed in packages-base.txt (bootstrap
+# dedupes, but keeping the union clean avoids review noise).
+#
+# Flatpak-preferred apps (LocalSend, Telegram, Flatseal) live in
+# distro/flatpak/apps-full.txt — not here.
+
+# Media / viewers
+mpv
+vlc
+cliphist
+# Video wallpaper deps when using APT mpvpaper (Nix also ships mpvpaper via HM).
+# ffmpeg already listed below for workstation tools.
+# .deb double-click in Thunar (MIME → gdebi.desktop)
+gdebi
+gdebi-core
+
+# Creative / office (APT; Flatpak IDs also exist on Flathub if needed later)
+gimp
+libreoffice-gtk3
+
+# Bluetooth / volume GUIs
+blueman
+pavucontrol
+
+# Workstation tools (Debian native packages)
+ffmpeg
+obs-studio
+audacity
+imagemagick
+libreoffice
+okular
+fish
+gh
+wget
+nano
+vim
+neovim
+htop
+btop
+tmux
+tree
+zip
+unzip
+p7zip-full
+ripgrep
+rsync
+git-lfs
+python3-pip
+pipx
+openjdk-21-jdk
+nodejs
+npm
+yarnpkg
+clang
+clangd
+gdb
+cmake
+ninja-build
+rustc
+cargo
+golang-go
+sqlite3
+httpie
+direnv
+shellcheck
+traceroute
+mtr-tiny
+nmap
+netcat-openbsd
+tcpdump
+wireshark
+iperf3
+ethtool
+# socat lives in packages-base (video-wallpaper smart watch + general use)
+dnsutils
+whois
+qemu-system-x86
+virt-manager
+virt-viewer
+podman
+cups
+cups-filters
+ghostscript
+system-config-printer
+fwupd
+udisks2
+gvfs
+
+# Printing: mandatory on Full, including non-IPP legacy HP/USB printers
+hplip
+printer-driver-hpcups
+printer-driver-gutenprint
+cups-client
+cups-bsd
+avahi-daemon
+libnss-mdns
+libcups2t64
+printer-driver-escpr

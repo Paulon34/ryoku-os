@@ -1,0 +1,739 @@
+diff -ruN a/Modules/DankBar/CenterSection.qml b/Modules/DankBar/CenterSection.qml
+--- a/Modules/DankBar/CenterSection.qml
++++ b/Modules/DankBar/CenterSection.qml
+@@ -1,5 +1,6 @@
+ import QtQuick
+ import qs.Common
++import qs.Modules.DankBar.Widgets
+
+ Item {
+     id: root
+@@ -19,6 +20,23 @@
+     property bool overrideAxisLayout: false
+     property bool forceVerticalLayout: false
+
++    // Ryoku Media Island (5A): clock item ref — media is NOT in the repeater,
++    // so index/geometric layout never shifts the clock when media width changes.
++    property var mediaClockRef: null
++
++    function findClockItem() {
++        for (var i = 0; i < centerRepeater.count; i++) {
++            const wrapper = centerRepeater.itemAt(i);
++            if (wrapper && wrapper.itemData && wrapper.itemData.widgetId === "clock" && wrapper.active && wrapper.item)
++                return wrapper.item;
++        }
++        return null;
++    }
++
++    function refreshMediaClockRef() {
++        mediaClockRef = findClockItem();
++    }
++
+     // Ryoku islands: pad around centered content when chrome is transparent.
+     readonly property real islandPad: {
+         if (!noBackground)
+@@ -55,6 +73,7 @@
+             applyIndexLayout();
+         }
+         updateContentExtent();
++        refreshMediaClockRef();
+     }
+
+     function updateContentExtent() {
+@@ -339,6 +358,8 @@
+     implicitHeight: isVertical ? totalSize : widgetThickness
+
+     // Section capsule around centered widgets only (not full bar width).
++    // MediaIsland is a sibling overlay — excluded from contentStart/contentSize —
++    // so this capsule stays clock-sized when media appears/resizes.
+     Rectangle {
+         id: islandBg
+         z: -1
+@@ -352,6 +373,29 @@
+         border.width: 0
+     }
+
++    // Ryoku Dynamic Media Island — anchored to the right edge of the clock.
++    // Outside the centerWidgets layout math: clock x = f(parentCenter, clock.width) only.
++    MediaIsland {
++        id: mediaIsland
++        z: 1
++        horizontalBar: !root.isVertical
++        widgetThickness: root.widgetThickness
++        barThickness: root.barThickness
++        barSpacing: root.barSpacing
++        barConfig: root.barConfig
++        axis: root.axis
++        parentScreen: root.parentScreen
++        islandColor: root.islandColor
++        islandPad: root.islandPad
++        anchors.verticalCenter: parent.verticalCenter
++        x: {
++            const clock = root.mediaClockRef;
++            if (!clock)
++                return 0;
++            return clock.x + clock.width + root.widgetSpacing;
++        }
++    }
++
+     Timer {
+         id: layoutTimer
+         interval: 0
+diff -ruN a/Modules/DankBar/Widgets/MediaIsland.qml b/Modules/DankBar/Widgets/MediaIsland.qml
+--- a/Modules/DankBar/Widgets/MediaIsland.qml
++++ b/Modules/DankBar/Widgets/MediaIsland.qml
+@@ -0,0 +1,251 @@
++import QtQuick
++import Quickshell
++import Quickshell.Services.Mpris
++import qs.Common
++import qs.Services
++import qs.Widgets
++
++// Ryoku Dynamic Media Island — compact pill right of the clock.
++// 5A layout · 5B mini-player · 5C polish (anim / stable title slot / null-safe close)
++Item {
++    id: root
++
++    property real widgetThickness: 30
++    property real barThickness: 48
++    property real barSpacing: 4
++    property var barConfig: null
++    property var axis: null
++    property var parentScreen: null
++    property color islandColor: Theme.widgetBaseBackgroundColor
++    property real islandPad: 3
++    property bool horizontalBar: true
++
++    readonly property MprisPlayer activePlayer: MprisController.activePlayer
++    readonly property bool playerAvailable: horizontalBar && activePlayer !== null
++    readonly property bool _hoverPreview: MprisController.isFirefoxYoutubeHoverPreview(activePlayer)
++    readonly property bool isPlaying: !!activePlayer && activePlayer.playbackState === MprisPlaybackState.Playing && !_hoverPreview
++    readonly property bool canToggle: {
++        if (!activePlayer)
++            return false;
++        if (activePlayer.canControl === false)
++            return false;
++        return true;
++    }
++    readonly property bool popoutOpen: !!(PopoutService.mediaIslandPopout?.shouldBeVisible)
++
++    readonly property real artSize: 22
++    readonly property real playSize: 20
++    readonly property real maxTitleWidth: 104
++    // Match clock island horizontal denseness.
++    readonly property real hPad: Math.max(7, islandPad + 3)
++
++    readonly property real targetContentWidth: {
++        if (!playerAvailable)
++            return 0;
++        // Fixed title slot when metadata exists — avoids width jumps on track change.
++        const titleW = titleLabel.text.length > 0 ? maxTitleWidth : 0;
++        const gaps = Theme.spacingXS;
++        return artSize + gaps + (titleW > 0 ? titleW + gaps : 0) + playSize;
++    }
++
++    readonly property real targetWidth: playerAvailable ? (targetContentWidth + hPad * 2) : 0
++
++    visible: !hidden
++    readonly property bool hidden: !playerAvailable && width < 1 && opacity < 0.01
++
++    height: widgetThickness
++    width: targetWidth
++    opacity: playerAvailable ? 1 : 0
++    // Expand/collapse from the clock side (left edge of the island).
++    transformOrigin: Item.Left
++    scale: playerAvailable ? 1 : 0.96
++    clip: true
++
++    Behavior on opacity {
++        NumberAnimation {
++            duration: Theme.shortDuration
++            easing.type: Theme.standardEasing
++        }
++    }
++
++    Behavior on width {
++        NumberAnimation {
++            duration: Theme.mediumDuration
++            easing.type: Easing.BezierSpline
++            easing.bezierCurve: Theme.expressiveCurves.emphasizedDecel
++        }
++    }
++
++    Behavior on scale {
++        NumberAnimation {
++            duration: Theme.shortDuration
++            easing.type: Easing.BezierSpline
++            easing.bezierCurve: Theme.expressiveCurves.emphasizedDecel
++        }
++    }
++
++    // Close mini-player cleanly when the island loses its player (grace → null).
++    onPlayerAvailableChanged: {
++        if (!playerAvailable && popoutOpen)
++            PopoutService.mediaIslandPopout?.close();
++    }
++
++    function _barPosition() {
++        const edge = root.axis?.edge;
++        if (edge === "left")
++            return 2;
++        if (edge === "right")
++            return 3;
++        if (edge === "bottom")
++            return 1;
++        return 0;
++    }
++
++    function _finishOpenPopout(popout) {
++        if (!popout)
++            return;
++        const barPosition = root._barPosition();
++        const screen = root.parentScreen || Screen;
++        const spacing = root.barSpacing ?? 4;
++
++        if (popout.setBarContext)
++            popout.setBarContext(barPosition, root.barConfig?.bottomGap ?? 0);
++        popout.triggerScreen = screen;
++
++        const globalPos = root.mapToItem(null, 0, 0);
++        const pos = SettingsData.getPopupTriggerPosition(globalPos, screen, root.barThickness, root.width, spacing, barPosition, root.barConfig);
++        popout.setTriggerPosition(pos.x, pos.y, pos.width, "center", screen, barPosition, root.barThickness, spacing, root.barConfig);
++        PopoutManager.requestPopout(popout, undefined, "mediaIsland");
++    }
++
++    function toggleMediaPopout() {
++        if (!root.playerAvailable)
++            return;
++
++        const loader = PopoutService.mediaIslandPopoutLoader;
++        if (!loader)
++            return;
++
++        const existing = PopoutService.mediaIslandPopout || loader.item;
++        if (existing?.shouldBeVisible) {
++            existing.close();
++            return;
++        }
++
++        loader.active = true;
++        const popout = PopoutService.mediaIslandPopout || loader.item;
++        if (popout) {
++            root._finishOpenPopout(popout);
++            return;
++        }
++
++        const onLoaded = function () {
++            if (loader.loaded)
++                loader.loaded.disconnect(onLoaded);
++            root._finishOpenPopout(PopoutService.mediaIslandPopout || loader.item);
++        };
++        if (loader.loaded)
++            loader.loaded.connect(onLoaded);
++    }
++
++    Rectangle {
++        id: pillBg
++        anchors.fill: parent
++        radius: Theme.cornerRadius
++        color: root.islandColor
++        border.width: 0
++        opacity: root.playerAvailable ? 1 : 0
++
++        Behavior on opacity {
++            NumberAnimation {
++                duration: Theme.shortDuration
++                easing.type: Theme.standardEasing
++            }
++        }
++    }
++
++    MouseArea {
++        id: bodyClick
++        anchors.fill: parent
++        enabled: root.playerAvailable
++        cursorShape: Qt.PointingHandCursor
++        onClicked: root.toggleMediaPopout()
++    }
++
++    Row {
++        id: contentRow
++        anchors.verticalCenter: parent.verticalCenter
++        anchors.left: parent.left
++        anchors.leftMargin: root.hPad
++        spacing: Theme.spacingXS
++        visible: root.width > 8
++        z: 1
++
++        Item {
++            width: root.artSize
++            height: root.artSize
++            anchors.verticalCenter: parent.verticalCenter
++
++            DankAlbumArt {
++                anchors.fill: parent
++                activePlayer: root.activePlayer
++                showAnimation: false
++                animationScale: 1.0
++            }
++        }
++
++        StyledText {
++            id: titleLabel
++            anchors.verticalCenter: parent.verticalCenter
++            text: MprisController.stableTitle || ""
++            visible: text.length > 0
++            // Mild pause cue — no continuous animation.
++            opacity: root.isPlaying ? 1 : 0.82
++            color: Theme.widgetTextColor
++            font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
++            elide: Text.ElideRight
++            maximumLineCount: 1
++            wrapMode: Text.NoWrap
++            width: text.length > 0 ? root.maxTitleWidth : 0
++
++            Behavior on opacity {
++                NumberAnimation {
++                    duration: Theme.shortDuration
++                    easing.type: Theme.standardEasing
++                }
++            }
++        }
++
++        Rectangle {
++            width: root.playSize
++            height: root.playSize
++            radius: root.playSize / 2
++            anchors.verticalCenter: parent.verticalCenter
++            color: root.isPlaying ? Theme.primary : Theme.primaryHover
++            opacity: root.canToggle ? (root.isPlaying ? 1 : 0.9) : 0.35
++
++            Behavior on color {
++                ColorAnimation {
++                    duration: Theme.shortDuration
++                }
++            }
++
++            DankIcon {
++                anchors.centerIn: parent
++                name: root.isPlaying ? "pause" : "play_arrow"
++                size: 12
++                color: root.isPlaying ? Theme.background : Theme.primary
++            }
++
++            MouseArea {
++                anchors.fill: parent
++                enabled: root.canToggle
++                cursorShape: Qt.PointingHandCursor
++                onClicked: {
++                    if (root.activePlayer)
++                        root.activePlayer.togglePlaying();
++                }
++            }
++        }
++    }
++}
+diff -ruN a/Modules/DankBar/Popouts/MediaIslandPopout.qml b/Modules/DankBar/Popouts/MediaIslandPopout.qml
+--- a/Modules/DankBar/Popouts/MediaIslandPopout.qml
++++ b/Modules/DankBar/Popouts/MediaIslandPopout.qml
+@@ -0,0 +1,335 @@
++import QtQuick
++import Quickshell.Services.Mpris
++import qs.Common
++import qs.Services
++import qs.Widgets
++
++// Ryoku Mini Media Player — quick controls for the Media Island.
++// Anchored via DankPopout to the island trigger. No CAVA / new Timers.
++DankPopout {
++    id: root
++
++    layerNamespace: "dms:media-island"
++
++    property var triggerScreen: null
++
++    popupWidth: 360
++    popupHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
++    triggerWidth: 70
++    positioning: ""
++    screen: triggerScreen
++    shouldBeVisible: false
++
++    onBackgroundClicked: close()
++
++    // Belt-and-suspenders: close if MPRIS clears while this surface is up.
++    Connections {
++        target: MprisController
++        function onActivePlayerChanged() {
++            if (!MprisController.activePlayer && root.shouldBeVisible)
++                root.close();
++        }
++    }
++
++    content: Component {
++        Rectangle {
++            id: panel
++
++            implicitHeight: contentColumn.implicitHeight + Theme.spacingM * 2
++            color: "transparent"
++            focus: true
++
++            readonly property MprisPlayer activePlayer: MprisController.activePlayer
++            readonly property bool _hoverPreview: MprisController.isFirefoxYoutubeHoverPreview(activePlayer)
++            readonly property bool isPlaying: !!activePlayer && activePlayer.playbackState === MprisPlaybackState.Playing && !_hoverPreview
++            readonly property bool canToggle: !!activePlayer && activePlayer.canControl !== false
++            readonly property bool canPrev: !!activePlayer && activePlayer.canGoPrevious
++            readonly property bool canNext: !!activePlayer && activePlayer.canGoNext
++
++            readonly property bool __isChromeBrowser: {
++                if (!activePlayer?.identity)
++                    return false;
++                const id = activePlayer.identity.toLowerCase();
++                return id.includes("chrome") || id.includes("chromium");
++            }
++            // Same volume routing as MediaPlayerTab — do not change in 5C.
++            readonly property bool usePlayerVolume: !!activePlayer && activePlayer.volumeSupported && !__isChromeBrowser
++            readonly property bool volumeAvailable: !!(usePlayerVolume || (AudioService.sink && AudioService.sink.audio))
++            readonly property real currentVolume: usePlayerVolume ? (activePlayer.volume || 0) : (AudioService.sink?.audio?.volume ?? 0)
++
++            property bool isSeeking: false
++
++            function formatMediaTime(seconds) {
++                if (!isFinite(seconds) || seconds < 0)
++                    return "0:00";
++                const total = Math.floor(seconds);
++                const m = Math.floor(total / 60);
++                const s = total % 60;
++                return m + ":" + String(s).padStart(2, "0");
++            }
++
++            function setVolumePercent(pct) {
++                if (!volumeAvailable)
++                    return;
++                const clamped = Math.max(0, Math.min(100, pct));
++                if (usePlayerVolume)
++                    activePlayer.volume = clamped / 100;
++                else if (AudioService.sink?.audio)
++                    AudioService.sink.audio.volume = clamped / 100;
++            }
++
++            Component.onCompleted: {
++                if (root.shouldBeVisible)
++                    forceActiveFocus();
++            }
++
++            Keys.onPressed: function (event) {
++                if (event.key === Qt.Key_Escape) {
++                    root.close();
++                    event.accepted = true;
++                }
++            }
++
++            Connections {
++                target: root
++                function onShouldBeVisibleChanged() {
++                    if (root.shouldBeVisible) {
++                        Qt.callLater(function () {
++                            panel.forceActiveFocus();
++                        });
++                    }
++                }
++            }
++
++            Column {
++                id: contentColumn
++                width: parent.width - Theme.spacingM * 2
++                anchors.left: parent.left
++                anchors.top: parent.top
++                anchors.margins: Theme.spacingM
++                spacing: Theme.spacingS
++
++                // Header: artwork + metadata
++                Row {
++                    width: parent.width
++                    spacing: Theme.spacingM
++
++                    Item {
++                        width: 80
++                        height: 80
++
++                        DankAlbumArt {
++                            anchors.fill: parent
++                            activePlayer: panel.activePlayer
++                            showAnimation: false
++                            animationScale: 1.0
++                        }
++                    }
++
++                    Column {
++                        width: parent.width - 80 - Theme.spacingM
++                        anchors.verticalCenter: parent.verticalCenter
++                        spacing: Theme.spacingXXS
++
++                        StyledText {
++                            width: parent.width
++                            text: MprisController.stableTitle || I18n.tr("Unknown")
++                            color: Theme.surfaceText
++                            font.pixelSize: Theme.fontSizeMedium
++                            font.weight: Font.DemiBold
++                            elide: Text.ElideRight
++                            maximumLineCount: 1
++                            wrapMode: Text.NoWrap
++                        }
++
++                        StyledText {
++                            width: parent.width
++                            text: MprisController.stableArtist || ""
++                            visible: text.length > 0
++                            color: Theme.surfaceVariantText
++                            font.pixelSize: Theme.fontSizeSmall
++                            elide: Text.ElideRight
++                            maximumLineCount: 1
++                            wrapMode: Text.NoWrap
++                        }
++                    }
++                }
++
++                // Seek + time (DankSeekbar — wave follows SettingsData; no local override API)
++                Row {
++                    width: parent.width
++                    spacing: Theme.spacingS
++                    height: 22
++
++                    DankSeekbar {
++                        width: parent.width - timeLabel.width - Theme.spacingS
++                        height: parent.height
++                        anchors.verticalCenter: parent.verticalCenter
++                        activePlayer: panel.activePlayer
++                        isSeeking: panel.isSeeking
++                        onIsSeekingChanged: panel.isSeeking = isSeeking
++                    }
++
++                    StyledText {
++                        id: timeLabel
++                        anchors.verticalCenter: parent.verticalCenter
++                        text: {
++                            const len = MprisController.activePlayerStableLength;
++                            const pos = panel.activePlayer?.position || 0;
++                            if (!panel.activePlayer || len <= 0)
++                                return panel.formatMediaTime(pos);
++                            return panel.formatMediaTime(pos) + " / " + panel.formatMediaTime(len);
++                        }
++                        color: Theme.surfaceVariantText
++                        font.pixelSize: Theme.fontSizeSmall
++                    }
++                }
++
++                // Playback controls — play/pause primary, prev/next secondary
++                Item {
++                    width: parent.width
++                    height: 48
++
++                    Row {
++                        spacing: Theme.spacingM
++                        anchors.centerIn: parent
++                        height: parent.height
++
++                        Item {
++                            width: 40
++                            height: parent.height
++
++                            Rectangle {
++                                width: 36
++                                height: 36
++                                radius: 18
++                                anchors.centerIn: parent
++                                color: prevArea.containsMouse && panel.canPrev ? Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency) : "transparent"
++                                opacity: panel.canPrev ? 1 : 0.32
++
++                                DankIcon {
++                                    anchors.centerIn: parent
++                                    name: "skip_previous"
++                                    size: 20
++                                    color: Theme.surfaceText
++                                }
++
++                                MouseArea {
++                                    id: prevArea
++                                    anchors.fill: parent
++                                    enabled: panel.canPrev
++                                    hoverEnabled: true
++                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
++                                    onClicked: MprisController.previousOrRewind()
++                                }
++                            }
++                        }
++
++                        Item {
++                            width: 48
++                            height: parent.height
++
++                            Rectangle {
++                                width: 44
++                                height: 44
++                                radius: 22
++                                anchors.centerIn: parent
++                                color: playArea.containsMouse && panel.canToggle ? Theme.primary : Theme.primary
++                                opacity: panel.canToggle ? (playArea.containsMouse ? 1 : 0.95) : 0.32
++
++                                Behavior on opacity {
++                                    NumberAnimation {
++                                        duration: Theme.shortDuration
++                                        easing.type: Theme.standardEasing
++                                    }
++                                }
++
++                                DankIcon {
++                                    anchors.centerIn: parent
++                                    name: panel.isPlaying ? "pause" : "play_arrow"
++                                    size: 24
++                                    color: Theme.background
++                                }
++
++                                MouseArea {
++                                    id: playArea
++                                    anchors.fill: parent
++                                    enabled: panel.canToggle
++                                    hoverEnabled: true
++                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
++                                    onClicked: panel.activePlayer?.togglePlaying()
++                                }
++                            }
++                        }
++
++                        Item {
++                            width: 40
++                            height: parent.height
++
++                            Rectangle {
++                                width: 36
++                                height: 36
++                                radius: 18
++                                anchors.centerIn: parent
++                                color: nextArea.containsMouse && panel.canNext ? Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency) : "transparent"
++                                opacity: panel.canNext ? 1 : 0.32
++
++                                DankIcon {
++                                    anchors.centerIn: parent
++                                    name: "skip_next"
++                                    size: 20
++                                    color: Theme.surfaceText
++                                }
++
++                                MouseArea {
++                                    id: nextArea
++                                    anchors.fill: parent
++                                    enabled: panel.canNext
++                                    hoverEnabled: true
++                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
++                                    onClicked: MprisController.next()
++                                }
++                            }
++                        }
++                    }
++                }
++
++                // Volume — secondary visual weight; routing unchanged
++                Row {
++                    width: parent.width
++                    height: 26
++                    spacing: Theme.spacingS
++                    visible: panel.volumeAvailable
++                    opacity: 0.92
++
++                    DankIcon {
++                        anchors.verticalCenter: parent.verticalCenter
++                        name: {
++                            const v = panel.currentVolume;
++                            if (v <= 0.001)
++                                return "volume_off";
++                            if (v <= 0.33)
++                                return "volume_down";
++                            return "volume_up";
++                        }
++                        size: 16
++                        color: Theme.surfaceVariantText
++                    }
++
++                    DankSlider {
++                        width: parent.width - 16 - Theme.spacingS
++                        height: 26
++                        anchors.verticalCenter: parent.verticalCenter
++                        value: Math.round(panel.currentVolume * 100)
++                        minimum: 0
++                        maximum: 100
++                        showValue: false
++                        onSliderValueChanged: function (newValue) {
++                            panel.setVolumePercent(newValue);
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
+diff -ruN a/Services/PopoutService.qml b/Services/PopoutService.qml
+--- a/Services/PopoutService.qml
++++ b/Services/PopoutService.qml
+@@ -21,6 +21,8 @@
+     property var dankDashPopoutLoader: null
+     property var batteryPopout: null
+     property var batteryPopoutLoader: null
++    property var mediaIslandPopout: null
++    property var mediaIslandPopoutLoader: null
+     property var vpnPopout: null
+     property var vpnPopoutLoader: null
+     property var systemUpdatePopout: null
+@@ -112,6 +114,7 @@
+             "appDrawer": () => _unloadPopoutNow("appDrawerPopout", "appDrawerLoader"),
+             "processList": () => _unloadPopoutNow("processListPopout", "processListPopoutLoader"),
+             "battery": () => _unloadPopoutNow("batteryPopout", "batteryPopoutLoader"),
++            "mediaIsland": () => _unloadPopoutNow("mediaIslandPopout", "mediaIslandPopoutLoader"),
+             "vpn": () => _unloadPopoutNow("vpnPopout", "vpnPopoutLoader"),
+             "systemUpdate": () => _unloadPopoutNow("systemUpdatePopout", "systemUpdateLoader"),
+             "layout": () => _unloadPopoutNow("layoutPopout", "layoutPopoutLoader"),
+@@ -336,6 +339,14 @@
+         }
+     }
+
++    function closeMediaIsland() {
++        mediaIslandPopout?.close();
++    }
++
++    function unloadMediaIsland() {
++        _scheduleUnload("mediaIsland");
++    }
++
+     function openVpn(x, y, width, section, screen) {
+         if (vpnPopout) {
+             setPosition(vpnPopout, x, y, width, section, screen);
+diff -ruN a/DMSShell.qml b/DMSShell.qml
+--- a/DMSShell.qml
++++ b/DMSShell.qml
+@@ -522,6 +522,25 @@
+     }
+
+     LazyLoader {
++        id: mediaIslandPopoutLoader
++
++        active: false
++
++        Component.onCompleted: {
++            PopoutService.mediaIslandPopoutLoader = mediaIslandPopoutLoader;
++        }
++
++        MediaIslandPopout {
++            id: mediaIslandPopout
++            onPopoutClosed: PopoutService.unloadMediaIsland()
++
++            Component.onCompleted: {
++                PopoutService.mediaIslandPopout = mediaIslandPopout;
++            }
++        }
++    }
++
++    LazyLoader {
+         id: layoutPopoutLoader
+
+         active: false

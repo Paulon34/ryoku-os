@@ -1,0 +1,9 @@
+# Hyprland stack — install from Debian 13 trixie-backports (~0.55.x).
+# Bootstrap: apt-get install -t trixie-backports --no-install-recommends …
+# Justification: official Debian backports; matches mission ~0.55.x target;
+# no third-party APT repo. Nix Hyprland is not the default binary path.
+
+hyprland
+xdg-desktop-portal-hyprland
+# Replaces the deprecated hyprland-qtutils and supplies GUI recovery dialogs.
+hyprland-guiutils

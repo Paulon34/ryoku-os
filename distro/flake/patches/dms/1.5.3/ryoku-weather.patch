@@ -1,0 +1,28 @@
+diff -ruN a/Common/SessionData.qml b/Common/SessionData.qml
+--- a/Common/SessionData.qml	2026-09-28 00:55:29.551334775 +0000
++++ b/Common/SessionData.qml	2026-09-28 00:55:29.555887391 +0000
+@@ -197,8 +197,8 @@
+     property string wifiDeviceOverride: ""
+     property bool weatherHourlyDetailed: true
+
+-    property string weatherLocation: "New York, NY"
+-    property string weatherCoordinates: "40.7128,-74.0060"
++    property string weatherLocation: ""
++    property string weatherCoordinates: ""
+
+     property var hiddenApps: []
+     property var appOverrides: ({})
+diff -ruN a/Common/settings/SessionSpec.js b/Common/settings/SessionSpec.js
+--- a/Common/settings/SessionSpec.js	2026-09-28 00:55:29.552334794 +0000
++++ b/Common/settings/SessionSpec.js	2026-09-28 00:55:29.557334889 +0000
+@@ -46,8 +46,8 @@
+     themeModeEndMinute: { def: 0 },
+     themeModeShareGammaSettings: { def: true },
+
+-    weatherLocation: { def: "New York, NY" },
+-    weatherCoordinates: { def: "40.7128,-74.0060" },
++    weatherLocation: { def: "" },
++    weatherCoordinates: { def: "" },
+
+     pinnedApps: { def: [] },
+     barPinnedApps: { def: [] },
