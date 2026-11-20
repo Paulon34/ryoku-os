@@ -10,10 +10,12 @@
 #include <QLoggingCategory>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QVariant>
 #include <QtGlobal>
 
 Q_LOGGING_CATEGORY(lcWallGallery, "ryoku.settings.wallpaper.gallery")
@@ -108,6 +110,109 @@ void WallpaperGalleryModel::setLastImportSummary(const QString &summary)
         return;
     m_lastImportSummary = summary;
     emit lastImportSummaryChanged();
+}
+
+void WallpaperGalleryModel::setImportBusy(bool busy)
+{
+    if (m_importBusy == busy)
+        return;
+    m_importBusy = busy;
+    emit importBusyChanged();
+}
+
+void WallpaperGalleryModel::setImportProgress(int progress)
+{
+    const int clamped = qBound(0, progress, 100);
+    if (m_importProgress == clamped)
+        return;
+    m_importProgress = clamped;
+    emit importProgressChanged();
+}
+
+QUrl WallpaperGalleryModel::coerceToUrl(const QVariant &value)
+{
+    if (value.canConvert<QUrl>()) {
+        const QUrl u = value.toUrl();
+        if (!u.isEmpty())
+            return u;
+    }
+    const QString s = value.toString().trimmed();
+    if (s.isEmpty())
+        return {};
+    // QML sometimes hands FileDialog entries as plain strings ("file:///…").
+    const QUrl asUrl = QUrl::fromUserInput(s, QString(), QUrl::AssumeLocalFile);
+    if (asUrl.isValid())
+        return asUrl;
+    return QUrl::fromLocalFile(s);
+}
+
+QString WallpaperGalleryModel::mediaKindForFileName(const QString &fileName)
+{
+    if (SettingsStore::isValidWallpaperId(fileName))
+        return QStringLiteral("image");
+    if (SettingsStore::isValidVideoWallpaperId(fileName))
+        return QStringLiteral("video");
+    return {};
+}
+
+QString WallpaperGalleryModel::localPathFromUrl(const QUrl &url) const
+{
+    if (!url.isValid() || url.isEmpty())
+        return {};
+    if (!url.isLocalFile())
+        return {};
+    // QUrl::toLocalFile decodes percent-encoding (%20, UTF-8, # fragments stripped
+    // from path correctly via isLocalFile path). Never strip "file://" manually.
+    const QString path = url.toLocalFile();
+    if (path.isEmpty())
+        return {};
+    const QFileInfo fi(path);
+    if (!fi.exists())
+        return {};
+    if (!fi.isReadable())
+        return {};
+    return fi.absoluteFilePath();
+}
+
+QStringList WallpaperGalleryModel::localPathsFromUrls(const QVariantList &urls) const
+{
+    QStringList out;
+    out.reserve(urls.size());
+    for (const QVariant &v : urls) {
+        const QString path = localPathFromUrl(coerceToUrl(v));
+        if (!path.isEmpty())
+            out.append(path);
+    }
+    return out;
+}
+
+QString WallpaperGalleryModel::formatByteSize(qint64 bytes) const
+{
+    if (bytes < 0)
+        return {};
+    constexpr qint64 KiB = 1024;
+    constexpr qint64 MiB = 1024 * KiB;
+    if (bytes < KiB)
+        return QCoreApplication::translate("WallpaperGalleryModel", "%1 B").arg(bytes);
+    if (bytes < MiB) {
+        return QCoreApplication::translate("WallpaperGalleryModel", "%1 KiB")
+            .arg(QString::number(bytes / double(KiB), 'f', bytes < 10 * KiB ? 1 : 0));
+    }
+    return QCoreApplication::translate("WallpaperGalleryModel", "%1 MiB")
+        .arg(QString::number(bytes / double(MiB), 'f', bytes < 10 * MiB ? 1 : 0));
+}
+
+void WallpaperGalleryModel::clearImportHighlight()
+{
+    if (m_lastImportedIds.isEmpty())
+        return;
+    m_lastImportedIds.clear();
+    emit lastImportedIdsChanged();
+}
+
+bool WallpaperGalleryModel::isRecentlyImported(const QString &id) const
+{
+    return m_lastImportedIds.contains(id);
 }
 
 QString WallpaperGalleryModel::resolveInstalledGalleryPath()
@@ -379,6 +484,24 @@ void WallpaperGalleryModel::rebuildVisible()
     emit countChanged();
 }
 
+void WallpaperGalleryModel::enqueueMissingPosters()
+{
+    if (!isVideoGallery())
+        return;
+    // Keep in-flight poster; only queue ids that lack a cached frame and are
+    // not already pending/queued — avoids restarting FFmpeg for every import.
+    QSet<QString> queued(m_posterQueue.begin(), m_posterQueue.end());
+    if (!m_posterPending.isEmpty())
+        queued.insert(m_posterPending);
+    for (const Entry &e : m_visible) {
+        if (m_posters.contains(e.id) || queued.contains(e.id))
+            continue;
+        m_posterQueue.append(e.id);
+        queued.insert(e.id);
+    }
+    startNextPoster();
+}
+
 void WallpaperGalleryModel::reload()
 {
     beginResetModel();
@@ -386,12 +509,8 @@ void WallpaperGalleryModel::reload()
     m_visible.clear();
     m_absById.clear();
     m_originById.clear();
-    m_posterQueue.clear();
-    m_posterPending.clear();
-    if (m_posterProc && m_posterProc->state() != QProcess::NotRunning) {
-        m_posterProc->kill();
-        m_posterProc->waitForFinished(2000);
-    }
+    // Do not kill an in-flight poster or wipe m_posters — import/folder watch
+    // reloads must not restart the full FFmpeg queue per file.
 
     m_roots = resolveGalleryRoots(m_repoPath, m_extraFolders);
     m_galleryPath = m_roots.isEmpty() ? resolveInstalledGalleryPath() : m_roots.constFirst();
@@ -428,13 +547,7 @@ void WallpaperGalleryModel::reload()
     emit rootsChanged();
 
     setupWatcher();
-
-    if (isVideoGallery()) {
-        m_posterQueue.clear();
-        for (const Entry &e : m_visible)
-            m_posterQueue.append(e.id);
-        startNextPoster();
-    }
+    enqueueMissingPosters();
 }
 
 void WallpaperGalleryModel::refreshGallery()
@@ -574,6 +687,30 @@ bool WallpaperGalleryModel::addExtraFolder(const QString &dirPath)
     return true;
 }
 
+bool WallpaperGalleryModel::addExtraFolderUrl(const QUrl &folderUrl)
+{
+    setLastError({});
+    if (!folderUrl.isValid() || folderUrl.isEmpty()) {
+        // Cancel / empty — no-op success so QML does not show a spurious error.
+        return true;
+    }
+    if (!folderUrl.isLocalFile()) {
+        setLastError(QStringLiteral("Folder URL is not a local path"));
+        return false;
+    }
+    const QString path = folderUrl.toLocalFile();
+    if (path.isEmpty()) {
+        setLastError(QStringLiteral("Could not resolve folder path"));
+        return false;
+    }
+    const QFileInfo fi(path);
+    if (!fi.exists() || !fi.isDir() || !fi.isReadable()) {
+        setLastError(QStringLiteral("Folder not found"));
+        return false;
+    }
+    return addExtraFolder(fi.absoluteFilePath());
+}
+
 bool WallpaperGalleryModel::removeExtraFolder(const QString &dirPath)
 {
     const QString abs = QFileInfo(dirPath).absoluteFilePath();
@@ -585,11 +722,11 @@ bool WallpaperGalleryModel::removeExtraFolder(const QString &dirPath)
     return true;
 }
 
-QString WallpaperGalleryModel::importFile(const QString &sourcePath)
+QString WallpaperGalleryModel::importFileNoReload(const QString &sourcePath, bool enforceKind)
 {
     setLastError({});
     const QFileInfo src(sourcePath);
-    if (!src.exists() || !src.isFile()) {
+    if (!src.exists() || !src.isFile() || !src.isReadable()) {
         setLastError(QStringLiteral("File not found"));
         return {};
     }
@@ -601,13 +738,15 @@ QString WallpaperGalleryModel::importFile(const QString &sourcePath)
         setLastError(QStringLiteral("Unsupported or unsafe wallpaper name"));
         return {};
     }
-    if (m_kind == MediaKind::Images && !okImage) {
-        setLastError(QStringLiteral("Not an image wallpaper"));
-        return {};
-    }
-    if (m_kind == MediaKind::Videos && !okVideo) {
-        setLastError(QStringLiteral("Not a video wallpaper"));
-        return {};
+    if (enforceKind) {
+        if (m_kind == MediaKind::Images && !okImage) {
+            setLastError(QStringLiteral("Not an image wallpaper"));
+            return {};
+        }
+        if (m_kind == MediaKind::Videos && !okVideo) {
+            setLastError(QStringLiteral("Not a video wallpaper"));
+            return {};
+        }
     }
 
     QString err;
@@ -625,6 +764,23 @@ QString WallpaperGalleryModel::importFile(const QString &sourcePath)
 
     const QString imported = QFileInfo(dest).fileName();
     qInfo(lcWallGallery) << "imported private wallpaper" << imported;
+    return imported;
+}
+
+QString WallpaperGalleryModel::importFile(const QString &sourcePath)
+{
+    const QString imported = importFileNoReload(sourcePath);
+    if (imported.isEmpty())
+        return {};
+    m_lastImportedIds = {imported};
+    m_lastIgnoredCount = 0;
+    m_lastRejectedCount = 0;
+    emit lastImportedIdsChanged();
+    setLastImportSummary(
+        QCoreApplication::translate("WallpaperGalleryModel", "Imported %1 · ignored %2 · rejected %3")
+            .arg(1)
+            .arg(0)
+            .arg(0));
     reload();
     return imported;
 }
@@ -633,20 +789,156 @@ QStringList WallpaperGalleryModel::importFiles(const QStringList &sourcePaths)
 {
     QStringList imported;
     QStringList errors;
+    QStringList ignored;
+    setImportBusy(true);
+    setImportProgress(0);
+    const int total = sourcePaths.size();
+    int i = 0;
     for (const QString &path : sourcePaths) {
-        const QString id = importFile(path);
+        ++i;
+        if (total > 0)
+            setImportProgress(int((i - 1) * 100.0 / total));
+        const QString name = QFileInfo(path).fileName();
+        const QString kind = mediaKindForFileName(name);
+        const bool matching = (m_kind == MediaKind::Images && kind == QLatin1String("image"))
+            || (m_kind == MediaKind::Videos && kind == QLatin1String("video"));
+        if (!kind.isEmpty() && !matching) {
+            ignored.append(name);
+            continue;
+        }
+        const QString id = importFileNoReload(path);
         if (id.isEmpty())
-            errors.append(QStringLiteral("%1: %2").arg(QFileInfo(path).fileName(), m_lastError));
+            errors.append(QStringLiteral("%1: %2").arg(name, m_lastError));
         else
             imported.append(id);
     }
+    m_lastImportedIds = imported;
+    m_lastIgnoredCount = ignored.size();
+    m_lastRejectedCount = errors.size();
+    emit lastImportedIdsChanged();
     if (!errors.isEmpty())
         setLastError(errors.join(QLatin1Char('\n')));
+    else
+        setLastError({});
     setLastImportSummary(
-        QCoreApplication::translate("WallpaperGalleryModel", "Imported %1 · skipped %2")
+        QCoreApplication::translate("WallpaperGalleryModel", "Imported %1 · ignored %2 · rejected %3")
             .arg(imported.size())
+            .arg(ignored.size())
             .arg(errors.size()));
+    if (!imported.isEmpty())
+        reload();
+    setImportProgress(100);
+    setImportBusy(false);
     return imported;
+}
+
+QVariantMap WallpaperGalleryModel::importUrls(const QVariantList &urls)
+{
+    QVariantMap out;
+    QStringList imported;
+    QStringList rejected;
+    QStringList errors;
+
+    // Empty selection / cancel → no-op.
+    if (urls.isEmpty()) {
+        out.insert(QStringLiteral("imported"), QStringList{});
+        out.insert(QStringLiteral("ignored"), QStringList{});
+        out.insert(QStringLiteral("rejected"), QStringList{});
+        out.insert(QStringLiteral("importedCount"), 0);
+        out.insert(QStringLiteral("ignoredCount"), 0);
+        out.insert(QStringLiteral("rejectedCount"), 0);
+        out.insert(QStringLiteral("summary"), QString{});
+        out.insert(QStringLiteral("error"), QString{});
+        out.insert(QStringLiteral("ok"), true);
+        return out;
+    }
+
+    setImportBusy(true);
+    setImportProgress(0);
+    setLastError({});
+
+    const int total = urls.size();
+    int index = 0;
+    for (const QVariant &v : urls) {
+        ++index;
+        if (total > 0)
+            setImportProgress(int((index - 1) * 100.0 / total));
+
+        const QUrl url = coerceToUrl(v);
+        if (!url.isValid() || url.isEmpty()) {
+            rejected.append(QStringLiteral("(empty)"));
+            errors.append(QStringLiteral("empty URL"));
+            continue;
+        }
+        if (!url.isLocalFile()) {
+            rejected.append(url.toString());
+            errors.append(QStringLiteral("%1: not a local file").arg(url.toString()));
+            continue;
+        }
+        const QString path = url.toLocalFile();
+        if (path.isEmpty()) {
+            rejected.append(url.toString());
+            errors.append(QStringLiteral("%1: toLocalFile failed").arg(url.toString()));
+            continue;
+        }
+        const QFileInfo fi(path);
+        if (!fi.exists() || !fi.isFile() || !fi.isReadable()) {
+            rejected.append(fi.fileName().isEmpty() ? path : fi.fileName());
+            errors.append(QStringLiteral("%1: not found or not readable").arg(fi.fileName()));
+            continue;
+        }
+
+        const QString name = fi.fileName();
+        const QString kind = mediaKindForFileName(name);
+        if (kind.isEmpty()) {
+            rejected.append(name);
+            errors.append(QStringLiteral("%1: unsupported type").arg(name));
+            continue;
+        }
+
+        // Classify by extension; import into shared private library without
+        // enforcing this model's MediaKind (sibling gallery refreshes via watcher).
+        const QString id = importFileNoReload(fi.absoluteFilePath(), /*enforceKind=*/false);
+        if (id.isEmpty()) {
+            rejected.append(name);
+            errors.append(QStringLiteral("%1: %2").arg(name, m_lastError));
+        } else {
+            imported.append(id);
+        }
+    }
+
+    m_lastImportedIds = imported;
+    m_lastIgnoredCount = 0;
+    m_lastRejectedCount = rejected.size();
+    emit lastImportedIdsChanged();
+
+    const QString summary =
+        QCoreApplication::translate("WallpaperGalleryModel", "Imported %1 · ignored %2 · rejected %3")
+            .arg(imported.size())
+            .arg(0)
+            .arg(rejected.size());
+    setLastImportSummary(summary);
+    if (!errors.isEmpty())
+        setLastError(errors.join(QLatin1Char('\n')));
+    else
+        setLastError({});
+
+    if (!imported.isEmpty())
+        reload();
+
+    setImportProgress(100);
+    setImportBusy(false);
+
+    out.insert(QStringLiteral("imported"), imported);
+    out.insert(QStringLiteral("ignored"), QStringList{});
+    out.insert(QStringLiteral("rejected"), rejected);
+    out.insert(QStringLiteral("importedCount"), imported.size());
+    out.insert(QStringLiteral("ignoredCount"), 0);
+    out.insert(QStringLiteral("rejectedCount"), rejected.size());
+    out.insert(QStringLiteral("summary"), summary);
+    out.insert(QStringLiteral("error"), m_lastError);
+    out.insert(QStringLiteral("ok"), rejected.isEmpty());
+    return out;
 }
 
 QVariantMap WallpaperGalleryModel::publishPreview(const QString &id) const
