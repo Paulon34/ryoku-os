@@ -59,7 +59,20 @@ WallpaperGalleryModel::WallpaperGalleryModel(MediaKind kind, QObject *parent)
     loadExtraFolders();
 }
 
-WallpaperGalleryModel::~WallpaperGalleryModel() = default;
+WallpaperGalleryModel::~WallpaperGalleryModel()
+{
+    // Tear down poster FFmpeg helper before QProcess dtor (avoids
+    // "QProcess: Destroyed while process is still running" on UI fail/close).
+    m_posterQueue.clear();
+    m_posterPending.clear();
+    if (m_posterProc) {
+        m_posterProc->disconnect();
+        if (m_posterProc->state() != QProcess::NotRunning) {
+            m_posterProc->kill();
+            m_posterProc->waitForFinished(2000);
+        }
+    }
+}
 
 void WallpaperGalleryModel::setRepoPath(const QString &repoPath)
 {
@@ -374,8 +387,11 @@ void WallpaperGalleryModel::reload()
     m_absById.clear();
     m_originById.clear();
     m_posterQueue.clear();
-    if (m_posterProc && m_posterProc->state() != QProcess::NotRunning)
+    m_posterPending.clear();
+    if (m_posterProc && m_posterProc->state() != QProcess::NotRunning) {
         m_posterProc->kill();
+        m_posterProc->waitForFinished(2000);
+    }
 
     m_roots = resolveGalleryRoots(m_repoPath, m_extraFolders);
     m_galleryPath = m_roots.isEmpty() ? resolveInstalledGalleryPath() : m_roots.constFirst();

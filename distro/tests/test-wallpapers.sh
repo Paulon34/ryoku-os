@@ -45,6 +45,8 @@ grep -Fq 'resolveGalleryRoots' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGa
   && pass "unified gallery roots" || fail_msg "missing resolveGalleryRoots"
 grep -Fq 'QFileSystemWatcher' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
   && pass "gallery filesystem watcher" || fail_msg "missing QFileSystemWatcher"
+grep -Fq 'waitForFinished(2000)' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "poster QProcess teardown wait" || fail_msg "poster QProcess must waitForFinished on teardown"
 grep -Fq 'includeInRepository' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
   && pass "include-in-repo API" || fail_msg "missing includeInRepository"
 grep -Fq 'refusing to write into Nix store' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
