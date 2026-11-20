@@ -14,6 +14,9 @@ Flickable {
     property bool showGenDetails: false
     property bool showGitPanel: false
     property bool showCommitConfirm: false
+    property bool showWallpaperPushConfirm: false
+    property bool showNixAdvanced: false
+    property var pendingWallpaperPush: []
     property string commitMessage: ""
     property var gitSelected: ({})
     property int confirmSwitchGeneration: -1
@@ -141,7 +144,7 @@ Flickable {
                 spacing: RyokuTheme.spacing_sm
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("Nix & Updates")
+                    text: qsTr("Git e atualizações")
                     color: RyokuTheme.on_background
                     font.pixelSize: RyokuTheme.font_title
                     font.bold: true
@@ -156,16 +159,16 @@ Flickable {
             Text {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: qsTr("Repository, flake updates, system apply and generations")
+                text: qsTr("Repository, selective commits, updates, apply and generations")
                 color: RyokuTheme.on_surface_muted
                 font.pixelSize: RyokuTheme.font_body
             }
         }
 
-        // 1) Repository / Git
+        // 1) Repo & branch
         RyokuCard {
             Layout.fillWidth: true
-            title: qsTr("Repository")
+            title: qsTr("Repo & branch")
 
             Column {
                 width: parent.width
@@ -217,6 +220,34 @@ Flickable {
                     font.pixelSize: RyokuTheme.font_caption
                 }
 
+                Text {
+                    visible: gitStatus.successMessage.length > 0
+                    width: parent.width
+                    text: gitStatus.successMessage
+                    color: RyokuTheme.primary
+                    font.pixelSize: RyokuTheme.font_caption
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+
+        // 2) Manage changes
+        RyokuCard {
+            Layout.fillWidth: true
+            title: qsTr("Manage changes")
+
+            Column {
+                width: parent.width
+                spacing: RyokuTheme.spacing_sm
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Stage, commit and push selected files. Wallpaper copies under distro/assets/wallpapers/ appear here after Include in repository.")
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+
                 Row {
                     spacing: RyokuTheme.spacing_sm
                     RyokuButton {
@@ -235,25 +266,28 @@ Flickable {
                         text: qsTr("Push")
                         variant: "tonal"
                         enabled: gitStatus.canPush
-                        onClicked: gitStatus.push()
+                        onClicked: {
+                            const staged = gitStatus.commitPreview().stagedPaths || []
+                            const walls = staged.filter(function(p) {
+                                return String(p).indexOf("distro/assets/wallpapers/") === 0
+                                       || String(p).indexOf("assets/wallpapers/") === 0
+                            })
+                            if (walls.length > 0) {
+                                root.pendingWallpaperPush = walls
+                                root.showWallpaperPushConfirm = true
+                            } else {
+                                gitStatus.push()
+                            }
+                        }
                     }
-                }
-
-                Text {
-                    visible: gitStatus.successMessage.length > 0
-                    width: parent.width
-                    text: gitStatus.successMessage
-                    color: RyokuTheme.primary
-                    font.pixelSize: RyokuTheme.font_caption
-                    wrapMode: Text.WordWrap
                 }
             }
         }
 
-        // 2) Flake updates
+        // 3) Available updates
         RyokuCard {
             Layout.fillWidth: true
-            title: qsTr("Flake inputs")
+            title: qsTr("Available updates")
 
             Column {
                 width: parent.width
@@ -423,10 +457,10 @@ Flickable {
             }
         }
 
-        // 3) System state (summary — not full Apply banner)
+        // 4) Apply config
         RyokuCard {
             Layout.fillWidth: true
-            title: qsTr("System state")
+            title: qsTr("Apply config")
 
             Column {
                 width: parent.width
@@ -481,10 +515,10 @@ Flickable {
             }
         }
 
-        // 4) Generations
+        // 5) History & restore
         RyokuCard {
             Layout.fillWidth: true
-            title: qsTr("Generations")
+            title: qsTr("History & restore")
 
             Column {
                 width: parent.width
@@ -565,6 +599,75 @@ Flickable {
                             root.showGenDetails = true
                             root.confirmSwitchData = modelData
                             root.confirmSwitchGeneration = -2
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6) Nix deps — Advanced (existing flake/lock tools kept)
+        RyokuCard {
+            Layout.fillWidth: true
+            title: qsTr("Nix deps — Advanced")
+
+            Column {
+                width: parent.width
+                spacing: RyokuTheme.spacing_sm
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Home Manager and flake.lock tools. Day-to-day wallpaper and git flows stay in the sections above.")
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+
+                RyokuButton {
+                    text: root.showNixAdvanced ? qsTr("Hide advanced") : qsTr("Show advanced")
+                    variant: "ghost"
+                    onClicked: root.showNixAdvanced = !root.showNixAdvanced
+                }
+
+                Column {
+                    width: parent.width
+                    visible: root.showNixAdvanced
+                    spacing: RyokuTheme.spacing_sm
+
+                    RyokuSettingRow {
+                        width: parent.width
+                        label: qsTr("Flake lock")
+                        value: applyController.lockfilePendingRebuild
+                               ? qsTr("Changed — rebuild required")
+                               : (flakeUpdate.pendingLockChange
+                                  ? qsTr("Changed — Apply recommended")
+                                  : qsTr("Current"))
+                    }
+                    RyokuSettingRow {
+                        width: parent.width
+                        label: qsTr("Validation")
+                        value: flakeUpdate.validationLabel
+                    }
+                    RyokuSettingRow {
+                        width: parent.width
+                        label: qsTr("Rebuild hint")
+                        value: flakeUpdate.lockfileRebuildHint.length
+                               ? flakeUpdate.lockfileRebuildHint
+                               : qsTr("—")
+                        hint: flakeUpdate.runningNixpkgsHint
+                    }
+                    Row {
+                        spacing: RyokuTheme.spacing_sm
+                        RyokuButton {
+                            text: qsTr("Validate")
+                            variant: "secondary"
+                            enabled: flakeUpdate.canValidatePending
+                            onClicked: flakeUpdate.validatePending()
+                        }
+                        RyokuButton {
+                            text: qsTr("Revert update")
+                            variant: "ghost"
+                            enabled: flakeUpdate.canRevert && !flakeUpdate.busy
+                            onClicked: flakeUpdate.revertUpdate()
                         }
                     }
                 }
@@ -1044,6 +1147,19 @@ Flickable {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
+                    visible: {
+                        const paths = gitStatus.commitPreview().stagedPaths || []
+                        return paths.some(function(p) {
+                            return String(p).indexOf("wallpapers/") >= 0
+                        })
+                    }
+                    text: qsTr("Wallpaper files in this commit will be published with the repository. Confirm you have distribution rights.")
+                    color: RyokuTheme.on_surface
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
                     text: qsTr("Message: %1").arg(root.commitMessage.trim())
                     color: RyokuTheme.on_surface
                     font.pixelSize: RyokuTheme.font_body
@@ -1061,6 +1177,75 @@ Flickable {
                         text: qsTr("Cancel")
                         variant: "secondary"
                         onClicked: root.showCommitConfirm = false
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        visible: root.showWallpaperPushConfirm
+        anchors.fill: parent
+        color: RyokuTheme.scrim
+        z: 125
+        MouseArea { anchors.fill: parent; onClicked: root.showWallpaperPushConfirm = false }
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 32, 440)
+            radius: RyokuTheme.radius_lg
+            color: RyokuTheme.glass_surface
+            border.width: RyokuTheme.border_width
+            border.color: RyokuTheme.glass_border
+            implicitHeight: pushWallCol.implicitHeight + RyokuTheme.spacing_md * 2
+            Column {
+                id: pushWallCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: RyokuTheme.spacing_md
+                spacing: RyokuTheme.spacing_sm
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Push wallpaper files to a public remote?")
+                    color: RyokuTheme.on_surface
+                    font.pixelSize: RyokuTheme.font_section
+                    font.bold: true
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: (root.pendingWallpaperPush || []).join("\n")
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Confirm distribution rights for every listed file. Private gallery imports are never pushed unless you explicitly included them.")
+                    color: RyokuTheme.on_surface
+                    font.pixelSize: RyokuTheme.font_body
+                }
+                Row {
+                    spacing: RyokuTheme.spacing_sm
+                    layoutDirection: Qt.RightToLeft
+                    width: parent.width
+                    RyokuButton {
+                        text: qsTr("Push")
+                        variant: "primary"
+                        onClicked: {
+                            root.showWallpaperPushConfirm = false
+                            root.pendingWallpaperPush = []
+                            gitStatus.push()
+                        }
+                    }
+                    RyokuButton {
+                        text: qsTr("Cancel")
+                        variant: "secondary"
+                        onClicked: {
+                            root.showWallpaperPushConfirm = false
+                            root.pendingWallpaperPush = []
+                        }
                     }
                 }
             }

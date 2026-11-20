@@ -537,8 +537,8 @@ Flickable {
                     pageIndex: 7
                 }
                 QuickTile {
-                    title: qsTr("Nix & Updates")
-                    subtitle: qsTr("Flake · Git · Generations")
+                    title: qsTr("Git e atualizações")
+                    subtitle: qsTr("Git · Updates · Generations")
                     glyph: "❄"
                     pageIndex: 9
                 }
