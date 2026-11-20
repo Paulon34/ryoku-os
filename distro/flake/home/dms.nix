@@ -322,7 +322,10 @@ let
     pending="$HOME/.config/ryoku/pending-imported-wallpaper"
     if [[ -f "$pending" ]]; then
       IFS= read -r id < "$pending" || true
-      if [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.(jpg|jpeg|png|webp)$ && "$id" != *..* ]]; then
+      # Basename-only (spaces/Unicode ok); never path traversal.
+      if [[ -n "$id" && "$id" != */* && "$id" != *\\* && "$id" != *..* && "$id" != .* \
+            && "$id" != [[:space:]]* && "$id" != *[[:space:]] \
+            && "$id" =~ \.(jpg|jpeg|png|webp|JPG|JPEG|PNG|WEBP)$ ]]; then
         private="$HOME/.local/share/ryoku/wallpapers-private/$id"
         if [[ -f "$private" && ! -L "$private" ]]; then
           if dms_ipc wallpaper set "$private"; then

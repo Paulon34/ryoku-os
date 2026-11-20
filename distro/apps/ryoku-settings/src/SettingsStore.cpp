@@ -303,26 +303,58 @@ bool SettingsStore::saveShellStyle(const QVariant &style)
     return true;
 }
 
-bool SettingsStore::isValidWallpaperId(const QString &id)
+namespace {
+
+bool isSafeWallpaperBasename(const QString &id, const QStringList &extensions)
 {
-    static const QRegularExpression re(
-        QStringLiteral(R"(^[A-Za-z0-9][A-Za-z0-9._-]*\.(jpg|jpeg|png|webp)$)"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (id.isEmpty() || id.contains(QLatin1Char('/')) || id.contains(QLatin1Char('\\'))
+    if (id.isEmpty() || id.size() > 255)
+        return false;
+    // Basename-only contract: no traversal, no separators, no relative crumbs.
+    if (id.contains(QLatin1Char('/')) || id.contains(QLatin1Char('\\'))
         || id.contains(QStringLiteral("..")))
         return false;
-    return re.match(id).hasMatch();
+    if (id.startsWith(QLatin1Char(' ')) || id.endsWith(QLatin1Char(' '))
+        || id.startsWith(QLatin1Char('.')))
+        return false;
+    if (QFileInfo(id).fileName() != id)
+        return false;
+    for (const QChar &ch : id) {
+        if (ch.isNull() || ch.category() == QChar::Other_Control
+            || ch.category() == QChar::Other_Format)
+            return false;
+    }
+    const int dot = id.lastIndexOf(QLatin1Char('.'));
+    if (dot <= 0 || dot >= id.size() - 1)
+        return false;
+    const QString ext = id.mid(dot + 1).toLower();
+    if (!extensions.contains(ext))
+        return false;
+    // Stem must contain at least one non-space letter/number (Unicode ok).
+    const QString stem = id.left(dot);
+    bool hasAtom = false;
+    for (const QChar &ch : stem) {
+        if (ch.isLetterOrNumber()) {
+            hasAtom = true;
+            break;
+        }
+    }
+    return hasAtom;
+}
+
+} // namespace
+
+bool SettingsStore::isValidWallpaperId(const QString &id)
+{
+    static const QStringList exts{QStringLiteral("jpg"), QStringLiteral("jpeg"),
+                                  QStringLiteral("png"), QStringLiteral("webp")};
+    return isSafeWallpaperBasename(id, exts);
 }
 
 bool SettingsStore::isValidVideoWallpaperId(const QString &id)
 {
-    static const QRegularExpression re(
-        QStringLiteral(R"(^[A-Za-z0-9][A-Za-z0-9._-]*\.(mp4|webm|mkv|mov)$)"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (id.isEmpty() || id.contains(QLatin1Char('/')) || id.contains(QLatin1Char('\\'))
-        || id.contains(QStringLiteral("..")))
-        return false;
-    return re.match(id).hasMatch();
+    static const QStringList exts{QStringLiteral("mp4"), QStringLiteral("webm"),
+                                  QStringLiteral("mkv"), QStringLiteral("mov")};
+    return isSafeWallpaperBasename(id, exts);
 }
 
 bool SettingsStore::validateVideoWallpaper(const QVariant &wallpaperType,

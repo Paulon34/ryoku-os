@@ -8,9 +8,12 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 DBus LinguistTools Svg)
 
-qt_standard_project_setup(REQUIRES 6.5)
+qt_standard_project_setup(REQUIRES 6.4)
 
-qt_policy(SET QTP0004 OLD)
+# QTP0004 exists on Qt ≥ 6.5; skip gracefully on older distro toolchains.
+if(COMMAND qt_policy)
+  qt_policy(SET QTP0004 OLD)
+endif()
 
 set(RYOKU_REPO_PATH_DEFAULT "" CACHE STRING "Default Ryoku repo path baked at build time")
 set(RYOKU_FLAKE_HOST_DEFAULT "" CACHE STRING "Flake host attribute baked at build time (bootstrap hint)")

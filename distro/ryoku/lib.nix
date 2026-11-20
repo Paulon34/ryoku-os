@@ -30,13 +30,21 @@ let
   supportedSchemaVersion = 1;
 
   # Basename-only wallpaper id (same contract as SettingsStore::isValidWallpaperId).
+  # Allows spaces and Unicode letters; rejects path separators and "..".
   wallpaperIdOk =
     id:
+    let
+      lower = lib.toLower id;
+    in
     builtins.isString id
-    && builtins.match "[A-Za-z0-9][A-Za-z0-9._-]*\\.(jpg|jpeg|png|webp)" id != null
-    && !(builtins.match ".*\\.\\..*" id != null)
+    && id != ""
     && !(lib.hasInfix "/" id)
-    && !(lib.hasInfix "\\" id);
+    && !(lib.hasInfix "\\" id)
+    && !(lib.hasInfix ".." id)
+    && !(lib.hasPrefix " " id)
+    && !(lib.hasSuffix " " id)
+    && !(lib.hasPrefix "." id)
+    && builtins.match ".*\\.(jpg|jpeg|png|webp)" lower != null;
 
   # Fail clearly on incompatible majors (future GUI/migrations).
   checked =
