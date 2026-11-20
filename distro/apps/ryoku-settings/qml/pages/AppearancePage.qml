@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import Ryoku.Settings
 
 Flickable {
@@ -32,12 +33,51 @@ Flickable {
     property bool draftVideoPauseCovered: true
     // Which gallery is shown — a view choice, not the active wallpaper.
     property string galleryMode: "image"
+    // Smart library filter: all | images | videos | private | repository
+    property string libraryFilter: "all"
+    property bool showIncludeConfirm: false
+    property var includePreview: ({})
+    property string includeTargetId: ""
     readonly property bool videoActive: draftWallpaperType === "video" && draftVideo.length > 0
     readonly property var videoProfiles: [
         { id: "economy", label: qsTr("Economy") },
         { id: "balanced", label: qsTr("Balanced") },
         { id: "quality", label: qsTr("Quality") }
     ]
+    readonly property var activeGallery: root.galleryMode === "video"
+                                         ? videoWallpaperGallery : wallpaperGallery
+
+    function applyLibraryFilter(filter) {
+        root.libraryFilter = filter
+        wallpaperGallery.filter = filter
+        videoWallpaperGallery.filter = filter
+        // Keep image/video tab aligned when filter forces a media kind.
+        if (filter === "images")
+            root.galleryMode = "image"
+        else if (filter === "videos")
+            root.galleryMode = "video"
+    }
+
+    function askIncludeInRepo(fileName) {
+        const preview = activeGallery.publishPreview(fileName)
+        root.includeTargetId = fileName
+        root.includePreview = preview
+        root.showIncludeConfirm = true
+        if (!preview.ok)
+            root.errorMessage = preview.error || qsTr("Cannot include this wallpaper in the repository")
+    }
+
+    function confirmIncludeInRepo() {
+        root.showIncludeConfirm = false
+        const result = activeGallery.includeInRepository(root.includeTargetId)
+        if (!result.ok) {
+            root.errorMessage = result.error || qsTr("Include in repository failed")
+            return
+        }
+        root.wallpaperPreviewNote = qsTr("Copied to %1 — open Git e atualizações to stage.")
+            .arg(result.destRelative || "")
+        gitStatus.refresh()
+    }
 
     function isUnset(v) {
         return v === null || v === undefined
@@ -498,7 +538,7 @@ Flickable {
                 width: parent.width
                 spacing: RyokuTheme.spacing_sm
 
-                // Image | Video
+                // Media tab + smart library filters
                 Row {
                     spacing: RyokuTheme.spacing_xs
                     RyokuButton {
@@ -511,6 +551,70 @@ Flickable {
                         variant: root.galleryMode === "video" ? "tonal" : "ghost"
                         onClicked: root.galleryMode = "video"
                     }
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: RyokuTheme.spacing_xs
+                    Repeater {
+                        model: [
+                            { id: "all", label: qsTr("All") },
+                            { id: "images", label: qsTr("Images") },
+                            { id: "videos", label: qsTr("Videos") },
+                            { id: "private", label: qsTr("Private") },
+                            { id: "repository", label: qsTr("Repository") }
+                        ]
+                        delegate: RyokuButton {
+                            required property var modelData
+                            text: modelData.label
+                            variant: root.libraryFilter === modelData.id ? "primary" : "ghost"
+                            onClicked: root.applyLibraryFilter(modelData.id)
+                        }
+                    }
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: RyokuTheme.spacing_xs
+                    RyokuButton {
+                        text: qsTr("Refresh gallery")
+                        variant: "ghost"
+                        onClicked: {
+                            wallpaperGallery.refreshGallery()
+                            videoWallpaperGallery.refreshGallery()
+                        }
+                    }
+                    RyokuButton {
+                        text: qsTr("Import…")
+                        variant: "tonal"
+                        onClicked: importDialog.open()
+                    }
+                    RyokuButton {
+                        text: qsTr("Add folder…")
+                        variant: "ghost"
+                        onClicked: folderDialog.open()
+                    }
+                    RyokuButton {
+                        text: qsTr("Open folder")
+                        variant: "ghost"
+                        onClicked: activeGallery.openGalleryFolder(
+                                       root.libraryFilter === "private" ? "private"
+                                       : (root.libraryFilter === "repository" ? "repository" : ""))
+                    }
+                    RyokuButton {
+                        text: qsTr("Git changes")
+                        variant: "ghost"
+                        onClicked: activeGallery.requestManageChanges()
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    visible: activeGallery.lastImportSummary.length > 0
+                    wrapMode: Text.WordWrap
+                    text: activeGallery.lastImportSummary
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
                 }
 
                 // Hero preview — videos show their poster frame (no playback here).
@@ -690,6 +794,9 @@ Flickable {
                         required property url url
                         required property bool isVideo
                         required property url posterUrl
+                        required property string originLabel
+                        required property string origin
+                        required property bool inRepository
 
                         readonly property bool selected: isVideo
                                                          ? (root.videoActive && root.draftVideo === fileName)
@@ -724,6 +831,24 @@ Flickable {
                                 opacity: thumbHover.hovered || selected ? 1.0 : 0.92
                                 Behavior on opacity {
                                     NumberAnimation { duration: RyokuTheme.animation_fast }
+                                }
+                            }
+
+                            // Origin badge (Private / Repository / …)
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.margins: 4
+                                height: 16
+                                radius: 4
+                                color: Qt.rgba(0, 0, 0, 0.55)
+                                width: originText.implicitWidth + 8
+                                Text {
+                                    id: originText
+                                    anchors.centerIn: parent
+                                    text: originLabel
+                                    color: "white"
+                                    font.pixelSize: 9
                                 }
                             }
 
@@ -764,6 +889,31 @@ Flickable {
                                 }
                             }
 
+                            // Include-in-repo affordance for private/extra items
+                            Rectangle {
+                                visible: selected && !inRepository && origin === "private"
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.margins: 4
+                                height: 18
+                                radius: 4
+                                color: RyokuTheme.primary
+                                width: includeLbl.implicitWidth + 10
+                                Text {
+                                    id: includeLbl
+                                    anchors.centerIn: parent
+                                    text: qsTr("Git+")
+                                    color: RyokuTheme.on_primary
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.askIncludeInRepo(fileName)
+                                }
+                            }
+
                             HoverHandler { id: thumbHover }
 
                             MouseArea {
@@ -772,6 +922,10 @@ Flickable {
                                 cursorShape: wallpaperApplier.busy ? Qt.BusyCursor : Qt.PointingHandCursor
                                 onClicked: isVideo ? root.selectVideoWallpaper(fileName)
                                                    : root.selectWallpaper(fileName)
+                                onPressAndHold: {
+                                    if (!inRepository)
+                                        root.askIncludeInRepo(fileName)
+                                }
                             }
                         }
                     }
@@ -1531,6 +1685,132 @@ Flickable {
                         variant: "primary"
                         enabled: root.dirty
                         onClicked: root.saveDraft()
+                    }
+                    RyokuButton {
+                        text: qsTr("Include in repository…")
+                        variant: "tonal"
+                        visible: {
+                            const id = root.videoActive ? root.draftVideo : root.draftWallpaper
+                            return id.length > 0 && activeGallery.originForId(id) === "private"
+                        }
+                        onClicked: root.askIncludeInRepo(
+                                       root.videoActive ? root.draftVideo : root.draftWallpaper)
+                    }
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: importDialog
+        title: qsTr("Import wallpapers")
+        fileMode: FileDialog.OpenFiles
+        nameFilters: [
+            qsTr("Wallpapers (*.jpg *.jpeg *.png *.webp *.mp4 *.webm *.mkv *.mov)"),
+            qsTr("Images (*.jpg *.jpeg *.png *.webp)"),
+            qsTr("Videos (*.mp4 *.webm *.mkv *.mov)")
+        ]
+        onAccepted: {
+            const paths = selectedFiles.map(function(u) { return u.toLocalFile() })
+            const gallery = root.galleryMode === "video" ? videoWallpaperGallery
+                                                         : wallpaperGallery
+            // Videos go through the video gallery importer; images through image.
+            // Mixed selections: try both.
+            const importedImg = wallpaperGallery.importFiles(paths)
+            const importedVid = videoWallpaperGallery.importFiles(paths)
+            if (importedImg.length + importedVid.length === 0
+                    && (wallpaperGallery.lastError.length || videoWallpaperGallery.lastError.length)) {
+                root.errorMessage = wallpaperGallery.lastError || videoWallpaperGallery.lastError
+            } else {
+                root.wallpaperPreviewNote = gallery.lastImportSummary
+            }
+        }
+    }
+
+    FolderDialog {
+        id: folderDialog
+        title: qsTr("Add wallpaper folder")
+        onAccepted: {
+            const path = selectedFolder.toLocalFile()
+            if (!wallpaperGallery.addExtraFolder(path))
+                root.errorMessage = wallpaperGallery.lastError
+            else
+                videoWallpaperGallery.addExtraFolder(path)
+        }
+    }
+
+    // Include-in-repository confirmation (public-repo rights + size preview)
+    Rectangle {
+        visible: root.showIncludeConfirm
+        anchors.fill: parent
+        color: RyokuTheme.scrim
+        z: 100
+        MouseArea { anchors.fill: parent; onClicked: root.showIncludeConfirm = false }
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 32, 440)
+            radius: RyokuTheme.radius_lg
+            color: RyokuTheme.glass_surface
+            border.width: RyokuTheme.border_width
+            border.color: RyokuTheme.glass_border
+            implicitHeight: includeCol.implicitHeight + RyokuTheme.spacing_md * 2
+            Column {
+                id: includeCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: RyokuTheme.spacing_md
+                spacing: RyokuTheme.spacing_sm
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Include wallpaper in the public repository?")
+                    color: RyokuTheme.on_surface
+                    font.pixelSize: RyokuTheme.font_section
+                    font.bold: true
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Name: %1\nSize: %2 bytes\nDestination: %3")
+                          .arg(root.includePreview.id || root.includeTargetId)
+                          .arg(root.includePreview.byteSize || 0)
+                          .arg(root.includePreview.destRelative || "distro/assets/wallpapers/")
+                    color: RyokuTheme.on_surface_muted
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    visible: !!root.includePreview.exceedsGitHubLimit
+                    text: qsTr("This file exceeds GitHub’s 100 MiB limit. Git LFS is not configured — include was blocked.")
+                    color: RyokuTheme.error
+                    font.pixelSize: RyokuTheme.font_caption
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Confirm you have distribution rights to publish this file in a public repository. Private imports stay out of git by default.")
+                    color: RyokuTheme.on_surface
+                    font.pixelSize: RyokuTheme.font_body
+                }
+                Row {
+                    spacing: RyokuTheme.spacing_sm
+                    layoutDirection: Qt.RightToLeft
+                    width: parent.width
+                    RyokuButton {
+                        text: qsTr("Include & open Git")
+                        variant: "primary"
+                        enabled: !!root.includePreview.ok
+                        onClicked: {
+                            root.confirmIncludeInRepo()
+                            activeGallery.requestManageChanges()
+                        }
+                    }
+                    RyokuButton {
+                        text: qsTr("Cancel")
+                        variant: "secondary"
+                        onClicked: root.showIncludeConfirm = false
                     }
                 }
             }

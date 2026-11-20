@@ -58,7 +58,7 @@ ApplicationWindow {
         { id: "power", title: qsTr("Power"), source: "Power", icon: "power_settings_new" },
         { id: "apps", title: qsTr("Apps"), source: "Apps", icon: "apps" },
         { id: "system", title: qsTr("System"), source: "System", icon: "settings" },
-        { id: "nix", title: qsTr("Nix & Updates"), source: "Nix & Updates", icon: "system_update_alt" },
+        { id: "nix", title: qsTr("Git e atualizações"), source: "Git e atualizações", icon: "system_update_alt" },
         { id: "about", title: qsTr("About"), source: "About", icon: "info" }
     ]
 
@@ -78,8 +78,33 @@ ApplicationWindow {
         pendingDirection = direction || 0
         currentIndex = next
     }
+
+    // Appearance → Git Center shortcut (wallpaper include-in-repo flow).
+    function openGitManageChanges() {
+        for (let i = 0; i < pages.length; ++i) {
+            if (pages[i].id === "nix") {
+                if (currentIndex !== i)
+                    goToPage(i, 0)
+                break
+            }
+        }
+        Qt.callLater(function() {
+            if (nixUpdatesPage)
+                nixUpdatesPage.openGitPanel()
+        })
+    }
+
     function nextPage() { goToPage(currentIndex + 1, 1) }
     function previousPage() { goToPage(currentIndex - 1, -1) }
+
+    Connections {
+        target: wallpaperGallery
+        function onManageChangesRequested() { root.openGitManageChanges() }
+    }
+    Connections {
+        target: videoWallpaperGallery
+        function onManageChangesRequested() { root.openGitManageChanges() }
+    }
 
     onCurrentIndexChanged: {
         transitionDirection = pendingDirection !== 0
@@ -665,7 +690,9 @@ ApplicationWindow {
                             onErrorMessageChanged: root.appsError = errorMessage
                         }
                         SystemPage { }
-                        NixUpdatesPage { }
+                        NixUpdatesPage {
+                            id: nixUpdatesPage
+                        }
                         AboutPage { }
                     }
                 }
