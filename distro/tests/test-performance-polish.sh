@@ -13,6 +13,8 @@ grep -Fq 'ryoku-settings-launcher-check' "$ROOT/distro/flake/home/settings.nix" 
   && pass "launcher-check helper packaged" || fail_msg "missing launcher-check"
 grep -Fq 'ryokuSettingsDesktopAdopt' "$ROOT/distro/flake/home/settings.nix" \
   && pass "desktop adopt/backup activation" || fail_msg "missing desktop adopt"
+grep -Fq 'ryokuSettingsDesktopVerify' "$ROOT/distro/flake/home/settings.nix" \
+  && pass "desktop verify after linkGeneration" || fail_msg "missing desktop verify"
 grep -Fq 'X-Ryoku-Managed' "$ROOT/distro/flake/home/settings.nix" \
   && pass "managed desktop marker" || fail_msg "missing X-Ryoku-Managed"
 grep -Fq 'Keywords[pt_BR]' "$ROOT/distro/flake/home/settings.nix" \

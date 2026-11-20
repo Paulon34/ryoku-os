@@ -98,6 +98,24 @@ grep -Fq 'xdg.desktopEntries."org.ryoku.Settings"' "$ROOT/distro/flake/home/sett
   || fail_msg "must not emit ryoku-settings.desktop (portal appId mismatch)"
 grep -Fq 'exec = "${homeDir}/.local/bin/ryoku-settings";' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings desktop Exec must use absolute nixGL launcher path"
+grep -Fq 'config.xdg.dataHome' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must align desktop paths with config.xdg.dataHome"
+grep -Fq 'ryokuSettingsDesktopVerify' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must verify desktop entry after linkGeneration"
+grep -Fq 'xdg.dataFile."applications/org.ryoku.Settings.desktop"' "$ROOT/distro/flake/home/settings.nix" \
+  || fail_msg "settings.nix must xdg.dataFile the canonical desktop into dataHome"
+grep -Fq 'RESOURCE_PREFIX "/qt/qml"' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "CMake must set RESOURCE_PREFIX /qt/qml for loadFromModule"
+grep -Fq 'qt_standard_project_setup(REQUIRES 6.5)' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "CMake must REQUIRES 6.5 (QTP0001 NEW)"
+grep -Fq 'QT_KNOWN_POLICY_QTP0004' "$ROOT/distro/apps/ryoku-settings/CMakeLists.txt" \
+  || fail_msg "QTP0004 must be gated with QT_KNOWN_POLICY_QTP0004"
+grep -Fq -- '--smoke-test' "$ROOT/distro/apps/ryoku-settings/src/main.cpp" \
+  || fail_msg "main.cpp must implement --smoke-test for CI QML load"
+grep -Fq 'doCheck = true' "$ROOT/distro/flake/pkgs/ryoku-settings.nix" \
+  || fail_msg "ryoku-settings.nix must run unit tests (doCheck)"
+grep -Fq 'QT_QPA_PLATFORM=offscreen' "$ROOT/distro/flake/pkgs/ryoku-settings.nix" \
+  || fail_msg "ryoku-settings.nix installCheck must run offscreen smoke"
 grep -Fq 'Name[pt_BR]' "$ROOT/distro/flake/home/settings.nix" \
   || fail_msg "settings desktop entry must expose Name[pt_BR]"
 grep -Fq 'hiPrio settingsLauncher' "$ROOT/distro/flake/home/settings.nix" \
