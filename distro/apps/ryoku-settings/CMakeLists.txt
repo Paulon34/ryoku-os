@@ -8,10 +8,13 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 DBus LinguistTools Svg)
 
-qt_standard_project_setup(REQUIRES 6.4)
+# REQUIRES 6.5 enables QTP0001 NEW → default QML RESOURCE_PREFIX /qt/qml/
+# (needed by engine.loadFromModule). REQUIRES 6.4 left QTP0001 OLD (prefix "/"),
+# which made Ryoku.Settings/Main invisible at runtime.
+qt_standard_project_setup(REQUIRES 6.5)
 
-# QTP0004 exists on Qt ≥ 6.5; skip gracefully on older distro toolchains.
-if(COMMAND qt_policy)
+# QTP0004 arrived in Qt 6.8 — gate on QT_KNOWN_POLICY_QTP0004, not bare qt_policy.
+if(QT_KNOWN_POLICY_QTP0004)
   qt_policy(SET QTP0004 OLD)
 endif()
 
@@ -92,6 +95,8 @@ target_compile_definitions(ryoku-settings PRIVATE
 qt_add_qml_module(ryoku-settings
   URI Ryoku.Settings
   VERSION 1.0
+  # Explicit even when QTP0001 NEW is active — loadFromModule requires this prefix.
+  RESOURCE_PREFIX "/qt/qml"
   QML_FILES
     qml/Main.qml
     qml/RyokuTheme.qml
