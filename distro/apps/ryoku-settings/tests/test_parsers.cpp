@@ -59,6 +59,8 @@ private slots:
     void appearanceVideoRejectsInvalid();
     void appearanceVideoImageOnlyFileUnchanged();
     void videoGalleryListsOnlyVideos();
+    void wallpaperUrlImportAndGalleryUpdate();
+    void wallpaperFolderUrlAndIncludeRepo();
     void videoApplyArgv();
     void saveFileAtomicKeepsOriginalOnCancel();
     void saveNoopBytesIdentical();
@@ -826,6 +828,201 @@ void ParserTests::videoGalleryListsOnlyVideos()
     qputenv("HOME", oldHome);
 }
 
+void ParserTests::wallpaperUrlImportAndGalleryUpdate()
+{
+    QTemporaryDir home;
+    QTemporaryDir repo;
+    QVERIFY(home.isValid() && repo.isValid());
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldXdg = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldCfg = qgetenv("XDG_CONFIG_HOME");
+    qputenv("HOME", home.path().toUtf8());
+    qputenv("XDG_DATA_HOME", QDir(home.path()).filePath(QStringLiteral(".local/share")).toUtf8());
+    qputenv("XDG_CONFIG_HOME", QDir(home.path()).filePath(QStringLiteral(".config")).toUtf8());
+    // Isolate QSettings extraFolders from the host.
+    QSettings(QStringLiteral("Ryoku"), QStringLiteral("Settings")).remove(QStringLiteral("wallpaper/extraFolders"));
+
+    QDir(repo.path()).mkpath(QStringLiteral("distro/assets/wallpapers"));
+    const QString srcDir = QDir(home.path()).filePath(QStringLiteral("ryoku-nixos/assets/wallpapers"));
+    QVERIFY(QDir().mkpath(srcDir));
+
+    const QStringList names{
+        QStringLiteral("ichigo.png"),
+        QStringLiteral("cidade noite.png"),
+        QStringLiteral("pôr-do-sol.webp"),
+        QStringLiteral("hash#tag.jpg"),
+        QStringLiteral("clip.mp4"),
+        QStringLiteral("notes.txt"),
+    };
+    for (const QString &name : names) {
+        QFile f(QDir(srcDir).filePath(name));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("wallpaper-bytes");
+    }
+
+    // Percent-encoded space, Unicode, and # must round-trip via QUrl::toLocalFile.
+    const QString spaced = QDir(srcDir).filePath(QStringLiteral("cidade noite.png"));
+    const QUrl spacedUrl = QUrl::fromLocalFile(spaced);
+    QVERIFY(spacedUrl.isLocalFile());
+    QCOMPARE(spacedUrl.toLocalFile(), QFileInfo(spaced).absoluteFilePath());
+
+    const QString unicode = QDir(srcDir).filePath(QStringLiteral("pôr-do-sol.webp"));
+    const QUrl unicodeUrl = QUrl::fromLocalFile(unicode);
+    QCOMPARE(unicodeUrl.toLocalFile(), QFileInfo(unicode).absoluteFilePath());
+
+    const QString hashed = QDir(srcDir).filePath(QStringLiteral("hash#tag.jpg"));
+    const QUrl hashedUrl = QUrl::fromLocalFile(hashed);
+    QVERIFY(hashedUrl.isLocalFile());
+    QCOMPARE(hashedUrl.toLocalFile(), QFileInfo(hashed).absoluteFilePath());
+    QVERIFY(hashedUrl.toString(QUrl::FullyEncoded).contains(QStringLiteral("%23")));
+
+    const QUrl fromUser = QUrl::fromUserInput(QStringLiteral("file://%1")
+                                                  .arg(QFileInfo(spaced).absoluteFilePath()));
+    QVERIFY(fromUser.isLocalFile());
+    QCOMPARE(fromUser.toLocalFile(), QFileInfo(spaced).absoluteFilePath());
+
+    WallpaperGalleryModel images;
+    images.setRepoPath(repo.path());
+    QCOMPARE(images.localPathFromUrl(spacedUrl), QFileInfo(spaced).absoluteFilePath());
+    QCOMPARE(images.localPathFromUrl(unicodeUrl), QFileInfo(unicode).absoluteFilePath());
+    QCOMPARE(images.localPathFromUrl(hashedUrl), QFileInfo(hashed).absoluteFilePath());
+    QVERIFY(images.localPathFromUrl(QUrl(QStringLiteral("https://example.com/x.png"))).isEmpty());
+    QVERIFY(images.localPathFromUrl(QUrl()).isEmpty());
+
+    // Cancel / empty selection is a no-op.
+    const QVariantMap emptyResult = images.importUrls({});
+    QCOMPARE(emptyResult.value(QStringLiteral("importedCount")).toInt(), 0);
+    QVERIFY(emptyResult.value(QStringLiteral("ok")).toBool());
+
+    QVariantList urls;
+    urls << QUrl::fromLocalFile(QDir(srcDir).filePath(QStringLiteral("ichigo.png")));
+    urls << QUrl::fromLocalFile(spaced);
+    urls << QUrl::fromLocalFile(unicode);
+    urls << QUrl::fromLocalFile(QDir(srcDir).filePath(QStringLiteral("hash#tag.jpg")));
+    urls << QUrl::fromLocalFile(QDir(srcDir).filePath(QStringLiteral("clip.mp4")));
+    urls << QUrl::fromLocalFile(QDir(srcDir).filePath(QStringLiteral("notes.txt")));
+    urls << QStringLiteral("file://") + QFileInfo(QDir(srcDir).filePath(QStringLiteral("ichigo.png")))
+                                            .absoluteFilePath(); // string form from QML
+
+    const QVariantMap result = images.importUrls(urls);
+    QVERIFY(result.value(QStringLiteral("importedCount")).toInt() >= 5);
+    QCOMPARE(result.value(QStringLiteral("rejectedCount")).toInt(), 1); // notes.txt
+    QVERIFY(images.lastImportedIds().contains(QStringLiteral("ichigo.png")));
+    QVERIFY(images.isRecentlyImported(QStringLiteral("ichigo.png")));
+
+    const QString priv = WallpaperGalleryModel::resolvePrivateGalleryPath();
+    QVERIFY(QFileInfo::exists(QDir(priv).filePath(QStringLiteral("ichigo.png"))));
+    QVERIFY(QFileInfo::exists(QDir(priv).filePath(QStringLiteral("cidade noite.png"))));
+    QVERIFY(QFileInfo::exists(QDir(priv).filePath(QStringLiteral("pôr-do-sol.webp"))));
+    // Collision on second ichigo copy → unique name.
+    QVERIFY(QFileInfo::exists(QDir(priv).filePath(QStringLiteral("ichigo (1).png")))
+            || images.lastImportedIds().contains(QStringLiteral("ichigo (1).png")));
+
+    // Gallery model updated with private origin — no rebuild/restart required.
+    QVERIFY(images.absolutePathForId(QStringLiteral("ichigo.png")).startsWith(priv));
+    QCOMPARE(images.originForId(QStringLiteral("ichigo.png")), QStringLiteral("private"));
+
+    WallpaperGalleryModel videos(WallpaperGalleryModel::MediaKind::Videos);
+    videos.setRepoPath(repo.path());
+    QVERIFY(!videos.absolutePathForId(QStringLiteral("clip.mp4")).isEmpty());
+    QCOMPARE(videos.originForId(QStringLiteral("clip.mp4")), QStringLiteral("private"));
+
+    // mediaKind classification
+    QCOMPARE(WallpaperGalleryModel::mediaKindForFileName(QStringLiteral("ichigo.png")),
+             QStringLiteral("image"));
+    QCOMPARE(WallpaperGalleryModel::mediaKindForFileName(QStringLiteral("clip.mp4")),
+             QStringLiteral("video"));
+    QVERIFY(WallpaperGalleryModel::mediaKindForFileName(QStringLiteral("notes.txt")).isEmpty());
+
+    qputenv("HOME", oldHome);
+    if (oldXdg.isEmpty())
+        qunsetenv("XDG_DATA_HOME");
+    else
+        qputenv("XDG_DATA_HOME", oldXdg);
+    if (oldCfg.isEmpty())
+        qunsetenv("XDG_CONFIG_HOME");
+    else
+        qputenv("XDG_CONFIG_HOME", oldCfg);
+}
+
+void ParserTests::wallpaperFolderUrlAndIncludeRepo()
+{
+    QTemporaryDir home;
+    QTemporaryDir repo;
+    QVERIFY(home.isValid() && repo.isValid());
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldXdg = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldCfg = qgetenv("XDG_CONFIG_HOME");
+    qputenv("HOME", home.path().toUtf8());
+    qputenv("XDG_DATA_HOME", QDir(home.path()).filePath(QStringLiteral(".local/share")).toUtf8());
+    qputenv("XDG_CONFIG_HOME", QDir(home.path()).filePath(QStringLiteral(".config")).toUtf8());
+    QSettings(QStringLiteral("Ryoku"), QStringLiteral("Settings")).remove(QStringLiteral("wallpaper/extraFolders"));
+
+    QVERIFY(QDir(repo.path()).mkpath(QStringLiteral("distro/assets/wallpapers")));
+    // Legacy external origin (read-only watch — do not copy/publish contents).
+    const QString legacy = QDir(home.path()).filePath(QStringLiteral("ryoku-nixos/assets/wallpapers"));
+    QVERIFY(QDir().mkpath(legacy));
+    {
+        QFile f(QDir(legacy).filePath(QStringLiteral("legacy-art.png")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("legacy");
+    }
+
+    WallpaperGalleryModel images;
+    images.setRepoPath(repo.path());
+    QVERIFY(images.addExtraFolderUrl(QUrl::fromLocalFile(legacy)));
+    QVERIFY(images.extraFolders().contains(QFileInfo(legacy).absoluteFilePath()));
+    QVERIFY(!images.absolutePathForId(QStringLiteral("legacy-art.png")).isEmpty());
+    QCOMPARE(images.originForId(QStringLiteral("legacy-art.png")), QStringLiteral("extra"));
+
+    // Persistence via QSettings
+    WallpaperGalleryModel images2;
+    images2.setRepoPath(repo.path());
+    QVERIFY(images2.extraFolders().contains(QFileInfo(legacy).absoluteFilePath()));
+
+    // Cancel-style empty folder URL is a no-op success.
+    QVERIFY(images.addExtraFolderUrl(QUrl()));
+
+    // Import private then include-in-repo (explicit only) with destination preview.
+    {
+        QFile f(QDir(legacy).filePath(QStringLiteral("publish-me.png")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("publish");
+    }
+    const QVariantMap imported = images.importUrls(
+        {QUrl::fromLocalFile(QDir(legacy).filePath(QStringLiteral("publish-me.png")))});
+    QCOMPARE(imported.value(QStringLiteral("importedCount")).toInt(), 1);
+    QCOMPARE(images.originForId(QStringLiteral("publish-me.png")), QStringLiteral("private"));
+
+    const QVariantMap preview = images.publishPreview(QStringLiteral("publish-me.png"));
+    QVERIFY(preview.value(QStringLiteral("ok")).toBool());
+    QCOMPARE(preview.value(QStringLiteral("destRelative")).toString(),
+             QStringLiteral("distro/assets/wallpapers/publish-me.png"));
+    QVERIFY(!preview.value(QStringLiteral("exceedsGitHubLimit")).toBool());
+
+    const QVariantMap included = images.includeInRepository(QStringLiteral("publish-me.png"));
+    QVERIFY(included.value(QStringLiteral("ok")).toBool());
+    QVERIFY(QFileInfo::exists(
+        QDir(repo.path()).filePath(QStringLiteral("distro/assets/wallpapers/publish-me.png"))));
+    // Private library file remains; include copies into repo assets (never auto-git).
+    QVERIFY(QFileInfo::exists(
+        QDir(WallpaperGalleryModel::resolvePrivateGalleryPath()).filePath(QStringLiteral("publish-me.png"))));
+
+    // Oversize reject (>100 MiB soft limit) — use preview path with a fake size check
+    // via githubSoftLimitBytes contract.
+    QCOMPARE(WallpaperGalleryModel::githubSoftLimitBytes(), 100LL * 1024 * 1024);
+
+    qputenv("HOME", oldHome);
+    if (oldXdg.isEmpty())
+        qunsetenv("XDG_DATA_HOME");
+    else
+        qputenv("XDG_DATA_HOME", oldXdg);
+    if (oldCfg.isEmpty())
+        qunsetenv("XDG_CONFIG_HOME");
+    else
+        qputenv("XDG_CONFIG_HOME", oldCfg);
+}
+
 void ParserTests::videoApplyArgv()
 {
     QCOMPARE(WallpaperApplier::videoApplyArguments(QStringLiteral("/w/rain.mp4"), true, false,
@@ -838,9 +1035,9 @@ void ParserTests::videoApplyArgv()
     // Unknown profile never reaches the helper.
     const QStringList args = WallpaperApplier::videoApplyArguments(QStringLiteral("/w/rain.mp4"), false, true,
                                                                    QStringLiteral("ultra"), false);
-    QCOMPARE(args.at(7), QStringLiteral("balanced"));
     QCOMPARE(args.at(3), QStringLiteral("0"));
     QCOMPARE(args.at(5), QStringLiteral("1"));
+    QCOMPARE(args.at(7), QStringLiteral("balanced"));
     QCOMPARE(args.at(9), QStringLiteral("0"));
 }
 

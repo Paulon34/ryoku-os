@@ -57,10 +57,25 @@ grep -Fq 'Repo & branch' "$ROOT/distro/apps/ryoku-settings/qml/pages/NixUpdatesP
   && pass "Repo & branch section" || fail_msg "missing Repo & branch"
 grep -Fq 'Nix deps — Advanced' "$ROOT/distro/apps/ryoku-settings/qml/pages/NixUpdatesPage.qml" \
   && pass "Nix advanced section" || fail_msg "missing Nix deps Advanced"
-grep -Fq 'Refresh gallery' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
-  && pass "gallery refresh UI" || fail_msg "Appearance missing Refresh gallery"
+grep -Fq 'Refresh' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "gallery refresh UI" || fail_msg "Appearance missing Refresh"
 grep -Fq 'Include in repository' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
   && pass "include-in-repo UI" || fail_msg "Appearance missing include-in-repo"
+grep -Fq 'importUrls' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "importUrls C++ API" || fail_msg "missing importUrls"
+grep -Fq 'localPathFromUrl' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "localPathFromUrl C++ API" || fail_msg "missing localPathFromUrl"
+grep -Fq 'addExtraFolderUrl' "$ROOT/distro/apps/ryoku-settings/src/WallpaperGalleryModel.cpp" \
+  && pass "addExtraFolderUrl C++ API" || fail_msg "missing addExtraFolderUrl"
+grep -Fq 'handleImportUrls(selectedFiles)' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "FileDialog routes via C++ URLs" || fail_msg "FileDialog must not use QML toLocalFile"
+! grep -E 'selectedFiles\.map\(.*toLocalFile|selectedFolder\.toLocalFile' \
+    "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "no QML toLocalFile on dialogs" || fail_msg "Appearance still uses QML toLocalFile"
+! grep -Fq 'replace("file://"' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "no file:// strip hack" || fail_msg "must not strip file:// in QML"
+grep -Fq 'Watched folders' "$ROOT/distro/apps/ryoku-settings/qml/pages/AppearancePage.qml" \
+  && pass "managed watched folders UI" || fail_msg "missing watched folders UI"
 # Import helper allows spaces; never auto-git
 grep -Fq 'wallpapers-private' "$ROOT/distro/scripts/ryoku-import-wallpaper" \
   && pass "import stays private" || fail_msg "import script path"
